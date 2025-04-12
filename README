@@ -1,0 +1,14 @@
+# rhizome
+
+This is the README for `rhi` which listens on Rad Roots networks and maintains
+a stable activity record for parties buying and selling agricultural goods.
+
+## Copyright
+
+Except as otherwise noted, all files in the `rhi` distribution are
+
+    Copyright (c) 2025 Tyson Lupul
+
+## License
+
+This repository is licensed under AGPL-3.0-or-later. See LICENSE.

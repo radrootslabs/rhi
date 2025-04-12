@@ -1,0 +1,15 @@
+[package]
+name = "rhi"
+version = "0.1.0"
+authors = ["Radroots Authors"]
+license = "AGPL-3.0-or-later"
+edition = "2024"
+description = "Radroots trade validation and receipt worker"
+
+[dependencies]
+anyhow = "1.0"
+serde = "1.0"
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
