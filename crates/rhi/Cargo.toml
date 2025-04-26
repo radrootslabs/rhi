@@ -1,10 +1,11 @@
 [package]
 name = "rhi"
+description = "Radroots trade validation and receipt worker"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
 license.workspace = true
-authors = ["Radroots Authors"]
-description = "Radroots trade validation and receipt worker"
+description.workspace = true
 
 [dependencies]
 anyhow = "1.0"
