@@ -4,7 +4,7 @@ use nostr::{
     event::{EventBuilder, Kind, Tag, TagKind},
     nips::nip01::Metadata,
 };
-use radroots_common::{KIND_APPLICATION_HANDLER, KIND_JOB_REQUEST};
+use radroots_events::kinds::{KIND_APPLICATION_HANDLER, KIND_JOB_REQUEST_MIN};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File},
@@ -48,6 +48,9 @@ pub enum KeyProfileError {
 
     #[error("Invalid secret key for identifier: {0}")]
     InvalidSecretKey(String),
+
+    #[error("Kind 0 metadata must be initialized before building kind {0} application handler")]
+    MissingMetadata(u32),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -170,22 +173,23 @@ impl KeyProfile {
     pub async fn build_application_handler(&mut self) -> Result<Option<Event>, KeyProfileError> {
         if self.application_handler.is_none() {
             let keys = self.keys()?;
-            let kind_0_content = self
-                .metadata
-                .as_ref()
-                .expect(&format!(
-                    "The kind 0 metadata must be initialized before kind {} descriptor",
-                    KIND_APPLICATION_HANDLER.to_string()
-                ))
-                .content
-                .clone();
+            let kind = KIND_APPLICATION_HANDLER;
+
+            let kind_0_content = if let Some(m) = &self.metadata {
+                m.content.clone()
+            } else {
+                return Err(KeyProfileError::MissingMetadata(kind));
+            };
 
             let tags: Vec<Tag> = vec![
-                Tag::custom(TagKind::Custom("k".into()), [KIND_JOB_REQUEST.to_string()]),
+                Tag::custom(
+                    TagKind::Custom("k".into()),
+                    [KIND_JOB_REQUEST_MIN.to_string()],
+                ),
                 Tag::identifier(self.identifier.to_string()),
             ];
 
-            let event = EventBuilder::new(Kind::Custom(KIND_APPLICATION_HANDLER), kind_0_content)
+            let event = EventBuilder::new(Kind::Custom(kind as u16), kind_0_content)
                 .tags(tags)
                 .sign(&keys)
                 .await?;

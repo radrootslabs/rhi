@@ -27,3 +27,21 @@ name = "rhi"
 
 # Lightning address internet identifiers format
 # lud16 = ""
+
+[config]
+# Where to write logs/rotations.
+logs_dir = "logs"
+
+# Path to the keys profile JSON.
+keys_path = "keys.json"
+
+# Generate a new key profile if none is found.
+generate_keys = true
+
+# Optional NIP-89 application handler identifier.
+identifier = ""
+
+# Relays to connect to for publishing/subscribing.
+relays = [
+  "ws://127.0.0.1:8080"
+]

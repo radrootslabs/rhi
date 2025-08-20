@@ -1,7 +1,5 @@
 use std::{borrow::Cow, time::Duration};
 
-use crate::events::job_request::JobRequestError;
-use anyhow::Result;
 use nostr::{
     event::{Event, EventBuilder, EventId, Kind, Tag, TagKind, TagStandard},
     filter::Filter,
@@ -15,6 +13,8 @@ use nostr::{
 use nostr_sdk::Client;
 use nostr_sdk::prelude::*;
 use thiserror::Error;
+
+use crate::features::trade_listing::subscriber::JobRequestError;
 
 #[derive(Debug, Error)]
 pub enum NostrUtilsError {
@@ -203,4 +203,22 @@ pub fn nostr_tags_resolve(event: &Event, keys: &Keys) -> Result<Vec<Tag>, NostrT
     } else {
         Ok(event.clone().tags.to_vec())
     }
+}
+
+pub fn build_event_with_tags(
+    kind_u32: u32,
+    content: impl Into<String>,
+    tag_slices: Vec<Vec<String>>,
+) -> Result<EventBuilder, NostrUtilsError> {
+    let mut tags: Vec<Tag> = Vec::new();
+    for s in tag_slices {
+        if s.is_empty() {
+            continue;
+        }
+        let key = s[0].clone();
+        let values = s.into_iter().skip(1).collect::<Vec<String>>();
+        tags.push(Tag::custom(TagKind::Custom(key.into()), values));
+    }
+    let builder = EventBuilder::new(Kind::Custom(kind_u32 as u16), content.into()).tags(tags);
+    Ok(builder)
 }
