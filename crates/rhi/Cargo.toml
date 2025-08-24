@@ -1,30 +1,29 @@
 [package]
 name = "rhi"
-description = "Radroots trade validation and receipt worker"
 version.workspace = true
 edition.workspace = true
-authors.workspace = true
+authors = ["Radroots Authors"]
+rust-version.workspace = true
 license.workspace = true
-description.workspace = true
+description = "Radroots trade validation and receipt worker"
 
 [dependencies]
-radroots-core = { path = "../../../../../crates/radroots-common/crates/core" }
-radroots-events = { path = "../../../../../crates/radroots-common/crates/events" }
-radroots-events-codec = { path = "../../../../../crates/radroots-common/crates/events-codec" }
-radroots-trade = { path = "../../../../../crates/radroots-common/crates/trade" }
+radroots-core = { workspace = true, features = ["std", "serde", "typeshare"] }
+radroots-events = { workspace = true, features = ["serde"] }
+radroots-events-codec = { workspace = true, features = ["serde"] }
+radroots-identity = { workspace = true }
+radroots-runtime = { workspace = true, features = ["cli"] }
+radroots-trade = { workspace = true }
 
-anyhow = "1.0"
-clap = { version = "4", features = ["derive"] }
-config = "0.15"
-futures = "0.3"
-nostr = { version = "0.43.0", features = ["nip04"] }
-nostr-sdk = "0.43.0"
-serde = "1.0"
-serde_json = "1.0"
-tempfile = "3.19.1"
-thiserror = "1.0"
-tokio = { version = "1", features = ["full"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
-tracing-appender = "0.2"
-uuid = { version = "1.16.0", features = ["v4"] }
+anyhow = { workspace = true }
+clap = { workspace = true, features = ["derive"]}
+futures = { workspace = true }
+nostr = { workspace = true }
+nostr-sdk = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }

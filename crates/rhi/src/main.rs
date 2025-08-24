@@ -1,24 +1,22 @@
 use anyhow::Result;
-use clap::Parser;
-use tracing::{error, info};
-
-use rhi::{Args, config::Settings, infra::telemetry, run};
+use rhi::{cli_args, config, run_rhi};
+use tracing::info;
 
 #[tokio::main]
 async fn main() {
     if let Err(err) = setup().await {
-        error!("Fatal error: {err:#?}");
+        eprintln!("Fatal error: {err:#?}");
         std::process::exit(1);
     }
 }
 
 async fn setup() -> Result<()> {
-    let args = Args::parse();
+    let (args, settings): (cli_args, config::Settings) =
+        radroots_runtime::parse_and_load_path(|a: &cli_args| Some(a.config.as_path()))?;
 
-    let settings = Settings::load(&args.config)?;
+    radroots_runtime::init_with(&settings.config.logs_dir, None)?;
 
-    telemetry::init(&settings.config.logs_dir);
     info!("Starting");
 
-    run(settings).await
+    run_rhi(&settings, &args).await
 }
