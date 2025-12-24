@@ -1,5 +1,5 @@
 use radroots_core::{RadrootsCoreQuantity, RadrootsCoreQuantityPrice};
-use radroots_events::listing::models::{
+use radroots_events::listing::{
     RadrootsListing, RadrootsListingDiscount, RadrootsListingQuantity,
 };
 use radroots_trade::prelude::price_ext::ListingPricingExt;

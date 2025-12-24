@@ -1,18 +1,23 @@
-use nostr::{event::Event, key::Keys};
-use nostr_sdk::{Client, client::Error as NostrClientError};
+use radroots_nostr::prelude::{
+    radroots_nostr_build_event,
+    radroots_nostr_fetch_event_by_id,
+    radroots_nostr_send_event,
+    RadrootsNostrClient,
+    RadrootsNostrEvent,
+    RadrootsNostrKind,
+    RadrootsNostrKeys,
+};
 use radroots_events_codec::job::{result::encode::job_result_build_tags, traits::JobEventBorrow};
 use thiserror::Error;
 use tracing::info;
 
 use radroots_events::{
     RadrootsNostrEventPtr,
-    job::{
-        JobPaymentRequest,
-        request::models::{RadrootsJobInput, RadrootsJobParam},
-        result::models::RadrootsJobResult,
-    },
+    job::JobPaymentRequest,
+    job_request::{RadrootsJobInput, RadrootsJobParam},
+    job_result::RadrootsJobResult,
     kinds::result_kind_for_request_kind,
-    tag::{TAG_D, TAG_E_PREV, TAG_E_ROOT},
+    tags::{TAG_D, TAG_E_PREV, TAG_E_ROOT},
 };
 use radroots_trade::{
     listing::tags::push_trade_listing_chain_tags,
@@ -28,7 +33,6 @@ use radroots_trade::{
 use crate::{
     adapters::nostr::event::NostrEventAdapter,
     features::trade_listing::subscriber::{JobRequestCtx, JobRequestError},
-    infra::nostr::{build_event_with_tags, nostr_fetch_event_by_id, nostr_send_event},
 };
 
 #[derive(Debug, Error)]
@@ -42,7 +46,7 @@ pub enum JobRequestInvoiceError {
     #[error("Accept result not kind 6302 or missing chain")]
     InvalidAccept,
     #[error("Failed to send job response")]
-    ResponseSend(#[from] NostrClientError),
+    ResponseSend(#[from] radroots_nostr::error::RadrootsNostrError),
 }
 
 fn param_lookup<'a>(params: &'a [RadrootsJobParam], key: &str) -> Option<&'a str> {
@@ -53,9 +57,9 @@ fn param_lookup<'a>(params: &'a [RadrootsJobParam], key: &str) -> Option<&'a str
 }
 
 pub async fn handle_job_request_trade_invoice(
-    event_job_request: Event,
-    _keys: Keys,
-    client: Client,
+    event_job_request: RadrootsNostrEvent,
+    _keys: RadrootsNostrKeys,
+    client: RadrootsNostrClient,
     job_req: JobRequestCtx,
     job_req_input: RadrootsJobInput,
 ) -> Result<(), JobRequestError> {
@@ -64,10 +68,10 @@ pub async fn handle_job_request_trade_invoice(
     let req: TradeListingInvoiceRequest = serde_json::from_str(&job_req_input.data)
         .map_err(|e| JobRequestInvoiceError::ParseRequest(e.to_string()))?;
 
-    let accept_evt = nostr_fetch_event_by_id(client.clone(), &req.accept_result_event_id)
+    let accept_evt = radroots_nostr_fetch_event_by_id(client.clone(), &req.accept_result_event_id)
         .await
         .map_err(|_| JobRequestInvoiceError::FetchReference(req.accept_result_event_id.clone()))?;
-    if accept_evt.kind != nostr::event::Kind::Custom(KIND_TRADE_LISTING_ACCEPT_RES) {
+    if accept_evt.kind != RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ACCEPT_RES) {
         return Err(JobRequestInvoiceError::InvalidAccept.into());
     }
 
@@ -100,8 +104,8 @@ pub async fn handle_job_request_trade_invoice(
         .flatten();
 
     if let Some(prev_id) = &order_res_id {
-        if let Ok(prev_evt) = nostr_fetch_event_by_id(client.clone(), prev_id).await {
-            if prev_evt.kind != nostr::event::Kind::Custom(KIND_TRADE_LISTING_ORDER_RES) {}
+        if let Ok(prev_evt) = radroots_nostr_fetch_event_by_id(client.clone(), prev_id).await {
+            if prev_evt.kind != RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_RES) {}
         }
     }
 
@@ -154,8 +158,8 @@ pub async fn handle_job_request_trade_invoice(
         d_tag,
     );
 
-    let builder = build_event_with_tags(result_kind as u32, payload_json, tag_slices)?;
-    let job_result_event_id = nostr_send_event(client, builder).await?;
+    let builder = radroots_nostr_build_event(result_kind as u32, payload_json, tag_slices)?;
+    let job_result_event_id = radroots_nostr_send_event(client, builder).await?;
 
     info!(
         "job request trade/invoice ({}={}) result sent: {:?}",

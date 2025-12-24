@@ -14,3 +14,9 @@ logs_dir = "logs"
 relays = [
   "ws://127.0.0.1:8080"
 ]
+
+[config.subscriber.backoff]
+base_ms = 500
+max_ms = 30000
+factor = 2
+jitter_ms = 0

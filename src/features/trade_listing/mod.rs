@@ -1,3 +1,3 @@
-pub mod domain;
 pub mod handlers;
+pub mod state;
 pub mod subscriber;

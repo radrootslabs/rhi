@@ -1,16 +1,16 @@
-use nostr::event::Event;
 use radroots_events_codec::job::traits::{JobEventBorrow, JobEventLike};
+use radroots_nostr::prelude::{RadrootsNostrEvent, RadrootsNostrKind};
 
 #[derive(Clone, Debug)]
 pub struct NostrEventAdapter<'a> {
-    evt: &'a Event,
+    evt: &'a RadrootsNostrEvent,
     id_hex: String,
     author_hex: String,
 }
 
 impl<'a> NostrEventAdapter<'a> {
     #[inline]
-    pub fn new(evt: &'a Event) -> Self {
+    pub fn new(evt: &'a RadrootsNostrEvent) -> Self {
         Self {
             evt,
             id_hex: evt.id.to_hex(),
@@ -44,7 +44,7 @@ impl<'a> JobEventBorrow<'a> for NostrEventAdapter<'a> {
     #[inline]
     fn raw_kind(&'a self) -> u32 {
         match self.evt.kind {
-            nostr::event::Kind::Custom(v) => v as u32,
+            RadrootsNostrKind::Custom(v) => v as u32,
             _ => 0,
         }
     }
@@ -62,7 +62,7 @@ impl JobEventLike for NostrEventAdapter<'_> {
     }
     fn raw_kind(&self) -> u32 {
         match self.evt.kind {
-            nostr::event::Kind::Custom(v) => v as u32,
+            RadrootsNostrKind::Custom(v) => v as u32,
             _ => 0,
         }
     }

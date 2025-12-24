@@ -1,16 +1,23 @@
-use nostr::{event::Event, key::Keys};
-use nostr_sdk::{Client, client::Error as NostrClientError};
+use radroots_nostr::prelude::{
+    radroots_nostr_build_event,
+    radroots_nostr_fetch_event_by_id,
+    radroots_nostr_send_event,
+    RadrootsNostrClient,
+    RadrootsNostrEvent,
+    RadrootsNostrKind,
+    RadrootsNostrKeys,
+};
 use radroots_events_codec::job::{result::encode::job_result_build_tags, traits::JobEventBorrow};
 use thiserror::Error;
 use tracing::info;
 
 use radroots_events::{
     RadrootsNostrEventPtr,
-    job::{
-        JobPaymentRequest, request::models::RadrootsJobInput, result::models::RadrootsJobResult,
-    },
+    job::JobPaymentRequest,
+    job_request::RadrootsJobInput,
+    job_result::RadrootsJobResult,
     kinds::result_kind_for_request_kind,
-    tag::{TAG_D, TAG_E_ROOT},
+    tags::{TAG_D, TAG_E_ROOT},
 };
 use radroots_trade::{
     listing::{
@@ -23,7 +30,6 @@ use radroots_trade::{
 use crate::{
     adapters::nostr::event::NostrEventAdapter,
     features::trade_listing::subscriber::{JobRequestCtx, JobRequestError},
-    infra::nostr::{build_event_with_tags, nostr_fetch_event_by_id, nostr_send_event},
 };
 
 #[derive(Debug, Error)]
@@ -39,13 +45,13 @@ pub enum JobRequestAcceptError {
     #[error("Order result not kind 6301 or listing mismatch")]
     InvalidOrderResult,
     #[error("Failed to send job response")]
-    ResponseSend(#[from] NostrClientError),
+    ResponseSend(#[from] radroots_nostr::error::RadrootsNostrError),
 }
 
 pub async fn handle_job_request_trade_accept(
-    event_job_request: Event,
-    keys: Keys,
-    client: Client,
+    event_job_request: RadrootsNostrEvent,
+    keys: RadrootsNostrKeys,
+    client: RadrootsNostrClient,
     job_req: JobRequestCtx,
     job_req_input: RadrootsJobInput,
 ) -> Result<(), JobRequestError> {
@@ -54,11 +60,11 @@ pub async fn handle_job_request_trade_accept(
     let req: TradeListingAcceptRequest = serde_json::from_str(&job_req_input.data)
         .map_err(|e| JobRequestAcceptError::ParseRequest(e.to_string()))?;
 
-    let order_res_evt = nostr_fetch_event_by_id(client.clone(), &req.order_result_event_id)
+    let order_res_evt = radroots_nostr_fetch_event_by_id(client.clone(), &req.order_result_event_id)
         .await
         .map_err(|_| JobRequestAcceptError::FetchReference(req.order_result_event_id.clone()))?;
 
-    let listing_evt = nostr_fetch_event_by_id(client.clone(), &req.listing_event_id)
+    let listing_evt = radroots_nostr_fetch_event_by_id(client.clone(), &req.listing_event_id)
         .await
         .map_err(|_| JobRequestAcceptError::FetchReference(req.listing_event_id.clone()))?;
 
@@ -66,7 +72,7 @@ pub async fn handle_job_request_trade_accept(
         return Err(JobRequestAcceptError::Unauthorized.into());
     }
 
-    if order_res_evt.kind != nostr::event::Kind::Custom(KIND_TRADE_LISTING_ORDER_RES) {
+    if order_res_evt.kind != RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_RES) {
         return Err(JobRequestAcceptError::InvalidOrderResult.into());
     }
     let order_refs_listing = order_res_evt.tags.iter().any(|t| {
@@ -131,8 +137,8 @@ pub async fn handle_job_request_trade_accept(
         trade_id,
     );
 
-    let builder = build_event_with_tags(result_kind as u32, payload_json, tag_slices)?;
-    let job_result_event_id = nostr_send_event(client, builder).await?;
+    let builder = radroots_nostr_build_event(result_kind as u32, payload_json, tag_slices)?;
+    let job_result_event_id = radroots_nostr_send_event(client, builder).await?;
 
     info!(
         "job request trade/accept ({}={}) result sent: {:?}",

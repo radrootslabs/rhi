@@ -1,34 +1,28 @@
-[workspace]
-members = [
-    "crates/*",
-]
-resolver = "2"
-
-[workspace.package]
+[package]
+name = "rhi"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.86.0"
+authors = ["Radroots Authors"]
+rust-version = "1.88.0"
 license = "AGPL-3.0-or-later"
+description = "Radroots trade validation and receipt worker"
 
-[workspace.dependencies]
-radroots-core = { path = "../../crates/crates/core" }
-radroots-events = { path = "../../crates/crates/events" }
-radroots-events-codec = { path = "../../crates/crates/events-codec" }
-radroots-identity = { path = "../../crates/crates/identity" }
-radroots-nostr = { path = "../../crates/crates/nostr" }
-radroots-runtime = { path = "../../crates/crates/runtime" }
-radroots-trade = { path = "../../crates/crates/trade" }
+[dependencies]
+radroots-core = { path = "../crates/core", features = ["std", "serde", "typeshare"]  }
+radroots-events = { path = "../crates/events", features = ["serde"] }
+radroots-events-codec = { path = "../crates/events-codec", features = ["nostr"] }
+radroots-identity = { path = "../crates/identity" }
+radroots-nostr = { path = "../crates/nostr", features = ["client", "codec", "events", "http"] }
+radroots-runtime = { path = "../crates/runtime", features = ["cli"] }
+radroots-trade = { path = "../crates/trade" }
 
 anyhow = { version = "1" }
-clap = { version = "4" }
-config = { version = "0.15" }
-futures = { version = "0.3" }
-nostr = { version = "0.43.0", features = ["nip04"] }
-nostr-sdk = { version = "0.43.0" }
+clap = { version = "4", features = ["derive"] }
+jsonrpsee = { version = "0.26", features = ["server"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", default-features = false }
 serde_json = { version = "1", default-features = false }
-tempfile = { version = "3.19.1" }
+tokio = { version = "1", features = ["full"] }
 thiserror = { version = "1" }
-tokio = { version = "1" }
 tracing = { version = "0.1" }
-uuid = { version = "1.16.0" }
+uuid = { version = "1.16.0", features = ["v4"] }

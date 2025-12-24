@@ -1,68 +1,71 @@
-use nostr::{event::Event, key::Keys};
-use nostr_sdk::{Client, client::Error as NostrClientError};
+use radroots_nostr::prelude::{
+    radroots_nostr_build_event,
+    radroots_nostr_fetch_event_by_id,
+    radroots_nostr_send_event,
+    RadrootsNostrClient,
+    RadrootsNostrEvent,
+    RadrootsNostrKind,
+    RadrootsNostrKeys,
+};
 use radroots_events_codec::job::{result::encode::job_result_build_tags, traits::JobEventBorrow};
 use thiserror::Error;
 use tracing::info;
 
 use radroots_events::{
     RadrootsNostrEventPtr,
-    job::{request::models::RadrootsJobInput, result::models::RadrootsJobResult},
+    job_request::RadrootsJobInput,
+    job_result::RadrootsJobResult,
     kinds::result_kind_for_request_kind,
-    tag::{TAG_D, TAG_E_ROOT},
+    tags::{TAG_D, TAG_E_ROOT},
 };
-use radroots_trade::{
-    listing::tags::push_trade_listing_chain_tags,
-    prelude::{
-        kinds::KIND_TRADE_LISTING_PAYMENT_RES,
-        stage::fulfillment::{
-            TradeListingFulfillmentRequest, TradeListingFulfillmentResult,
-            TradeListingFulfillmentState,
-        },
-    },
+use radroots_trade::prelude::{
+    kinds::KIND_TRADE_LISTING_FULFILL_RES,
+    stage::receipt::{TradeListingReceiptRequest, TradeListingReceiptResult},
+    tags::push_trade_listing_chain_tags,
 };
 
 use crate::{
     adapters::nostr::event::NostrEventAdapter,
     features::trade_listing::subscriber::{JobRequestCtx, JobRequestError},
-    infra::nostr::{build_event_with_tags, nostr_fetch_event_by_id, nostr_send_event},
 };
 
 #[derive(Debug, Error)]
-pub enum JobRequestFulfillmentError {
-    #[error("Failed to parse fulfillment request: {0}")]
+pub enum JobRequestReceiptError {
+    #[error("Failed to parse receipt request: {0}")]
     ParseRequest(String),
     #[error("Failed to fetch reference event: {0}")]
     FetchReference(String),
     #[error("Reference event not found: {0}")]
     MissingReference(String),
-    #[error("Payment result not kind 6305 or missing chain")]
-    InvalidPayment,
+    #[error("Fulfillment result not kind 6306 or missing chain")]
+    InvalidFulfillment,
     #[error("Failed to send job response")]
-    ResponseSend(#[from] NostrClientError),
+    ResponseSend(#[from] radroots_nostr::error::RadrootsNostrError),
 }
 
-pub async fn handle_job_request_trade_fulfillment(
-    event_job_request: Event,
-    _keys: Keys,
-    client: Client,
+pub async fn handle_job_request_trade_receipt(
+    event_job_request: RadrootsNostrEvent,
+    _keys: RadrootsNostrKeys,
+    client: RadrootsNostrClient,
     job_req: JobRequestCtx,
     job_req_input: RadrootsJobInput,
 ) -> Result<(), JobRequestError> {
     let ev = NostrEventAdapter::new(&event_job_request);
 
-    let req: TradeListingFulfillmentRequest = serde_json::from_str(&job_req_input.data)
-        .map_err(|e| JobRequestFulfillmentError::ParseRequest(e.to_string()))?;
+    let req: TradeListingReceiptRequest = serde_json::from_str(&job_req_input.data)
+        .map_err(|e| JobRequestReceiptError::ParseRequest(e.to_string()))?;
 
-    let payment_evt = nostr_fetch_event_by_id(client.clone(), &req.payment_result_event_id)
+    let fulfill_evt =
+        radroots_nostr_fetch_event_by_id(client.clone(), &req.fulfillment_result_event_id)
         .await
         .map_err(|_| {
-            JobRequestFulfillmentError::FetchReference(req.payment_result_event_id.clone())
+            JobRequestReceiptError::FetchReference(req.fulfillment_result_event_id.clone())
         })?;
-    if payment_evt.kind != nostr::event::Kind::Custom(KIND_TRADE_LISTING_PAYMENT_RES) {
-        return Err(JobRequestFulfillmentError::InvalidPayment.into());
+    if fulfill_evt.kind != RadrootsNostrKind::Custom(KIND_TRADE_LISTING_FULFILL_RES) {
+        return Err(JobRequestReceiptError::InvalidFulfillment.into());
     }
 
-    let e_root = payment_evt
+    let e_root = fulfill_evt
         .tags
         .iter()
         .find_map(|t| {
@@ -70,9 +73,9 @@ pub async fn handle_job_request_trade_fulfillment(
             (s.get(0).map(|k| k.as_str()) == Some(TAG_E_ROOT)).then(|| s.get(1).cloned())
         })
         .flatten()
-        .ok_or(JobRequestFulfillmentError::InvalidPayment)?;
+        .ok_or(JobRequestReceiptError::InvalidFulfillment)?;
 
-    let d_tag = payment_evt
+    let d_tag = fulfill_evt
         .tags
         .iter()
         .find_map(|t| {
@@ -81,13 +84,11 @@ pub async fn handle_job_request_trade_fulfillment(
         })
         .flatten();
 
-    let status = TradeListingFulfillmentResult {
-        state: TradeListingFulfillmentState::Preparing,
-        tracking: None,
-        eta: None,
-        notes: Some("order accepted and paid; preparing shipment".into()),
+    let ack = TradeListingReceiptResult {
+        acknowledged: true,
+        at: event_job_request.created_at.as_u64() as u32,
     };
-    let payload_json = serde_json::to_string(&status)?;
+    let payload_json = serde_json::to_string(&ack)?;
 
     let result_kind = result_kind_for_request_kind(job_req.model.kind as u32)
         .unwrap_or(job_req.model.kind as u32 + 1000);
@@ -110,15 +111,15 @@ pub async fn handle_job_request_trade_fulfillment(
     push_trade_listing_chain_tags(
         &mut tag_slices,
         e_root.clone(),
-        Some(req.payment_result_event_id.clone()),
+        Some(req.fulfillment_result_event_id.clone()),
         d_tag,
     );
 
-    let builder = build_event_with_tags(result_kind as u32, payload_json, tag_slices)?;
-    let job_result_event_id = nostr_send_event(client, builder).await?;
+    let builder = radroots_nostr_build_event(result_kind as u32, payload_json, tag_slices)?;
+    let job_result_event_id = radroots_nostr_send_event(client, builder).await?;
 
     info!(
-        "job request trade/fulfillment ({}={}) result sent: {:?}",
+        "job request trade/receipt ({}={}) result sent: {:?}",
         TAG_E_ROOT, e_root, job_result_event_id
     );
     Ok(())
