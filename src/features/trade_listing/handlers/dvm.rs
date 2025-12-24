@@ -28,6 +28,7 @@ use radroots_trade::listing::{
         TradeFulfillmentUpdate, TradeOrder, TradeOrderRevision, TradeOrderStatus, TradeQuestion,
         TradeReceipt,
     },
+    tags::trade_listing_dvm_tags,
     validation::{validate_listing_event, TradeListingValidationError},
 };
 use serde::de::DeserializeOwned;
@@ -904,12 +905,7 @@ async fn send_envelope<T: serde::Serialize + Clone>(
         payload.clone(),
     );
     let content = serde_json::to_string(&envelope)?;
-    let mut tags = Vec::with_capacity(3);
-    tags.push(vec!["p".into(), recipient_pubkey]);
-    tags.push(vec!["a".into(), listing_addr.to_string()]);
-    if let Some(order_id) = order_id {
-        tags.push(vec!["d".into(), order_id.to_string()]);
-    }
+    let tags = trade_listing_dvm_tags(recipient_pubkey, listing_addr, order_id);
     let builder = radroots_nostr_build_event(message_type.kind() as u32, content, tags)?;
     radroots_nostr_send_event(client, builder).await?;
     Ok(())
