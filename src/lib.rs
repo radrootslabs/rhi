@@ -17,7 +17,7 @@ use crate::{
     rhi::{Rhi, start_subscriber},
 };
 use radroots_identity::RadrootsIdentity;
-use radroots_nostr::prelude::RadrootsNostrMetadata;
+use radroots_nostr::prelude::{radroots_nostr_publish_identity_profile, RadrootsNostrMetadata};
 use tracing::{info, warn};
 
 fn metadata_has_fields(md: &RadrootsNostrMetadata) -> bool {
@@ -54,7 +54,16 @@ pub async fn run_rhi(settings: &config::Settings, args: &cli_args) -> Result<()>
     if !relays.is_empty() {
         client.connect().await;
         client.wait_for_connection(Duration::from_secs(5)).await;
-        if has_metadata {
+        let profile_published = match radroots_nostr_publish_identity_profile(&client, &identity).await
+        {
+            Ok(Some(_)) => true,
+            Ok(None) => false,
+            Err(e) => {
+                warn!("Failed to publish identity profile: {e}");
+                false
+            }
+        };
+        if has_metadata && !profile_published {
             if let Err(e) = client.set_metadata(&md).await {
                 warn!("Failed to publish metadata on startup: {e}");
             } else {

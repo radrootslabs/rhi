@@ -16,6 +16,8 @@ use radroots_nostr::prelude::{
     RadrootsNostrKeys,
     RadrootsNostrTag,
 };
+use radroots_events::kinds::KIND_FARM;
+use radroots_events::listing::RadrootsListingFarmRef;
 use radroots_trade::listing::{
     dvm::{
         TradeListingEnvelope, TradeListingEnvelopeError, TradeListingMessageType,
@@ -323,10 +325,13 @@ async fn handle_listing_validate_request(
     let errors = if let Some(event) = listing_event {
         let rr_event = radroots_event_from_nostr(&event);
         match validate_listing_event(&rr_event) {
-            Ok(_) => {
-                let mut state = state.lock().await;
-                state.mark_listing_validated(listing_addr);
-                Vec::new()
+            Ok(listing) => {
+                let errors = validate_farm_dependencies(client, &listing.listing.farm).await?;
+                if errors.is_empty() {
+                    let mut state = state.lock().await;
+                    state.mark_listing_validated(listing_addr);
+                }
+                errors
             }
             Err(err) => vec![err],
         }
@@ -935,6 +940,85 @@ async fn fetch_listing_by_addr(
         }
     }
     Ok(latest)
+}
+
+async fn fetch_latest_event_by_kind(
+    client: &RadrootsNostrClient,
+    filter: RadrootsNostrFilter,
+    kind: RadrootsNostrKind,
+) -> Result<Option<RadrootsNostrEvent>, TradeListingDvmError> {
+    let events = client.fetch_events(filter, Duration::from_secs(10)).await?;
+    let mut latest: Option<RadrootsNostrEvent> = None;
+    for ev in events {
+        if ev.kind != kind {
+            continue;
+        }
+        match &latest {
+            Some(cur) if ev.created_at <= cur.created_at => {}
+            _ => latest = Some(ev),
+        }
+    }
+    Ok(latest)
+}
+
+async fn validate_farm_dependencies(
+    client: &RadrootsNostrClient,
+    farm: &RadrootsListingFarmRef,
+) -> Result<Vec<TradeListingValidationError>, TradeListingDvmError> {
+    let mut errors = Vec::new();
+    let farm_pubkey = farm.pubkey.trim();
+    let farm_d_tag = farm.d_tag.trim();
+    let author = match radroots_nostr_parse_pubkey(farm_pubkey) {
+        Ok(author) => author,
+        Err(_) => {
+            errors.push(TradeListingValidationError::MissingFarmProfile);
+            errors.push(TradeListingValidationError::MissingFarmRecord);
+            return Ok(errors);
+        }
+    };
+
+    let profile_filter = RadrootsNostrFilter::new()
+        .kind(RadrootsNostrKind::Metadata)
+        .author(author.clone());
+    let profile_event =
+        match fetch_latest_event_by_kind(client, profile_filter, RadrootsNostrKind::Metadata).await
+        {
+            Ok(event) => event,
+            Err(_) => None,
+        };
+    let has_profile = profile_event
+        .map(|event| {
+            let rr_event = radroots_event_from_nostr(&event);
+            tag_has_value(&rr_event.tags, "t", "radroots:type:farm")
+        })
+        .unwrap_or(false);
+    if !has_profile {
+        errors.push(TradeListingValidationError::MissingFarmProfile);
+    }
+
+    if !farm_d_tag.is_empty() {
+        let record_filter = RadrootsNostrFilter::new()
+            .kind(RadrootsNostrKind::Custom(KIND_FARM as u16))
+            .author(author)
+            .identifier(farm_d_tag.to_string());
+        let record_event = match fetch_latest_event_by_kind(
+            client,
+            record_filter,
+            RadrootsNostrKind::Custom(KIND_FARM as u16),
+        )
+        .await
+        {
+            Ok(event) => event,
+            Err(_) => None,
+        };
+        if record_event.is_none() {
+            errors.push(TradeListingValidationError::MissingFarmRecord);
+        }
+    } else {
+        errors.push(TradeListingValidationError::MissingFarmRecord);
+    }
+
+    Ok(errors)
 }
 
 fn parse_payload<T: DeserializeOwned>(value: serde_json::Value) -> Result<T, TradeListingDvmError> {
