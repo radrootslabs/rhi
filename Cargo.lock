@@ -1815,6 +1815,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "radroots-log"
+version = "0.1.0"
+dependencies = [
+ "thiserror 1.0.69",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "radroots-nostr"
 version = "0.1.0"
 dependencies = [
@@ -1836,6 +1846,7 @@ dependencies = [
  "anyhow",
  "clap",
  "config",
+ "radroots-log",
  "serde",
  "serde_json",
  "tempfile",
@@ -1843,8 +1854,6 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
- "tracing-appender",
- "tracing-subscriber",
 ]
 
 [[package]]
