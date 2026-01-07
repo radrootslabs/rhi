@@ -17,7 +17,13 @@ use crate::{
     rhi::{Rhi, start_subscriber},
 };
 use radroots_identity::RadrootsIdentity;
-use radroots_nostr::prelude::{radroots_nostr_publish_identity_profile, RadrootsNostrMetadata};
+use radroots_nostr::prelude::{
+    radroots_nostr_publish_application_handler,
+    radroots_nostr_publish_identity_profile,
+    RadrootsNostrApplicationHandlerSpec,
+    RadrootsNostrMetadata,
+};
+use radroots_trade::listing::dvm_kinds::TRADE_LISTING_DVM_KINDS;
 use tracing::{info, warn};
 
 fn metadata_has_fields(md: &RadrootsNostrMetadata) -> bool {
@@ -69,6 +75,22 @@ pub async fn run_rhi(settings: &config::Settings, args: &cli_args) -> Result<()>
             } else {
                 info!("Published metadata on startup");
             }
+        }
+
+        let handler_kinds = TRADE_LISTING_DVM_KINDS
+            .iter()
+            .map(|kind| *kind as u32)
+            .collect();
+        let handler_spec = RadrootsNostrApplicationHandlerSpec {
+            kinds: handler_kinds,
+            identifier: None,
+            metadata: Some(md.clone()),
+            extra_tags: Vec::new(),
+        };
+        if let Err(e) = radroots_nostr_publish_application_handler(&client, &handler_spec).await {
+            warn!("Failed to publish NIP-89 announcement: {e}");
+        } else {
+            info!("Published NIP-89 announcement");
         }
     }
 
