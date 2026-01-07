@@ -86,6 +86,8 @@ pub async fn run_rhi(settings: &config::Settings, args: &cli_args) -> Result<()>
             identifier: None,
             metadata: Some(md.clone()),
             extra_tags: Vec::new(),
+            relays: relays.clone(),
+            nostrconnect_url: None,
         };
         if let Err(e) = radroots_nostr_publish_application_handler(&client, &handler_spec).await {
             warn!("Failed to publish NIP-89 announcement: {e}");
