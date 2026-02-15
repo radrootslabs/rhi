@@ -7,6 +7,10 @@ pub struct Configuration {
     pub logs_dir: String,
     pub relays: Vec<String>,
     #[serde(default)]
+    pub nip89_identifier: Option<String>,
+    #[serde(default)]
+    pub nip89_extra_tags: Vec<Vec<String>>,
+    #[serde(default)]
     pub subscriber: SubscriberConfig,
 }
 

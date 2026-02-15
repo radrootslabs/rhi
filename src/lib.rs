@@ -83,9 +83,9 @@ pub async fn run_rhi(settings: &config::Settings, args: &cli_args) -> Result<()>
             .collect();
         let handler_spec = RadrootsNostrApplicationHandlerSpec {
             kinds: handler_kinds,
-            identifier: None,
+            identifier: settings.config.nip89_identifier.clone(),
             metadata: Some(md.clone()),
-            extra_tags: Vec::new(),
+            extra_tags: settings.config.nip89_extra_tags.clone(),
             relays: relays.clone(),
             nostrconnect_url: None,
         };
