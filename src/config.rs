@@ -1,15 +1,11 @@
 use radroots_nostr::prelude::RadrootsNostrMetadata;
-use radroots_runtime::BackoffConfig;
+use radroots_runtime::{BackoffConfig, RadrootsNostrServiceConfig};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Configuration {
-    pub logs_dir: String,
-    pub relays: Vec<String>,
-    #[serde(default)]
-    pub nip89_identifier: Option<String>,
-    #[serde(default)]
-    pub nip89_extra_tags: Vec<Vec<String>>,
+    #[serde(flatten)]
+    pub service: RadrootsNostrServiceConfig,
     #[serde(default)]
     pub subscriber: SubscriberConfig,
 }

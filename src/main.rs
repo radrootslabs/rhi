@@ -18,8 +18,8 @@ async fn main() -> ExitCode {
 async fn run() -> Result<()> {
     let (args, settings): (cli_args, config::Settings) =
         radroots_runtime::parse_and_load_path_with_init(
-            |a: &cli_args| Some(a.config.as_path()),
-            |cfg: &config::Settings| cfg.config.logs_dir.as_str(),
+            |a: &cli_args| Some(a.service.config.as_path()),
+            |cfg: &config::Settings| cfg.config.service.logs_dir.as_str(),
             None,
         )
         .context("load configuration")?;
