@@ -2,27 +2,19 @@
 
 use std::{sync::Arc, time::Duration};
 
-use radroots_nostr::prelude::{
-    radroots_event_from_nostr,
-    radroots_nostr_build_event,
-    radroots_nostr_build_event_job_feedback,
-    radroots_nostr_fetch_event_by_id,
-    radroots_nostr_parse_pubkey,
-    radroots_nostr_send_event,
-    RadrootsNostrClient,
-    RadrootsNostrEvent,
-    RadrootsNostrFilter,
-    RadrootsNostrKind,
-    RadrootsNostrKeys,
-    RadrootsNostrTag,
-};
 use radroots_events::kinds::KIND_FARM;
 use radroots_events::listing::RadrootsListingFarmRef;
+use radroots_nostr::prelude::{
+    RadrootsNostrClient, RadrootsNostrEvent, RadrootsNostrFilter, RadrootsNostrKeys,
+    RadrootsNostrKind, RadrootsNostrTag, radroots_event_from_nostr, radroots_nostr_build_event,
+    radroots_nostr_build_event_job_feedback, radroots_nostr_fetch_event_by_id,
+    radroots_nostr_parse_pubkey, radroots_nostr_send_event,
+};
 use radroots_trade::listing::{
     dvm::{
-        TradeListingEnvelope, TradeListingEnvelopeError, TradeListingMessageType,
-        TradeListingValidateRequest, TradeListingValidateResult, TradeOrderResponse,
-        TradeOrderRevisionResponse, TradeListingCancel, TradeListingAddress,
+        TradeListingAddress, TradeListingCancel, TradeListingEnvelope, TradeListingEnvelopeError,
+        TradeListingMessageType, TradeListingValidateRequest, TradeListingValidateResult,
+        TradeOrderResponse, TradeOrderRevisionResponse, trade_listing_envelope_event_build,
     },
     dvm_kinds::is_trade_listing_dvm_kind,
     order::{
@@ -30,13 +22,14 @@ use radroots_trade::listing::{
         TradeFulfillmentUpdate, TradeOrder, TradeOrderRevision, TradeOrderStatus, TradeQuestion,
         TradeReceipt,
     },
-    tags::trade_listing_dvm_tags,
-    validation::{validate_listing_event, TradeListingValidationError},
+    validation::{TradeListingValidationError, validate_listing_event},
 };
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 
-use crate::features::trade_listing::state::{TradeListingState, TradeListingStateError, TradeOrderState};
+use crate::features::trade_listing::state::{
+    TradeListingState, TradeListingStateError, TradeOrderState,
+};
 
 #[derive(Debug, Error)]
 pub enum TradeListingDvmError {
@@ -93,8 +86,7 @@ pub async fn handle_event(
         return Err(TradeListingDvmError::MissingRecipient);
     }
 
-    let envelope: TradeListingEnvelope<serde_json::Value> =
-        serde_json::from_str(&event.content)?;
+    let envelope: TradeListingEnvelope<serde_json::Value> = serde_json::from_str(&event.content)?;
     envelope.validate()?;
     if envelope.message_type.kind() != kind {
         return Err(TradeListingDvmError::TagMismatch("kind"));
@@ -114,8 +106,8 @@ pub async fn handle_event(
         }
     }
 
-    let listing_addr_parsed =
-        TradeListingAddress::parse(&listing_addr).map_err(|_| TradeListingDvmError::InvalidListingAddr)?;
+    let listing_addr_parsed = TradeListingAddress::parse(&listing_addr)
+        .map_err(|_| TradeListingDvmError::InvalidListingAddr)?;
     if listing_addr_parsed.kind != 30402 {
         return Err(TradeListingDvmError::InvalidListingAddr);
     }
@@ -123,14 +115,8 @@ pub async fn handle_event(
     match envelope.message_type {
         TradeListingMessageType::ListingValidateRequest => {
             let payload: TradeListingValidateRequest = parse_payload(envelope.payload)?;
-            handle_listing_validate_request(
-                &event,
-                payload,
-                &listing_addr,
-                &client,
-                &state,
-            )
-            .await?;
+            handle_listing_validate_request(&event, payload, &listing_addr, &client, &state)
+                .await?;
         }
         TradeListingMessageType::OrderRequest => {
             let payload: TradeOrder = parse_payload(envelope.payload)?;
@@ -168,7 +154,8 @@ pub async fn handle_event(
             )
             .await?;
         }
-        TradeListingMessageType::OrderRevisionAccept | TradeListingMessageType::OrderRevisionDecline => {
+        TradeListingMessageType::OrderRevisionAccept
+        | TradeListingMessageType::OrderRevisionDecline => {
             let payload: TradeOrderRevisionResponse = parse_payload(envelope.payload)?;
             handle_order_revision_response(
                 &event,
@@ -903,15 +890,18 @@ async fn send_envelope<T: serde::Serialize + Clone>(
     order_id: Option<&str>,
     payload: &T,
 ) -> Result<(), TradeListingDvmError> {
-    let envelope = TradeListingEnvelope::new(
+    let envelope_event = trade_listing_envelope_event_build(
+        recipient_pubkey,
         message_type,
-        listing_addr.to_string(),
-        order_id.map(|v| v.to_string()),
-        payload.clone(),
-    );
-    let content = serde_json::to_string(&envelope)?;
-    let tags = trade_listing_dvm_tags(recipient_pubkey, listing_addr, order_id);
-    let builder = radroots_nostr_build_event(message_type.kind() as u32, content, tags)?;
+        listing_addr,
+        order_id.map(|value| value.to_string()),
+        payload,
+    )?;
+    let builder = radroots_nostr_build_event(
+        envelope_event.kind as u32,
+        envelope_event.content,
+        envelope_event.tags,
+    )?;
     radroots_nostr_send_event(client, builder).await?;
     Ok(())
 }
@@ -1072,14 +1062,19 @@ fn ensure_transition(
                 | TradeOrderStatus::Requested
         ),
         TradeOrderStatus::Accepted => {
-            matches!(to, TradeOrderStatus::Fulfilled | TradeOrderStatus::Cancelled)
+            matches!(
+                to,
+                TradeOrderStatus::Fulfilled | TradeOrderStatus::Cancelled
+            )
         }
         TradeOrderStatus::Declined => false,
         TradeOrderStatus::Cancelled => false,
         TradeOrderStatus::Fulfilled => {
             matches!(
                 to,
-                TradeOrderStatus::Completed | TradeOrderStatus::Fulfilled | TradeOrderStatus::Cancelled
+                TradeOrderStatus::Completed
+                    | TradeOrderStatus::Fulfilled
+                    | TradeOrderStatus::Cancelled
             )
         }
         TradeOrderStatus::Completed => false,
