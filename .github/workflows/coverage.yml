@@ -27,7 +27,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: run strict gate
-        run: scripts/just/coverage_gate.sh
+        run: make coverage-gate
 
       - name: upload coverage artifacts
         if: always()

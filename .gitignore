@@ -25,6 +25,9 @@ Thumbs.db
 .dev*
 .local*
 .vscode
+identity.json
+identity.*.json
+!identity.example.json
 notes*.txt
 notes*.md
 notes*.json
