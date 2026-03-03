@@ -16,7 +16,7 @@ use tokio::sync::watch;
 use tokio::time::sleep;
 use tracing::{info, warn};
 
-use radroots_trade::listing::dvm_kinds::TRADE_LISTING_DVM_KINDS;
+use radroots_trade::listing::kinds::TRADE_LISTING_KINDS;
 
 use crate::features::trade_listing::{
     handlers::dvm::{handle_error, handle_event, TradeListingDvmError},
@@ -30,10 +30,10 @@ pub async fn subscriber(
 ) -> Result<()> {
     info!(
         "Starting subscriber for trade listing DVM kinds: {:?}",
-        TRADE_LISTING_DVM_KINDS
+        TRADE_LISTING_KINDS
     );
 
-    let kinds: Vec<RadrootsNostrKind> = TRADE_LISTING_DVM_KINDS
+    let kinds: Vec<RadrootsNostrKind> = TRADE_LISTING_KINDS
         .iter()
         .map(|kind| RadrootsNostrKind::Custom(*kind))
         .collect();

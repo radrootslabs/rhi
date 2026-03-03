@@ -16,7 +16,7 @@ use radroots_trade::listing::{
         TradeListingMessageType, TradeListingValidateRequest, TradeListingValidateResult,
         TradeOrderResponse, TradeOrderRevisionResponse, trade_listing_envelope_event_build,
     },
-    dvm_kinds::is_trade_listing_dvm_kind,
+    kinds::is_trade_listing_kind,
     order::{
         TradeAnswer, TradeDiscountDecision, TradeDiscountOffer, TradeDiscountRequest,
         TradeFulfillmentUpdate, TradeOrder, TradeOrderRevision, TradeOrderStatus, TradeQuestion,
@@ -72,7 +72,7 @@ pub async fn handle_event(
         RadrootsNostrKind::Custom(v) => v,
         _ => return Err(TradeListingDvmError::UnsupportedKind),
     };
-    if !is_trade_listing_dvm_kind(kind) {
+    if !is_trade_listing_kind(kind) {
         return Err(TradeListingDvmError::UnsupportedKind);
     }
 

@@ -18,7 +18,7 @@ use radroots_identity::RadrootsIdentity;
 use radroots_nostr::prelude::{
     RadrootsNostrApplicationHandlerSpec, radroots_nostr_bootstrap_service_presence,
 };
-use radroots_trade::listing::dvm_kinds::TRADE_LISTING_DVM_KINDS;
+use radroots_trade::listing::kinds::TRADE_LISTING_KINDS;
 use tracing::{info, warn};
 
 pub async fn run_rhi(settings: &config::Settings, args: &cli_args) -> Result<()> {
@@ -40,7 +40,7 @@ pub async fn run_rhi(settings: &config::Settings, args: &cli_args) -> Result<()>
     let md = settings.metadata.clone();
 
     if !relays.is_empty() {
-        let handler_kinds = TRADE_LISTING_DVM_KINDS
+        let handler_kinds = TRADE_LISTING_KINDS
             .iter()
             .map(|kind| *kind as u32)
             .collect();
