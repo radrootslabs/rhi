@@ -3,12 +3,8 @@
 pub mod adapters;
 pub mod cli;
 pub mod config;
-pub mod infra;
+pub mod features;
 pub mod rhi;
-
-pub mod features {
-    pub mod trade_listing;
-}
 
 pub use cli::Args as cli_args;
 
