@@ -1779,7 +1779,7 @@ checksum = "74765f6d916ee2faa39bc8e68e4f3ed8949b48cccdac59983d287a7cb71ce9c5"
 
 [[package]]
 name = "radroots-core"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "rust_decimal",
  "rust_decimal_macros",
@@ -1789,7 +1789,7 @@ dependencies = [
 
 [[package]]
 name = "radroots-events"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "radroots-core",
  "serde",
@@ -1799,7 +1799,7 @@ dependencies = [
 
 [[package]]
 name = "radroots-events-codec"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "nostr",
  "radroots-core",
@@ -1809,7 +1809,7 @@ dependencies = [
 
 [[package]]
 name = "radroots-identity"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "nostr",
  "radroots-events",
@@ -1822,7 +1822,7 @@ dependencies = [
 
 [[package]]
 name = "radroots-log"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "thiserror 1.0.69",
  "tracing",
@@ -1832,7 +1832,7 @@ dependencies = [
 
 [[package]]
 name = "radroots-nostr"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "nostr",
  "nostr-sdk",
@@ -1847,7 +1847,7 @@ dependencies = [
 
 [[package]]
 name = "radroots-runtime"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1864,7 +1864,7 @@ dependencies = [
 
 [[package]]
 name = "radroots-trade"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "radroots-core",
  "radroots-events",
