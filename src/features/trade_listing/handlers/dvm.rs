@@ -1254,6 +1254,7 @@ fn ensure_transition(
     }
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub async fn handle_error(
     error: TradeListingDvmError,
     event: &RadrootsNostrEvent,
@@ -1277,7 +1278,9 @@ mod tests {
         handle_question, handle_receipt, parse_payload, send_envelope, send_event_io, tag_has_value,
         tag_value, validate_farm_dependencies, validate_listing_event_io,
     };
-    use crate::features::trade_listing::state::{TradeListingState, TradeOrderState};
+    use crate::features::trade_listing::state::{
+        TradeListingState, TradeListingStateError, TradeOrderState,
+    };
     use radroots_core::{RadrootsCoreCurrency, RadrootsCoreDiscountValue, RadrootsCoreMoney};
     use radroots_events::RadrootsNostrEventPtr;
     use radroots_events::listing::RadrootsListingFarmRef;
@@ -1498,6 +1501,134 @@ mod tests {
             100,
             RadrootsCoreCurrency::USD,
         ))
+    }
+
+    fn sender_for_message<'a>(
+        message_type: TradeListingMessageType,
+        seller_keys: &'a RadrootsNostrKeys,
+        buyer_keys: &'a RadrootsNostrKeys,
+    ) -> &'a RadrootsNostrKeys {
+        match message_type {
+            TradeListingMessageType::OrderResponse
+            | TradeListingMessageType::OrderRevision
+            | TradeListingMessageType::Answer
+            | TradeListingMessageType::DiscountOffer
+            | TradeListingMessageType::FulfillmentUpdate => seller_keys,
+            _ => buyer_keys,
+        }
+    }
+
+    fn payload_for_message(
+        message_type: TradeListingMessageType,
+        order_id: &str,
+        listing_addr: &str,
+        buyer_pub: &str,
+        seller_pub: &str,
+    ) -> serde_json::Value {
+        match message_type {
+            TradeListingMessageType::OrderRequest => {
+                serde_json::to_value(make_order(
+                    order_id,
+                    listing_addr,
+                    buyer_pub,
+                    seller_pub,
+                    TradeOrderStatus::Requested,
+                ))
+                .expect("order request payload")
+            }
+            TradeListingMessageType::OrderResponse => serde_json::to_value(TradeOrderResponse {
+                accepted: true,
+                reason: None,
+            })
+            .expect("order response payload"),
+            TradeListingMessageType::OrderRevision => {
+                serde_json::to_value(TradeOrderRevision {
+                    revision_id: "r-matrix".to_string(),
+                    order_id: order_id.to_string(),
+                    changes: Vec::new(),
+                    reason: None,
+                })
+                .expect("order revision payload")
+            }
+            TradeListingMessageType::OrderRevisionAccept => {
+                serde_json::to_value(TradeOrderRevisionResponse {
+                    accepted: true,
+                    reason: None,
+                })
+                .expect("order revision accept payload")
+            }
+            TradeListingMessageType::OrderRevisionDecline => {
+                serde_json::to_value(TradeOrderRevisionResponse {
+                    accepted: false,
+                    reason: None,
+                })
+                .expect("order revision decline payload")
+            }
+            TradeListingMessageType::Question => serde_json::to_value(TradeQuestion {
+                question_id: "q-matrix".to_string(),
+                order_id: Some(order_id.to_string()),
+                listing_addr: Some(listing_addr.to_string()),
+                question_text: "question".to_string(),
+            })
+            .expect("question payload"),
+            TradeListingMessageType::Answer => serde_json::to_value(TradeAnswer {
+                question_id: "q-matrix".to_string(),
+                order_id: Some(order_id.to_string()),
+                listing_addr: Some(listing_addr.to_string()),
+                answer_text: "answer".to_string(),
+            })
+            .expect("answer payload"),
+            TradeListingMessageType::DiscountRequest => {
+                serde_json::to_value(TradeDiscountRequest {
+                    discount_id: "d-matrix".to_string(),
+                    order_id: order_id.to_string(),
+                    value: sample_discount_value(),
+                    conditions: None,
+                })
+                .expect("discount request payload")
+            }
+            TradeListingMessageType::DiscountOffer => {
+                serde_json::to_value(TradeDiscountOffer {
+                    discount_id: "d-matrix".to_string(),
+                    order_id: order_id.to_string(),
+                    value: sample_discount_value(),
+                    conditions: None,
+                })
+                .expect("discount offer payload")
+            }
+            TradeListingMessageType::DiscountAccept => {
+                serde_json::to_value(TradeDiscountDecision::Accept {
+                    value: sample_discount_value(),
+                })
+                .expect("discount accept payload")
+            }
+            TradeListingMessageType::DiscountDecline => {
+                serde_json::to_value(TradeDiscountDecision::Decline { reason: None })
+                    .expect("discount decline payload")
+            }
+            TradeListingMessageType::Cancel => {
+                serde_json::to_value(TradeListingCancel { reason: None }).expect("cancel payload")
+            }
+            TradeListingMessageType::FulfillmentUpdate => {
+                serde_json::to_value(TradeFulfillmentUpdate {
+                    status: TradeFulfillmentStatus::Shipped,
+                    tracking: None,
+                    eta: None,
+                    notes: None,
+                })
+                .expect("fulfillment payload")
+            }
+            TradeListingMessageType::Receipt => serde_json::to_value(TradeReceipt {
+                acknowledged: true,
+                at: 1,
+                note: None,
+            })
+            .expect("receipt payload"),
+            TradeListingMessageType::ListingValidateRequest => {
+                json!({"listing_event":{"id":"listing-event","relays":null}})
+            }
+            TradeListingMessageType::ListingValidateResult => json!({"valid": true, "errors": []}),
+        }
     }
 
     #[test]
@@ -3840,5 +3971,469 @@ mod tests {
         .await
         .expect("latest metadata");
         assert!(latest_metadata.is_some());
+    }
+
+    #[tokio::test]
+    async fn handle_event_guard_and_dispatch_error_paths_are_covered() {
+        let _guard = test_guard();
+        let (rhi_keys, seller_keys, buyer_keys) = make_keys();
+        let client = make_client(&rhi_keys);
+        let listing_addr = listing_addr_for_seller(&seller_keys);
+        let rhi_pub = rhi_keys.public_key().to_hex();
+        let buyer_pub = buyer_keys.public_key().to_hex();
+        let seller_pub = seller_keys.public_key().to_hex();
+        let order_id = "order-1";
+        let missing_order_id = "order-missing";
+        let state = state_with_order(
+            &listing_addr,
+            order_id,
+            &buyer_pub,
+            &seller_pub,
+            TradeOrderStatus::Requested,
+        )
+        .await;
+
+        let invalid_json_event = make_event(
+            &buyer_keys,
+            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REQ),
+            "{".to_string(),
+            make_custom_tags(&rhi_pub, &listing_addr, Some(order_id)),
+        );
+        let invalid_json_result = handle_event(
+            invalid_json_event,
+            make_custom_tags(&rhi_pub, &listing_addr, Some(order_id)),
+            rhi_keys.clone(),
+            client.clone(),
+            state.clone(),
+        )
+        .await;
+        assert!(matches!(invalid_json_result, Err(TradeListingDvmError::Serde(_))));
+
+        let invalid_envelope_event = make_event(
+            &buyer_keys,
+            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REQ),
+            make_envelope_content(
+                TradeListingMessageType::OrderRequest,
+                &listing_addr,
+                None,
+                json!({}),
+            ),
+            make_custom_tags(&rhi_pub, &listing_addr, Some(order_id)),
+        );
+        let invalid_envelope_result = handle_event(
+            invalid_envelope_event,
+            make_custom_tags(&rhi_pub, &listing_addr, Some(order_id)),
+            rhi_keys.clone(),
+            client.clone(),
+            state.clone(),
+        )
+        .await;
+        assert!(matches!(
+            invalid_envelope_result,
+            Err(TradeListingDvmError::InvalidEnvelope(_))
+        ));
+
+        let missing_a_tags = vec![RadrootsNostrTag::custom(
+            RadrootsNostrTagKind::custom("p"),
+            vec![rhi_pub.clone()],
+        )];
+        let missing_a_event = make_event(
+            &buyer_keys,
+            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REQ),
+            make_envelope_content(
+                TradeListingMessageType::OrderRequest,
+                &listing_addr,
+                Some(order_id),
+                payload_for_message(
+                    TradeListingMessageType::OrderRequest,
+                    order_id,
+                    &listing_addr,
+                    &buyer_pub,
+                    &seller_pub,
+                ),
+            ),
+            missing_a_tags.clone(),
+        );
+        let missing_a_result = handle_event(
+            missing_a_event,
+            missing_a_tags,
+            rhi_keys.clone(),
+            client.clone(),
+            state.clone(),
+        )
+        .await;
+        assert!(matches!(
+            missing_a_result,
+            Err(TradeListingDvmError::MissingTag("a"))
+        ));
+
+        let invalid_addr = "30402:badpubkey:id";
+        let invalid_addr_tags = make_custom_tags(&rhi_pub, invalid_addr, Some(order_id));
+        let invalid_addr_event = make_event(
+            &buyer_keys,
+            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REQ),
+            make_envelope_content(
+                TradeListingMessageType::OrderRequest,
+                invalid_addr,
+                Some(order_id),
+                payload_for_message(
+                    TradeListingMessageType::OrderRequest,
+                    order_id,
+                    invalid_addr,
+                    &buyer_pub,
+                    &seller_pub,
+                ),
+            ),
+            invalid_addr_tags.clone(),
+        );
+        let invalid_addr_result = handle_event(
+            invalid_addr_event,
+            invalid_addr_tags,
+            rhi_keys.clone(),
+            client.clone(),
+            state.clone(),
+        )
+        .await;
+        assert!(matches!(
+            invalid_addr_result,
+            Err(TradeListingDvmError::InvalidListingAddr)
+        ));
+
+        let listing_validate_parse_error_event = make_event(
+            &buyer_keys,
+            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_VALIDATE_REQ),
+            make_envelope_content(
+                TradeListingMessageType::ListingValidateRequest,
+                &listing_addr,
+                None,
+                json!({"listing_event": 1}),
+            ),
+            make_custom_tags(&rhi_pub, &listing_addr, None),
+        );
+        let listing_validate_parse_error = handle_event(
+            listing_validate_parse_error_event,
+            make_custom_tags(&rhi_pub, &listing_addr, None),
+            rhi_keys.clone(),
+            client.clone(),
+            state.clone(),
+        )
+        .await;
+        assert!(matches!(
+            listing_validate_parse_error,
+            Err(TradeListingDvmError::InvalidPayload(_))
+        ));
+
+        push_fetch_event_by_id_error_not_found();
+        let listing_validate_send_err_event = make_event(
+            &buyer_keys,
+            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_VALIDATE_REQ),
+            make_envelope_content(
+                TradeListingMessageType::ListingValidateRequest,
+                &listing_addr,
+                None,
+                json!({"listing_event":{"id":"missing","relays":null}}),
+            ),
+            make_custom_tags(&rhi_pub, &listing_addr, None),
+        );
+        assert!(matches!(
+            handle_event(
+                listing_validate_send_err_event,
+                make_custom_tags(&rhi_pub, &listing_addr, None),
+                rhi_keys.clone(),
+                client.clone(),
+                state.clone()
+            )
+            .await,
+            Err(TradeListingDvmError::Nostr(_))
+        ));
+
+        let listing_validate_fetch_err_event = make_event(
+            &buyer_keys,
+            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_VALIDATE_REQ),
+            make_envelope_content(
+                TradeListingMessageType::ListingValidateRequest,
+                &listing_addr,
+                None,
+                json!({"listing_event": null}),
+            ),
+            make_custom_tags(&rhi_pub, &listing_addr, None),
+        );
+        assert!(matches!(
+            handle_event(
+                listing_validate_fetch_err_event,
+                make_custom_tags(&rhi_pub, &listing_addr, None),
+                rhi_keys.clone(),
+                client.clone(),
+                state.clone()
+            )
+            .await,
+            Err(TradeListingDvmError::Nostr(_))
+        ));
+
+        let missing_d_cases: Vec<(TradeListingMessageType, u16)> = vec![
+            (TradeListingMessageType::OrderRequest, KIND_TRADE_LISTING_ORDER_REQ),
+            (TradeListingMessageType::OrderResponse, KIND_TRADE_LISTING_ORDER_RES),
+            (
+                TradeListingMessageType::OrderRevision,
+                KIND_TRADE_LISTING_ORDER_REVISION_REQ,
+            ),
+            (
+                TradeListingMessageType::OrderRevisionAccept,
+                KIND_TRADE_LISTING_ORDER_REVISION_RES,
+            ),
+            (
+                TradeListingMessageType::OrderRevisionDecline,
+                KIND_TRADE_LISTING_ORDER_REVISION_RES,
+            ),
+            (TradeListingMessageType::Question, KIND_TRADE_LISTING_QUESTION_REQ),
+            (TradeListingMessageType::Answer, KIND_TRADE_LISTING_ANSWER_RES),
+            (
+                TradeListingMessageType::DiscountRequest,
+                KIND_TRADE_LISTING_DISCOUNT_REQ,
+            ),
+            (
+                TradeListingMessageType::DiscountOffer,
+                KIND_TRADE_LISTING_DISCOUNT_OFFER_RES,
+            ),
+            (
+                TradeListingMessageType::DiscountAccept,
+                KIND_TRADE_LISTING_DISCOUNT_ACCEPT_REQ,
+            ),
+            (
+                TradeListingMessageType::DiscountDecline,
+                KIND_TRADE_LISTING_DISCOUNT_DECLINE_REQ,
+            ),
+            (TradeListingMessageType::Cancel, KIND_TRADE_LISTING_CANCEL_REQ),
+            (
+                TradeListingMessageType::FulfillmentUpdate,
+                KIND_TRADE_LISTING_FULFILLMENT_UPDATE_REQ,
+            ),
+            (TradeListingMessageType::Receipt, KIND_TRADE_LISTING_RECEIPT_REQ),
+        ];
+        for (message_type, kind) in missing_d_cases {
+            let sender = sender_for_message(message_type, &seller_keys, &buyer_keys);
+            let event = make_event(
+                sender,
+                RadrootsNostrKind::Custom(kind),
+                make_envelope_content(
+                    message_type,
+                    &listing_addr,
+                    Some(order_id),
+                    payload_for_message(
+                        message_type,
+                        order_id,
+                        &listing_addr,
+                        &buyer_pub,
+                        &seller_pub,
+                    ),
+                ),
+                make_custom_tags(&rhi_pub, &listing_addr, None),
+            );
+            let result = handle_event(
+                event,
+                make_custom_tags(&rhi_pub, &listing_addr, None),
+                rhi_keys.clone(),
+                client.clone(),
+                state.clone(),
+            )
+            .await;
+            assert!(matches!(
+                result,
+                Err(TradeListingDvmError::MissingTag("d"))
+            ));
+        }
+
+        let missing_order_cases: Vec<(TradeListingMessageType, u16)> = vec![
+            (TradeListingMessageType::OrderResponse, KIND_TRADE_LISTING_ORDER_RES),
+            (
+                TradeListingMessageType::OrderRevision,
+                KIND_TRADE_LISTING_ORDER_REVISION_REQ,
+            ),
+            (
+                TradeListingMessageType::OrderRevisionAccept,
+                KIND_TRADE_LISTING_ORDER_REVISION_RES,
+            ),
+            (
+                TradeListingMessageType::OrderRevisionDecline,
+                KIND_TRADE_LISTING_ORDER_REVISION_RES,
+            ),
+            (TradeListingMessageType::Question, KIND_TRADE_LISTING_QUESTION_REQ),
+            (TradeListingMessageType::Answer, KIND_TRADE_LISTING_ANSWER_RES),
+            (
+                TradeListingMessageType::DiscountRequest,
+                KIND_TRADE_LISTING_DISCOUNT_REQ,
+            ),
+            (
+                TradeListingMessageType::DiscountOffer,
+                KIND_TRADE_LISTING_DISCOUNT_OFFER_RES,
+            ),
+            (
+                TradeListingMessageType::DiscountAccept,
+                KIND_TRADE_LISTING_DISCOUNT_ACCEPT_REQ,
+            ),
+            (
+                TradeListingMessageType::DiscountDecline,
+                KIND_TRADE_LISTING_DISCOUNT_DECLINE_REQ,
+            ),
+            (TradeListingMessageType::Cancel, KIND_TRADE_LISTING_CANCEL_REQ),
+            (
+                TradeListingMessageType::FulfillmentUpdate,
+                KIND_TRADE_LISTING_FULFILLMENT_UPDATE_REQ,
+            ),
+            (TradeListingMessageType::Receipt, KIND_TRADE_LISTING_RECEIPT_REQ),
+        ];
+        for (message_type, kind) in missing_order_cases {
+            let sender = sender_for_message(message_type, &seller_keys, &buyer_keys);
+            let event = make_event(
+                sender,
+                RadrootsNostrKind::Custom(kind),
+                make_envelope_content(
+                    message_type,
+                    &listing_addr,
+                    Some(missing_order_id),
+                    payload_for_message(
+                        message_type,
+                        missing_order_id,
+                        &listing_addr,
+                        &buyer_pub,
+                        &seller_pub,
+                    ),
+                ),
+                make_custom_tags(&rhi_pub, &listing_addr, Some(missing_order_id)),
+            );
+            let result = handle_event(
+                event,
+                make_custom_tags(&rhi_pub, &listing_addr, Some(missing_order_id)),
+                rhi_keys.clone(),
+                client.clone(),
+                state.clone(),
+            )
+            .await;
+            assert!(matches!(
+                result,
+                Err(TradeListingDvmError::State(TradeListingStateError::MissingOrder))
+            ));
+        }
+
+        let transition_cases: Vec<(TradeListingMessageType, u16, TradeOrderStatus)> = vec![
+            (
+                TradeListingMessageType::OrderResponse,
+                KIND_TRADE_LISTING_ORDER_RES,
+                TradeOrderStatus::Completed,
+            ),
+            (
+                TradeListingMessageType::OrderRevision,
+                KIND_TRADE_LISTING_ORDER_REVISION_REQ,
+                TradeOrderStatus::Completed,
+            ),
+            (
+                TradeListingMessageType::OrderRevisionAccept,
+                KIND_TRADE_LISTING_ORDER_REVISION_RES,
+                TradeOrderStatus::Completed,
+            ),
+            (
+                TradeListingMessageType::OrderRevisionDecline,
+                KIND_TRADE_LISTING_ORDER_REVISION_RES,
+                TradeOrderStatus::Completed,
+            ),
+            (
+                TradeListingMessageType::Question,
+                KIND_TRADE_LISTING_QUESTION_REQ,
+                TradeOrderStatus::Completed,
+            ),
+            (
+                TradeListingMessageType::Answer,
+                KIND_TRADE_LISTING_ANSWER_RES,
+                TradeOrderStatus::Completed,
+            ),
+            (
+                TradeListingMessageType::DiscountOffer,
+                KIND_TRADE_LISTING_DISCOUNT_OFFER_RES,
+                TradeOrderStatus::Completed,
+            ),
+            (
+                TradeListingMessageType::DiscountAccept,
+                KIND_TRADE_LISTING_DISCOUNT_ACCEPT_REQ,
+                TradeOrderStatus::Completed,
+            ),
+            (
+                TradeListingMessageType::DiscountDecline,
+                KIND_TRADE_LISTING_DISCOUNT_DECLINE_REQ,
+                TradeOrderStatus::Completed,
+            ),
+            (
+                TradeListingMessageType::Cancel,
+                KIND_TRADE_LISTING_CANCEL_REQ,
+                TradeOrderStatus::Completed,
+            ),
+            (
+                TradeListingMessageType::FulfillmentUpdate,
+                KIND_TRADE_LISTING_FULFILLMENT_UPDATE_REQ,
+                TradeOrderStatus::Completed,
+            ),
+            (
+                TradeListingMessageType::Receipt,
+                KIND_TRADE_LISTING_RECEIPT_REQ,
+                TradeOrderStatus::Requested,
+            ),
+        ];
+        for (message_type, kind, status_before) in transition_cases {
+            set_order_status(&state, order_id, status_before).await;
+            let sender = sender_for_message(message_type, &seller_keys, &buyer_keys);
+            let event = make_event(
+                sender,
+                RadrootsNostrKind::Custom(kind),
+                make_envelope_content(
+                    message_type,
+                    &listing_addr,
+                    Some(order_id),
+                    payload_for_message(
+                        message_type,
+                        order_id,
+                        &listing_addr,
+                        &buyer_pub,
+                        &seller_pub,
+                    ),
+                ),
+                make_custom_tags(&rhi_pub, &listing_addr, Some(order_id)),
+            );
+            let result = handle_event(
+                event,
+                make_custom_tags(&rhi_pub, &listing_addr, Some(order_id)),
+                rhi_keys.clone(),
+                client.clone(),
+                state.clone(),
+            )
+            .await;
+            assert!(matches!(
+                result,
+                Err(TradeListingDvmError::State(TradeListingStateError::InvalidTransition { .. }))
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn fetch_listing_by_addr_error_regions_are_covered() {
+        let _guard = test_guard();
+        let (rhi_keys, seller_keys, _) = make_keys();
+        let client = make_client(&rhi_keys);
+
+        let invalid_author_result = fetch_listing_by_addr(&client, "30402:not_a_pubkey:list");
+        assert!(matches!(
+            invalid_author_result.await,
+            Err(TradeListingDvmError::InvalidListingAddr)
+        ));
+
+        let listing_addr = listing_addr_for_seller(&seller_keys);
+        dvm_test_hooks()
+            .lock()
+            .expect("hooks")
+            .fetch_events_results
+            .push_back(Err(TradeListingDvmError::InvalidOrder));
+        let fetch_error_result = fetch_listing_by_addr(&client, &listing_addr).await;
+        assert!(matches!(
+            fetch_error_result,
+            Err(TradeListingDvmError::InvalidOrder)
+        ));
     }
 }

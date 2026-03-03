@@ -154,9 +154,18 @@ fn resolve_tags_io(
 ) -> Result<Vec<RadrootsNostrTag>, radroots_nostr::error::RadrootsNostrTagsResolveError> {
     let resolved = match take_resolve_tags_hook() {
         Some(result) => result?,
-        None => radroots_nostr_tags_resolve(event, keys)?,
+        None => return radroots_nostr_tags_resolve(event, keys),
     };
     Ok(resolved)
+}
+
+fn map_notification_recv_result(
+    result: Result<
+        RadrootsNostrRelayPoolNotification,
+        tokio::sync::broadcast::error::RecvError,
+    >,
+) -> Result<RadrootsNostrRelayPoolNotification, ()> {
+    result.map_err(|_| ())
 }
 
 async fn handle_event_io(
@@ -285,7 +294,7 @@ pub async fn subscriber(
                 if let Some(result) = pop_notification_hook() {
                     return result;
                 }
-                notifications.recv().await.map_err(|_| ())
+                map_notification_recv_result(notifications.recv().await)
             } => {
                 let n = match msg {
                     Ok(n) => n,
@@ -317,8 +326,8 @@ pub async fn subscriber(
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::{
-        SubscriberTestHooks, handle_error_io, handle_event_io, process_event_notification,
-        resolve_tags_io, subscriber, subscriber_test_hooks,
+        SubscriberTestHooks, handle_error_io, handle_event_io, map_notification_recv_result,
+        process_event_notification, resolve_tags_io, subscriber, subscriber_test_hooks,
     };
     use crate::features::trade_listing::handlers::dvm::TradeListingDvmError;
     use crate::features::trade_listing::state::TradeListingState;
@@ -354,6 +363,16 @@ mod tests {
 
     fn scripted_shutdown_notification() -> RadrootsNostrRelayPoolNotification {
         RadrootsNostrRelayPoolNotification::Shutdown
+    }
+
+    #[test]
+    fn notification_recv_result_mapping_covers_ok_and_err() {
+        let keys = RadrootsNostrKeys::generate();
+        assert!(map_notification_recv_result(Ok(scripted_event_notification(&keys))).is_ok());
+        assert!(map_notification_recv_result(Err(
+            tokio::sync::broadcast::error::RecvError::Closed
+        ))
+        .is_err());
     }
 
     #[tokio::test]
