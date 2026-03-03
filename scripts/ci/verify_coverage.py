@@ -26,6 +26,7 @@ def read_thresholds(path: pathlib.Path) -> dict[str, float | bool]:
         "line_percent": float(coverage["line_percent"]),
         "function_percent": float(coverage["function_percent"]),
         "branch_percent": float(coverage["branch_percent"]),
+        "region_percent": float(coverage["region_percent"]),
         "require_branch_records": bool(coverage["require_branch_records"]),
     }
 
@@ -90,6 +91,11 @@ def main() -> int:
             metric_percent(totals, "branches"),
             thresholds["branch_percent"],
         ),
+        (
+            "regions",
+            metric_percent(totals, "regions"),
+            thresholds["region_percent"],
+        ),
     ]
 
     errors: list[str] = []
@@ -109,7 +115,8 @@ def main() -> int:
         "coverage totals: "
         f"lines={metric_percent(totals, 'lines'):.4f}% "
         f"functions={metric_percent(totals, 'functions'):.4f}% "
-        f"branches={metric_percent(totals, 'branches'):.4f}%"
+        f"branches={metric_percent(totals, 'branches'):.4f}% "
+        f"regions={metric_percent(totals, 'regions'):.4f}%"
     )
     if errors:
         for error in errors:

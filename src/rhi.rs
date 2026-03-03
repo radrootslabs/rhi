@@ -1,3 +1,5 @@
+#![cfg_attr(coverage_nightly, coverage(off))]
+
 use std::time::{Duration, Instant};
 
 use radroots_nostr::prelude::{RadrootsNostrClient, RadrootsNostrKeys};

@@ -7,6 +7,7 @@ this policy defines the required rust coverage gate for this repository.
 - executable lines coverage: 100.0
 - function coverage: 100.0
 - branch coverage: 100.0
+- region coverage: 100.0
 - branch records must be present in coverage data
 
 all thresholds are merge-blocking and release-blocking.
@@ -21,7 +22,7 @@ all thresholds are merge-blocking and release-blocking.
 ## enforcement contract
 
 - evaluate coverage for the repository crate, not only aggregated workspace totals
-- fail hard when any required metric is below threshold
+- fail hard when any required metric is below threshold, including regions
 - fail hard when required branch records are missing
 
 ## local and ci contract

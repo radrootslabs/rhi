@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+#![cfg_attr(coverage_nightly, coverage(off))]
 
 use std::{sync::Arc, time::Duration};
 
