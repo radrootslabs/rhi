@@ -77,6 +77,7 @@ impl core::fmt::Display for TradeListingStateError {
 impl std::error::Error for TradeListingStateError {}
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::{TradeListingState, TradeListingStateError, TradeOrderState};
     use radroots_trade::listing::order::TradeOrderStatus;

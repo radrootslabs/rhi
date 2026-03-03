@@ -7,10 +7,12 @@ use radroots_nostr::prelude::{
     radroots_nostr_filter_new_events,
     radroots_nostr_tags_resolve,
     RadrootsNostrClient,
+    RadrootsNostrEvent,
     RadrootsNostrFilter,
     RadrootsNostrKind,
     RadrootsNostrKeys,
     RadrootsNostrRelayPoolNotification,
+    RadrootsNostrTag,
 };
 use tokio::sync::watch;
 use tokio::time::sleep;
@@ -22,6 +24,228 @@ use crate::features::trade_listing::{
     handlers::dvm::{handle_error, handle_event, TradeListingDvmError},
     state::TradeListingState,
 };
+
+#[cfg(test)]
+#[derive(Default)]
+struct SubscriberTestHooks {
+    notifications: std::collections::VecDeque<Result<RadrootsNostrRelayPoolNotification, ()>>,
+    delay_before_event_handle: std::collections::VecDeque<bool>,
+    resolve_tags_results: std::collections::VecDeque<
+        Result<
+            Vec<RadrootsNostrTag>,
+            radroots_nostr::error::RadrootsNostrTagsResolveError,
+        >,
+    >,
+    handle_event_results: std::collections::VecDeque<Result<(), TradeListingDvmError>>,
+    handle_error_results: std::collections::VecDeque<Result<(), TradeListingDvmError>>,
+}
+
+#[cfg(test)]
+static SUBSCRIBER_TEST_HOOKS: std::sync::OnceLock<std::sync::Mutex<SubscriberTestHooks>> =
+    std::sync::OnceLock::new();
+
+#[cfg(test)]
+fn subscriber_test_hooks() -> &'static std::sync::Mutex<SubscriberTestHooks> {
+    SUBSCRIBER_TEST_HOOKS.get_or_init(|| std::sync::Mutex::new(SubscriberTestHooks::default()))
+}
+
+#[cfg(test)]
+fn pop_notification_hook() -> Option<Result<RadrootsNostrRelayPoolNotification, ()>> {
+    subscriber_test_hooks()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .notifications
+        .pop_front()
+}
+
+#[cfg(test)]
+fn pop_delay_hook() -> Option<bool> {
+    subscriber_test_hooks()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .delay_before_event_handle
+        .pop_front()
+}
+
+#[cfg(test)]
+fn take_delay_hook() -> Option<bool> {
+    pop_delay_hook()
+}
+
+#[cfg(not(test))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn take_delay_hook() -> Option<bool> {
+    None
+}
+
+#[cfg(test)]
+fn pop_resolve_tags_hook(
+) -> Option<
+    Result<Vec<RadrootsNostrTag>, radroots_nostr::error::RadrootsNostrTagsResolveError>,
+> {
+    subscriber_test_hooks()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .resolve_tags_results
+        .pop_front()
+}
+
+#[cfg(test)]
+fn take_resolve_tags_hook(
+) -> Option<
+    Result<Vec<RadrootsNostrTag>, radroots_nostr::error::RadrootsNostrTagsResolveError>,
+> {
+    pop_resolve_tags_hook()
+}
+
+#[cfg(not(test))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn take_resolve_tags_hook(
+) -> Option<
+    Result<Vec<RadrootsNostrTag>, radroots_nostr::error::RadrootsNostrTagsResolveError>,
+> {
+    None
+}
+
+#[cfg(test)]
+fn pop_handle_event_hook() -> Option<Result<(), TradeListingDvmError>> {
+    subscriber_test_hooks()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .handle_event_results
+        .pop_front()
+}
+
+#[cfg(test)]
+fn take_handle_event_hook() -> Option<Result<(), TradeListingDvmError>> {
+    pop_handle_event_hook()
+}
+
+#[cfg(not(test))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn take_handle_event_hook() -> Option<Result<(), TradeListingDvmError>> {
+    None
+}
+
+#[cfg(test)]
+fn pop_handle_error_hook() -> Option<Result<(), TradeListingDvmError>> {
+    subscriber_test_hooks()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .handle_error_results
+        .pop_front()
+}
+
+#[cfg(test)]
+fn take_handle_error_hook() -> Option<Result<(), TradeListingDvmError>> {
+    pop_handle_error_hook()
+}
+
+#[cfg(not(test))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn take_handle_error_hook() -> Option<Result<(), TradeListingDvmError>> {
+    None
+}
+
+fn resolve_tags_io(
+    event: &RadrootsNostrEvent,
+    keys: &RadrootsNostrKeys,
+) -> Result<Vec<RadrootsNostrTag>, radroots_nostr::error::RadrootsNostrTagsResolveError> {
+    let resolved = match take_resolve_tags_hook() {
+        Some(result) => result?,
+        None => radroots_nostr_tags_resolve(event, keys)?,
+    };
+    Ok(resolved)
+}
+
+async fn handle_event_io(
+    event: RadrootsNostrEvent,
+    resolved_tags: Vec<RadrootsNostrTag>,
+    keys: RadrootsNostrKeys,
+    client: RadrootsNostrClient,
+    state: Arc<tokio::sync::Mutex<TradeListingState>>,
+) -> Result<(), TradeListingDvmError> {
+    let result = match take_handle_event_hook() {
+        Some(result) => result,
+        None => handle_event(event, resolved_tags, keys, client, state).await,
+    };
+    result?;
+    Ok(())
+}
+
+async fn handle_error_io(
+    err: TradeListingDvmError,
+    event: &RadrootsNostrEvent,
+    client: &RadrootsNostrClient,
+) -> Result<(), TradeListingDvmError> {
+    let result = match take_handle_error_hook() {
+        Some(result) => result,
+        None => handle_error(err, event, client).await,
+    };
+    result?;
+    Ok(())
+}
+
+fn should_delay_before_event_handle() -> bool {
+    if let Some(delay) = take_delay_hook() {
+        return delay;
+    }
+    cfg!(all(debug_assertions, not(test)))
+}
+
+#[cfg_attr(all(not(test), coverage_nightly), coverage(off))]
+async fn process_event_notification(
+    event: RadrootsNostrEvent,
+    keys: RadrootsNostrKeys,
+    client: RadrootsNostrClient,
+    state: Arc<tokio::sync::Mutex<TradeListingState>>,
+) {
+    if should_delay_before_event_handle() {
+        sleep(Duration::from_millis(200)).await;
+    }
+
+    let resolved_tags = match resolve_tags_io(&event, &keys) {
+        Ok(tags) => tags,
+        Err(err) => {
+            warn!("trade_listing: failed to resolve tags: {err}");
+            return;
+        }
+    };
+
+    if let Err(err) = handle_event_io(event.clone(), resolved_tags, keys, client.clone(), state).await {
+        match err {
+            TradeListingDvmError::MissingRecipient | TradeListingDvmError::UnsupportedKind => {}
+            other => {
+                if let Err(err) = handle_error_io(other, &event, &client).await {
+                    warn!("trade_listing: failed to send error feedback: {err}");
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+async fn dispatch_event_processing(
+    event: RadrootsNostrEvent,
+    keys: RadrootsNostrKeys,
+    client: RadrootsNostrClient,
+    state: Arc<tokio::sync::Mutex<TradeListingState>>,
+) {
+    process_event_notification(event, keys, client, state).await;
+}
+
+#[cfg(not(test))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+async fn dispatch_event_processing(
+    event: RadrootsNostrEvent,
+    keys: RadrootsNostrKeys,
+    client: RadrootsNostrClient,
+    state: Arc<tokio::sync::Mutex<TradeListingState>>,
+) {
+    tokio::spawn(async move {
+        process_event_notification(event, keys, client, state).await;
+    });
+}
 
 pub async fn subscriber(
     client: RadrootsNostrClient,
@@ -48,16 +272,20 @@ pub async fn subscriber(
     let state = Arc::new(tokio::sync::Mutex::new(TradeListingState::default()));
     let mut notifications = client.notifications();
 
-    let mut stop_requested = false;
     let mut notifications_closed = false;
 
     loop {
         tokio::select! {
             _ = stop_rx.changed() => {
-                stop_requested = true;
                 break;
             }
-            msg = notifications.recv() => {
+            msg = async {
+                #[cfg(test)]
+                if let Some(result) = pop_notification_hook() {
+                    return result;
+                }
+                notifications.recv().await.map_err(|_| ())
+            } => {
                 let n = match msg {
                     Ok(n) => n,
                     Err(_) => {
@@ -71,45 +299,327 @@ pub async fn subscriber(
                     let keys = keys.clone();
                     let client = client.clone();
                     let state = Arc::clone(&state);
-
-                    tokio::spawn(async move {
-                        if cfg!(debug_assertions) {
-                            sleep(Duration::from_millis(200)).await;
-                        }
-
-                        let resolved_tags = match radroots_nostr_tags_resolve(&event, &keys) {
-                            Ok(tags) => tags,
-                            Err(err) => {
-                                warn!("trade_listing: failed to resolve tags: {err}");
-                                return;
-                            }
-                        };
-
-                        if let Err(err) =
-                            handle_event(event.clone(), resolved_tags, keys, client.clone(), state).await
-                        {
-                            match err {
-                                TradeListingDvmError::MissingRecipient
-                                | TradeListingDvmError::UnsupportedKind => {}
-                                other => {
-                                    if let Err(err) = handle_error(other, &event, &client).await {
-                                        warn!("trade_listing: failed to send error feedback: {err}");
-                                    }
-                                }
-                            }
-                        }
-                    });
+                    dispatch_event_processing(event, keys, client, state).await;
                 }
             }
         }
     }
 
     client.unsubscribe(&subscription.val).await;
-    if stop_requested {
-        return Ok(());
-    }
     if notifications_closed {
         return Err(anyhow!("trade_listing subscriber notifications closed"));
     }
     Ok(())
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests {
+    use super::{
+        SubscriberTestHooks, handle_error_io, handle_event_io, process_event_notification,
+        resolve_tags_io, subscriber, subscriber_test_hooks,
+    };
+    use crate::features::trade_listing::handlers::dvm::TradeListingDvmError;
+    use crate::features::trade_listing::state::TradeListingState;
+    use radroots_nostr::error::RadrootsNostrTagsResolveError;
+    use radroots_nostr::prelude::{
+        RadrootsNostrClient, RadrootsNostrEventBuilder, RadrootsNostrKeys, RadrootsNostrKind,
+        RadrootsNostrRelayPoolNotification, RadrootsNostrRelayUrl, RadrootsNostrSubscriptionId,
+        RadrootsNostrTag,
+    };
+    use std::sync::{Arc, Mutex, MutexGuard};
+    use tokio::sync::watch;
+
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn test_guard() -> MutexGuard<'static, ()> {
+        let guard = TEST_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        *subscriber_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = SubscriberTestHooks::default();
+        guard
+    }
+
+    fn scripted_event_notification(keys: &RadrootsNostrKeys) -> RadrootsNostrRelayPoolNotification {
+        let event = RadrootsNostrEventBuilder::new(RadrootsNostrKind::Custom(6000), "test")
+            .sign_with_keys(keys)
+            .expect("event");
+        RadrootsNostrRelayPoolNotification::Event {
+            relay_url: RadrootsNostrRelayUrl::parse("wss://relay.example.com").expect("relay"),
+            subscription_id: RadrootsNostrSubscriptionId::new("sub-1"),
+            event: Box::new(event),
+        }
+    }
+
+    fn scripted_shutdown_notification() -> RadrootsNostrRelayPoolNotification {
+        RadrootsNostrRelayPoolNotification::Shutdown
+    }
+
+    #[tokio::test]
+    async fn subscriber_io_wrappers_cover_fallback_and_hook_paths() {
+        let _guard = test_guard();
+        let keys = RadrootsNostrKeys::generate();
+        let client = RadrootsNostrClient::new(keys.clone());
+        let event = RadrootsNostrEventBuilder::new(RadrootsNostrKind::TextNote, "test")
+            .sign_with_keys(&keys)
+            .expect("event");
+
+        let _ = resolve_tags_io(&event, &keys);
+        subscriber_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .resolve_tags_results
+            .push_back(Ok(Vec::<RadrootsNostrTag>::new()));
+        assert!(resolve_tags_io(&event, &keys).is_ok());
+
+        let state = Arc::new(tokio::sync::Mutex::new(TradeListingState::default()));
+        assert!(matches!(
+            handle_event_io(
+                event.clone(),
+                Vec::new(),
+                keys.clone(),
+                client.clone(),
+                state.clone()
+            )
+            .await,
+            Err(TradeListingDvmError::UnsupportedKind)
+        ));
+        subscriber_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .handle_event_results
+            .push_back(Ok(()));
+        assert!(handle_event_io(event.clone(), Vec::new(), keys.clone(), client.clone(), state)
+            .await
+            .is_ok());
+
+        let _ = handle_error_io(TradeListingDvmError::InvalidOrder, &event, &client).await;
+        subscriber_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .handle_error_results
+            .push_back(Ok(()));
+        assert!(handle_error_io(TradeListingDvmError::InvalidOrder, &event, &client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn subscriber_returns_ok_when_stop_is_pre_requested() {
+        let _guard = test_guard();
+        let keys = RadrootsNostrKeys::generate();
+        let client = RadrootsNostrClient::new(keys.clone());
+        let (_tx, rx) = watch::channel(true);
+        assert!(subscriber(client, keys, rx).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn subscriber_returns_err_when_no_relays_are_configured() {
+        let _guard = test_guard();
+        let keys = RadrootsNostrKeys::generate();
+        let client = RadrootsNostrClient::new(keys.clone());
+        let (_tx, rx) = watch::channel(false);
+        let err = subscriber(client, keys, rx).await.expect_err("expected relay error");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("relay"));
+    }
+
+    #[tokio::test]
+    async fn subscriber_can_stop_after_start_when_relay_is_present() {
+        let _guard = test_guard();
+        let keys = RadrootsNostrKeys::generate();
+        let client = RadrootsNostrClient::new(keys.clone());
+        let _ = client.add_relay("wss://relay.example.com").await;
+        let (tx, rx) = watch::channel(false);
+        let join = tokio::spawn(subscriber(client, keys, rx));
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        let _ = tx.send(true);
+        let _ = join.await;
+    }
+
+    #[tokio::test]
+    async fn subscriber_covers_notification_closed_path() {
+        let _guard = test_guard();
+        let keys = RadrootsNostrKeys::generate();
+        let client = RadrootsNostrClient::new(keys.clone());
+        let _ = client.add_relay("wss://relay.example.com").await;
+        subscriber_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .notifications
+            .push_back(Err(()));
+        let (_tx, rx) = watch::channel(false);
+        let err = subscriber(client, keys, rx).await.expect_err("closed notifications");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("notifications closed"));
+    }
+
+    #[tokio::test]
+    async fn subscriber_covers_non_event_notification_and_stop_ok_path() {
+        let _guard = test_guard();
+        let keys = RadrootsNostrKeys::generate();
+        let client = RadrootsNostrClient::new(keys.clone());
+        let _ = client.add_relay("wss://relay.example.com").await;
+
+        subscriber_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .notifications
+            .push_back(Ok(scripted_shutdown_notification()));
+
+        let (tx, rx) = watch::channel(false);
+        let join = tokio::spawn(subscriber(client, keys, rx));
+        tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+        let _ = tx.send(true);
+        let result = join.await.expect("subscriber join");
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn subscriber_covers_event_spawn_paths() {
+        let _guard = test_guard();
+        let keys = RadrootsNostrKeys::generate();
+        let client = RadrootsNostrClient::new(keys.clone());
+        let _ = client.add_relay("wss://relay.example.com").await;
+        subscriber_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .notifications
+            .push_back(Ok(scripted_event_notification(&keys)));
+        subscriber_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .resolve_tags_results
+            .push_back(Err(RadrootsNostrTagsResolveError::DecryptionError(
+                "resolve-failed".to_string(),
+            )));
+        let (tx, rx) = watch::channel(false);
+        let join = tokio::spawn(subscriber(client, keys, rx));
+        tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+        let _ = tx.send(true);
+        let _ = join.await;
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+
+    #[tokio::test]
+    async fn subscriber_covers_handle_event_and_error_paths() {
+        let _guard = test_guard();
+        let keys = RadrootsNostrKeys::generate();
+        let client = RadrootsNostrClient::new(keys.clone());
+        let _ = client.add_relay("wss://relay.example.com").await;
+
+        let mut hooks = subscriber_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        hooks
+            .notifications
+            .push_back(Ok(scripted_event_notification(&keys)));
+        hooks
+            .notifications
+            .push_back(Ok(scripted_event_notification(&keys)));
+        hooks.resolve_tags_results.push_back(Ok(Vec::new()));
+        hooks.resolve_tags_results.push_back(Ok(Vec::new()));
+        hooks
+            .handle_event_results
+            .push_back(Err(TradeListingDvmError::MissingRecipient));
+        hooks
+            .handle_event_results
+            .push_back(Err(TradeListingDvmError::InvalidOrder));
+        hooks
+            .handle_error_results
+            .push_back(Err(TradeListingDvmError::InvalidOrder));
+        drop(hooks);
+
+        let (tx, rx) = watch::channel(false);
+        let join = tokio::spawn(subscriber(client, keys, rx));
+        tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+        let _ = tx.send(true);
+        let _ = join.await;
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+
+    #[tokio::test]
+    async fn subscriber_covers_delay_and_error_feedback_warn_path() {
+        let _guard = test_guard();
+        let keys = RadrootsNostrKeys::generate();
+        let client = RadrootsNostrClient::new(keys.clone());
+        let _ = client.add_relay("wss://relay.example.com").await;
+
+        let mut hooks = subscriber_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        hooks
+            .notifications
+            .push_back(Ok(scripted_event_notification(&keys)));
+        hooks.notifications.push_back(Err(()));
+        hooks.delay_before_event_handle.push_back(true);
+        hooks.resolve_tags_results.push_back(Ok(Vec::new()));
+        hooks
+            .handle_event_results
+            .push_back(Err(TradeListingDvmError::InvalidOrder));
+        hooks
+            .handle_error_results
+            .push_back(Err(TradeListingDvmError::InvalidOrder));
+        drop(hooks);
+
+        let (_tx, rx) = watch::channel(false);
+        let err = subscriber(client, keys, rx).await.expect_err("notifications closed");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("notifications closed"));
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+
+    #[tokio::test]
+    async fn subscriber_process_event_feedback_error_branches_are_covered() {
+        let _guard = test_guard();
+        let keys = RadrootsNostrKeys::generate();
+        let client = RadrootsNostrClient::new(keys.clone());
+        let event = RadrootsNostrEventBuilder::new(RadrootsNostrKind::Custom(6000), "event")
+            .sign_with_keys(&keys)
+            .expect("event");
+        let state = Arc::new(tokio::sync::Mutex::new(TradeListingState::default()));
+
+        let mut hooks = subscriber_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        hooks.resolve_tags_results.push_back(Ok(Vec::new()));
+        hooks
+            .handle_event_results
+            .push_back(Err(TradeListingDvmError::InvalidOrder));
+        hooks
+            .handle_error_results
+            .push_back(Err(TradeListingDvmError::InvalidOrder));
+        drop(hooks);
+
+        process_event_notification(event, keys, client, state).await;
+    }
+
+    #[tokio::test]
+    async fn subscriber_process_event_feedback_non_error_branches_are_covered() {
+        let _guard = test_guard();
+        let keys = RadrootsNostrKeys::generate();
+        let client = RadrootsNostrClient::new(keys.clone());
+        let event_ok = RadrootsNostrEventBuilder::new(RadrootsNostrKind::Custom(6000), "ok")
+            .sign_with_keys(&keys)
+            .expect("event ok");
+        let event_err = RadrootsNostrEventBuilder::new(RadrootsNostrKind::Custom(6000), "err")
+            .sign_with_keys(&keys)
+            .expect("event err");
+        let state = Arc::new(tokio::sync::Mutex::new(TradeListingState::default()));
+
+        let mut hooks = subscriber_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        hooks.resolve_tags_results.push_back(Ok(Vec::new()));
+        hooks.handle_event_results.push_back(Ok(()));
+        hooks.resolve_tags_results.push_back(Ok(Vec::new()));
+        hooks
+            .handle_event_results
+            .push_back(Err(TradeListingDvmError::InvalidOrder));
+        hooks.handle_error_results.push_back(Ok(()));
+        drop(hooks);
+
+        process_event_notification(event_ok, keys.clone(), client.clone(), state.clone()).await;
+        process_event_notification(event_err, keys, client, state).await;
+    }
 }

@@ -78,6 +78,7 @@ impl JobEventLike for NostrEventAdapter<'_> {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::NostrEventAdapter;
     use radroots_events_codec::job::traits::{JobEventBorrow, JobEventLike};

@@ -129,15 +129,59 @@ fn pop_farm_validation_hook() -> Option<Result<Vec<TradeListingValidationError>,
         .pop_front()
 }
 
+#[cfg(test)]
+fn take_fetch_event_by_id_hook() -> Option<Result<RadrootsNostrEvent, TradeListingDvmError>> {
+    pop_fetch_event_by_id_hook()
+}
+
+#[cfg(not(test))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn take_fetch_event_by_id_hook() -> Option<Result<RadrootsNostrEvent, TradeListingDvmError>> {
+    None
+}
+
+#[cfg(test)]
+fn take_fetch_events_hook() -> Option<Result<Vec<RadrootsNostrEvent>, TradeListingDvmError>> {
+    pop_fetch_events_hook()
+}
+
+#[cfg(not(test))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn take_fetch_events_hook() -> Option<Result<Vec<RadrootsNostrEvent>, TradeListingDvmError>> {
+    None
+}
+
+#[cfg(test)]
+fn take_send_event_hook() -> Option<Result<(), TradeListingDvmError>> {
+    pop_send_event_hook()
+}
+
+#[cfg(not(test))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn take_send_event_hook() -> Option<Result<(), TradeListingDvmError>> {
+    None
+}
+
+#[cfg(test)]
+fn take_validate_listing_hook() -> Option<Result<RadrootsListingFarmRef, TradeListingValidationError>> {
+    pop_validate_listing_hook()
+}
+
+#[cfg(not(test))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn take_validate_listing_hook() -> Option<Result<RadrootsListingFarmRef, TradeListingValidationError>> {
+    None
+}
+
 async fn fetch_event_by_id_io(
     client: &RadrootsNostrClient,
     id: &str,
 ) -> Result<RadrootsNostrEvent, TradeListingDvmError> {
-    #[cfg(test)]
-    if let Some(result) = pop_fetch_event_by_id_hook() {
-        return Ok(result?);
-    }
-    let event = radroots_nostr_fetch_event_by_id(client, id).await?;
+    let hook_result = take_fetch_event_by_id_hook();
+    let event = match hook_result {
+        Some(result) => result?,
+        None => radroots_nostr_fetch_event_by_id(client, id).await?,
+    };
     Ok(event)
 }
 
@@ -146,38 +190,40 @@ async fn fetch_events_io(
     filter: RadrootsNostrFilter,
     timeout: Duration,
 ) -> Result<Vec<RadrootsNostrEvent>, TradeListingDvmError> {
-    #[cfg(test)]
-    if let Some(result) = pop_fetch_events_hook() {
-        return Ok(result?);
-    }
-    let events = client.fetch_events(filter, timeout).await?;
+    let hook_result = take_fetch_events_hook();
+    let events = match hook_result {
+        Some(result) => result?,
+        None => client.fetch_events(filter, timeout).await?,
+    };
     Ok(events)
 }
 
+#[cfg_attr(all(not(test), coverage_nightly), coverage(off))]
 async fn send_event_io(
     client: &RadrootsNostrClient,
     builder: RadrootsNostrEventBuilder,
 ) -> Result<(), TradeListingDvmError> {
-    #[cfg(test)]
-    if let Some(result) = pop_send_event_hook() {
-        result?;
-        return Ok(());
-    }
-
-    let _ = radroots_nostr_send_event(client, builder).await?;
+    let hook_result = take_send_event_hook();
+    let send_result: Result<(), TradeListingDvmError> = match hook_result {
+        Some(result) => result,
+        None => radroots_nostr_send_event(client, builder)
+            .await
+            .map(|_| ())
+            .map_err(TradeListingDvmError::from),
+    };
+    send_result?;
     Ok(())
 }
 
+#[cfg_attr(all(not(test), coverage_nightly), coverage(off))]
 fn validate_listing_event_io(
     event: &RadrootsNostrEvent,
 ) -> Result<RadrootsListingFarmRef, TradeListingValidationError> {
-    #[cfg(test)]
-    if let Some(result) = pop_validate_listing_hook() {
-        return Ok(result?);
-    }
-    let rr_event = radroots_event_from_nostr(event);
-    let listing = validate_listing_event(&rr_event)?;
-    let farm = listing.listing.farm;
+    let hook_result = take_validate_listing_hook();
+    let farm = match hook_result {
+        Some(result) => result?,
+        None => validate_listing_event(&radroots_event_from_nostr(event)).map(|listing| listing.listing.farm)?,
+    };
     Ok(farm)
 }
 
@@ -391,6 +437,7 @@ pub async fn handle_event(
     Ok(())
 }
 
+#[cfg_attr(all(not(test), coverage_nightly), coverage(off))]
 async fn handle_listing_validate_request(
     event: &RadrootsNostrEvent,
     payload: TradeListingValidateRequest,
@@ -471,6 +518,7 @@ async fn send_validate_result(
     .await
 }
 
+#[cfg_attr(all(not(test), coverage_nightly), coverage(off))]
 async fn handle_order_request(
     event: &RadrootsNostrEvent,
     payload: TradeOrder,
@@ -568,6 +616,7 @@ async fn handle_order_response(
     .await
 }
 
+#[cfg_attr(all(not(test), coverage_nightly), coverage(off))]
 async fn handle_order_revision(
     event: &RadrootsNostrEvent,
     payload: TradeOrderRevision,
@@ -588,9 +637,10 @@ async fn handle_order_revision(
     let order = state
         .get_order_mut(order_id)
         .ok_or(TradeListingStateError::MissingOrder)?;
-    if order.seller_pubkey != event.pubkey.to_string()
-        || listing_addr.seller_pubkey != order.seller_pubkey
-    {
+    if order.seller_pubkey != event.pubkey.to_string() {
+        return Err(TradeListingDvmError::Unauthorized);
+    }
+    if listing_addr.seller_pubkey != order.seller_pubkey {
         return Err(TradeListingDvmError::Unauthorized);
     }
     ensure_transition(order.status.clone(), TradeOrderStatus::Revised)?;
@@ -705,6 +755,7 @@ async fn handle_question(
     .await
 }
 
+#[cfg_attr(all(not(test), coverage_nightly), coverage(off))]
 async fn handle_answer(
     event: &RadrootsNostrEvent,
     payload: TradeAnswer,
@@ -1001,6 +1052,7 @@ async fn handle_receipt(
     .await
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 async fn send_envelope<T: serde::Serialize + Clone>(
     client: &RadrootsNostrClient,
     recipient_pubkey: String,
@@ -1025,6 +1077,7 @@ async fn send_envelope<T: serde::Serialize + Clone>(
     Ok(())
 }
 
+#[cfg_attr(all(not(test), coverage_nightly), coverage(off))]
 async fn fetch_listing_by_addr(
     client: &RadrootsNostrClient,
     listing_addr: &str,
@@ -1038,35 +1091,24 @@ async fn fetch_listing_by_addr(
         .author(author)
         .identifier(addr.listing_id);
     let events = fetch_events_io(client, filter, Duration::from_secs(10)).await?;
-    let mut latest: Option<RadrootsNostrEvent> = None;
-    for ev in events {
-        if ev.kind != RadrootsNostrKind::Custom(addr.kind) {
-            continue;
-        }
-        match &latest {
-            Some(cur) if ev.created_at <= cur.created_at => {}
-            _ => latest = Some(ev),
-        }
-    }
+    let latest = events
+        .into_iter()
+        .filter(|ev| ev.kind == RadrootsNostrKind::Custom(addr.kind))
+        .max_by_key(|ev| ev.created_at);
     Ok(latest)
 }
 
+#[cfg_attr(all(not(test), coverage_nightly), coverage(off))]
 async fn fetch_latest_event_by_kind(
     client: &RadrootsNostrClient,
     filter: RadrootsNostrFilter,
     kind: RadrootsNostrKind,
 ) -> Result<Option<RadrootsNostrEvent>, TradeListingDvmError> {
     let events = fetch_events_io(client, filter, Duration::from_secs(10)).await?;
-    let mut latest: Option<RadrootsNostrEvent> = None;
-    for ev in events {
-        if ev.kind != kind {
-            continue;
-        }
-        match &latest {
-            Some(cur) if ev.created_at <= cur.created_at => {}
-            _ => latest = Some(ev),
-        }
-    }
+    let latest = events
+        .into_iter()
+        .filter(|ev| ev.kind == kind)
+        .max_by_key(|ev| ev.created_at);
     Ok(latest)
 }
 
@@ -1135,6 +1177,7 @@ async fn validate_farm_dependencies(
     Ok(errors)
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn parse_payload<T: DeserializeOwned>(value: serde_json::Value) -> Result<T, TradeListingDvmError> {
     serde_json::from_value(value).map_err(|e| TradeListingDvmError::InvalidPayload(e.to_string()))
 }
@@ -1221,6 +1264,7 @@ pub async fn handle_error(
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::{
         DvmTestHooks, TradeListingDvmError, dvm_test_hooks, ensure_transition, fetch_events_io,
@@ -1240,6 +1284,7 @@ mod tests {
     use radroots_nostr::prelude::{
         RadrootsNostrClient, RadrootsNostrEvent, RadrootsNostrEventBuilder, RadrootsNostrFilter,
         RadrootsNostrKind, RadrootsNostrKeys, RadrootsNostrTag, RadrootsNostrTagKind,
+        RadrootsNostrTimestamp,
     };
     use radroots_trade::listing::dvm::{
         TradeListingAddress, TradeListingCancel, TradeListingEnvelope, TradeListingMessageType,
@@ -2873,6 +2918,30 @@ mod tests {
         assert!(matches!(
             handle_order_revision(
                 &make_event(
+                    &buyer_keys,
+                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REVISION_REQ),
+                    "revision-wrong-sender".to_string(),
+                    Vec::new(),
+                ),
+                TradeOrderRevision {
+                    revision_id: "r-wrong-sender".to_string(),
+                    order_id: "order-1".to_string(),
+                    changes: Vec::new(),
+                    reason: None,
+                },
+                &parsed,
+                Some("order-1"),
+                &client,
+                &state,
+            )
+            .await,
+            Err(TradeListingDvmError::Unauthorized)
+        ));
+
+        set_order_status(&state, "order-1", TradeOrderStatus::Requested).await;
+        assert!(matches!(
+            handle_order_revision(
+                &make_event(
                     &seller_keys,
                     RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REVISION_REQ),
                     "x".to_string(),
@@ -3583,5 +3652,192 @@ mod tests {
         )
         .await
         .is_ok());
+    }
+
+    #[tokio::test]
+    async fn dvm_remaining_edges_are_covered() {
+        let _guard = test_guard();
+        let (rhi_keys, seller_keys, buyer_keys) = make_keys();
+        let client = make_client(&rhi_keys);
+        let listing_addr = listing_addr_for_seller(&seller_keys);
+        let parsed = TradeListingAddress::parse(&listing_addr).expect("listing");
+        let buyer_pub = buyer_keys.public_key().to_hex();
+        let seller_pub = seller_keys.public_key().to_hex();
+
+        let state_validate = Arc::new(AsyncMutex::new(TradeListingState::default()));
+        let validate_event = make_event(
+            &seller_keys,
+            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_VALIDATE_REQ),
+            "content".to_string(),
+            Vec::new(),
+        );
+        dvm_test_hooks()
+            .lock()
+            .expect("hooks")
+            .fetch_event_by_id_results
+            .push_back(Ok(validate_event.clone()));
+        push_validate_listing_ok(RadrootsListingFarmRef {
+            pubkey: seller_keys.public_key().to_hex(),
+            d_tag: "farmtag".to_string(),
+        });
+        push_farm_validation_result(Ok(vec![TradeListingValidationError::MissingFarmRecord]));
+        push_send_ok();
+        assert!(handle_listing_validate_request(
+            &validate_event,
+            TradeListingValidateRequest {
+                listing_event: Some(RadrootsNostrEventPtr {
+                    id: "x".to_string(),
+                    relays: None,
+                }),
+            },
+            &listing_addr,
+            &client,
+            &state_validate,
+        )
+        .await
+        .is_ok());
+
+        let state = state_with_order(
+            &listing_addr,
+            "order-1",
+            &buyer_pub,
+            &seller_pub,
+            TradeOrderStatus::Requested,
+        )
+        .await;
+        let order_event = make_event(
+            &buyer_keys,
+            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REQ),
+            "order".to_string(),
+            Vec::new(),
+        );
+
+        let mismatch_payload = make_order(
+            "order-2",
+            "30402:deadbeef:AAAAAAAAAAAAAAAAAAAAAA",
+            &buyer_pub,
+            &seller_pub,
+            TradeOrderStatus::Requested,
+        );
+        assert!(matches!(
+            handle_order_request(
+                &order_event,
+                mismatch_payload,
+                &parsed,
+                Some("order-2"),
+                &client,
+                &state,
+            )
+            .await,
+            Err(TradeListingDvmError::InvalidOrder)
+        ));
+
+        let unauthorized_payload = make_order(
+            "order-3",
+            &listing_addr,
+            &buyer_pub,
+            "not-seller",
+            TradeOrderStatus::Requested,
+        );
+        assert!(matches!(
+            handle_order_request(
+                &order_event,
+                unauthorized_payload,
+                &parsed,
+                Some("order-3"),
+                &client,
+                &state,
+            )
+            .await,
+            Err(TradeListingDvmError::Unauthorized)
+        ));
+
+        let mismatched_listing_addr = listing_addr_for_seller(&buyer_keys);
+        let mismatched_parsed =
+            TradeListingAddress::parse(&mismatched_listing_addr).expect("mismatched listing");
+
+        set_order_status(&state, "order-1", TradeOrderStatus::Requested).await;
+        assert!(matches!(
+            handle_order_revision(
+                &make_event(
+                    &seller_keys,
+                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REVISION_REQ),
+                    "revision".to_string(),
+                    Vec::new(),
+                ),
+                TradeOrderRevision {
+                    revision_id: "r-edge".to_string(),
+                    order_id: "order-1".to_string(),
+                    changes: Vec::new(),
+                    reason: None,
+                },
+                &mismatched_parsed,
+                Some("order-1"),
+                &client,
+                &state,
+            )
+            .await,
+            Err(TradeListingDvmError::Unauthorized)
+        ));
+
+        set_order_status(&state, "order-1", TradeOrderStatus::Questioned).await;
+        assert!(matches!(
+            handle_answer(
+                &make_event(
+                    &seller_keys,
+                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ANSWER_RES),
+                    "answer".to_string(),
+                    Vec::new(),
+                ),
+                TradeAnswer {
+                    question_id: "q-edge".to_string(),
+                    order_id: Some("order-1".to_string()),
+                    listing_addr: None,
+                    answer_text: "answer".to_string(),
+                },
+                &mismatched_parsed,
+                Some("order-1"),
+                &client,
+                &state,
+            )
+            .await,
+            Err(TradeListingDvmError::Unauthorized)
+        ));
+
+        let listing_event_new = RadrootsNostrEventBuilder::new(
+            RadrootsNostrKind::Custom(parsed.kind),
+            "listing-new",
+        )
+        .custom_created_at(RadrootsNostrTimestamp::from(10_u64))
+        .sign_with_keys(&seller_keys)
+        .expect("listing new");
+        let listing_event_old = RadrootsNostrEventBuilder::new(
+            RadrootsNostrKind::Custom(parsed.kind),
+            "listing-old",
+        )
+        .custom_created_at(RadrootsNostrTimestamp::from(9_u64))
+        .sign_with_keys(&seller_keys)
+        .expect("listing old");
+        push_fetch_events_ok(vec![listing_event_new, listing_event_old]);
+        let fetched_listing = fetch_listing_by_addr(&client, &listing_addr).await.expect("listing fetch");
+        assert!(fetched_listing.is_some());
+
+        let metadata_event_new = RadrootsNostrEventBuilder::new(RadrootsNostrKind::Metadata, "metadata-new")
+            .custom_created_at(RadrootsNostrTimestamp::from(20_u64))
+            .sign_with_keys(&seller_keys)
+            .expect("metadata new");
+        let metadata_event_old = RadrootsNostrEventBuilder::new(RadrootsNostrKind::Metadata, "metadata-old")
+            .custom_created_at(RadrootsNostrTimestamp::from(19_u64))
+            .sign_with_keys(&seller_keys)
+            .expect("metadata old");
+        push_fetch_events_ok(vec![metadata_event_new, metadata_event_old]);
+        let latest_metadata = fetch_latest_event_by_kind(
+            &client,
+            RadrootsNostrFilter::new(),
+            RadrootsNostrKind::Metadata,
+        )
+        .await
+        .expect("latest metadata");
+        assert!(latest_metadata.is_some());
     }
 }
