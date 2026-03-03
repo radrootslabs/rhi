@@ -2,6 +2,7 @@ COVERAGE_OUTPUT_DIR := target/coverage
 COVERAGE_SUMMARY := $(COVERAGE_OUTPUT_DIR)/summary.json
 COVERAGE_LCOV := $(COVERAGE_OUTPUT_DIR)/lcov.info
 COVERAGE_THRESHOLDS := contract/coverage/thresholds.toml
+COVERAGE_INCLUDE := contract/coverage/include.txt
 
 .PHONY: coverage-report coverage-gate
 
@@ -16,4 +17,4 @@ coverage-report:
 	@echo "coverage lcov: $(COVERAGE_LCOV)"
 
 coverage-gate: coverage-report
-	python3 scripts/ci/verify_coverage.py --thresholds $(COVERAGE_THRESHOLDS) --summary $(COVERAGE_SUMMARY) --lcov $(COVERAGE_LCOV)
+	python3 scripts/ci/verify_coverage.py --thresholds $(COVERAGE_THRESHOLDS) --summary $(COVERAGE_SUMMARY) --lcov $(COVERAGE_LCOV) --include $(COVERAGE_INCLUDE)

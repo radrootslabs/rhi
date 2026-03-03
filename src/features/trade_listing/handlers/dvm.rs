@@ -1254,7 +1254,6 @@ fn ensure_transition(
     }
 }
 
-#[cfg_attr(coverage_nightly, coverage(off))]
 pub async fn handle_error(
     error: TradeListingDvmError,
     event: &RadrootsNostrEvent,

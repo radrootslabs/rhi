@@ -24,6 +24,7 @@ all thresholds are merge-blocking and release-blocking.
 - evaluate coverage for the repository crate, not only aggregated workspace totals
 - fail hard when any required metric is below threshold, including regions
 - fail hard when required branch records are missing
+- fail hard when required covered files in `contract/coverage/include.txt` are absent from summary output
 
 ## local and ci contract
 

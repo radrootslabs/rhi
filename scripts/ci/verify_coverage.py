@@ -14,6 +14,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--thresholds", required=True, type=pathlib.Path)
     parser.add_argument("--summary", required=True, type=pathlib.Path)
     parser.add_argument("--lcov", required=True, type=pathlib.Path)
+    parser.add_argument("--include", required=False, type=pathlib.Path)
     return parser.parse_args()
 
 
@@ -40,6 +41,45 @@ def read_totals(path: pathlib.Path) -> dict[str, object]:
     if not isinstance(totals, dict):
         raise ValueError("coverage summary missing totals")
     return totals
+
+
+def read_covered_files(path: pathlib.Path) -> set[str]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    data = payload.get("data")
+    if not isinstance(data, list) or not data:
+        raise ValueError("coverage summary missing data entries")
+    files = data[0].get("files")
+    if not isinstance(files, list):
+        raise ValueError("coverage summary missing files")
+
+    repo_root = pathlib.Path.cwd().resolve()
+    covered: set[str] = set()
+    for entry in files:
+        if not isinstance(entry, dict):
+            continue
+        raw_name = entry.get("filename")
+        if not isinstance(raw_name, str):
+            continue
+        filename = pathlib.Path(raw_name)
+        if filename.is_absolute():
+            try:
+                rel = filename.resolve().relative_to(repo_root)
+                covered.add(rel.as_posix())
+                continue
+            except ValueError:
+                pass
+        covered.add(filename.as_posix())
+    return covered
+
+
+def read_required_files(path: pathlib.Path) -> set[str]:
+    required: set[str] = set()
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        required.add(pathlib.Path(line).as_posix())
+    return required
 
 
 def metric_percent(totals: dict[str, object], metric: str) -> float:
@@ -78,6 +118,7 @@ def main() -> int:
     args = parse_args()
     thresholds = read_thresholds(args.thresholds)
     totals = read_totals(args.summary)
+    covered_files = read_covered_files(args.summary)
 
     checks = [
         ("lines", metric_percent(totals, "lines"), thresholds["line_percent"]),
@@ -111,6 +152,15 @@ def main() -> int:
         if lcov_branches <= 0:
             errors.append("lcov report has no branch records")
 
+    if args.include is not None:
+        required_files = read_required_files(args.include)
+        missing = sorted(required_files - covered_files)
+        if missing:
+            errors.append(
+                "summary is missing required covered files: "
+                + ", ".join(missing)
+            )
+
     print(
         "coverage totals: "
         f"lines={metric_percent(totals, 'lines'):.4f}% "
@@ -118,6 +168,7 @@ def main() -> int:
         f"branches={metric_percent(totals, 'branches'):.4f}% "
         f"regions={metric_percent(totals, 'regions'):.4f}%"
     )
+    print(f"coverage files counted: {len(covered_files)}")
     if errors:
         for error in errors:
             print(f"coverage gate error: {error}", file=sys.stderr)
