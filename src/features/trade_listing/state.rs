@@ -78,7 +78,7 @@ impl std::error::Error for TradeListingStateError {}
 
 #[cfg(test)]
 mod tests {
-    use super::{TradeListingState, TradeOrderState};
+    use super::{TradeListingState, TradeListingStateError, TradeOrderState};
     use radroots_trade::listing::order::TradeOrderStatus;
 
     #[test]
@@ -100,5 +100,28 @@ mod tests {
         assert!(!state.is_event_seen("order-1", "evt"));
         assert!(state.mark_event_seen("order-1", "evt"));
         assert!(state.is_event_seen("order-1", "evt"));
+    }
+
+    #[test]
+    fn state_covers_missing_order_paths_and_error_display() {
+        let mut state = TradeListingState::default();
+        assert!(!state.order_exists("missing"));
+        assert!(state.get_order_mut("missing").is_none());
+        assert!(!state.mark_event_seen("missing", "evt-1"));
+        assert!(!state.is_event_seen("missing", "evt-1"));
+
+        assert_eq!(
+            TradeListingStateError::MissingOrder.to_string(),
+            "missing order state"
+        );
+
+        let invalid = TradeListingStateError::InvalidTransition {
+            from: TradeOrderStatus::Requested,
+            to: TradeOrderStatus::Completed,
+        };
+        assert_eq!(
+            invalid.to_string(),
+            "invalid order transition: Requested -> Completed"
+        );
     }
 }
