@@ -1,0 +1,39 @@
+name: coverage
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  gate:
+    name: strict coverage gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: llvm-tools-preview
+
+      - name: install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: run strict gate
+        run: scripts/just/coverage_gate.sh
+
+      - name: upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-artifacts
+          path: |
+            target/coverage/summary.json
+            target/coverage/lcov.info
