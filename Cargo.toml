@@ -36,5 +36,5 @@ clap = { version = "4", features = ["derive"] }
 serde = { version = "1", default-features = false }
 serde_json = { version = "1", default-features = false }
 tokio = { version = "1", features = ["full"] }
-thiserror = { version = "1" }
+thiserror = { version = "2" }
 tracing = { version = "0.1" }
