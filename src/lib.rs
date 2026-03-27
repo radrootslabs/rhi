@@ -11,6 +11,7 @@ pub use cli::Args as cli_args;
 use anyhow::Result;
 use std::time::Duration;
 
+use crate::features::trade_listing::state::{TradeListingRuntime, TradeListingRuntimeConfig};
 use crate::rhi::{Rhi, start_subscriber};
 use radroots_identity::RadrootsIdentity;
 use radroots_nostr::prelude::{
@@ -110,8 +111,14 @@ pub async fn run_rhi(settings: &config::Settings, args: &cli_args) -> Result<()>
         args.service.allow_generate_identity,
     )?;
     let keys = identity.keys().clone();
+    let trade_listing_runtime = TradeListingRuntime::load(TradeListingRuntimeConfig {
+        state_path: settings.config.subscriber.state.path.clone(),
+        replay_window_secs: settings.config.subscriber.state.replay_window_secs,
+        replay_overlap_secs: settings.config.subscriber.state.replay_overlap_secs,
+    })
+    .await?;
 
-    let rhi = Rhi::new(keys.clone());
+    let rhi = Rhi::with_trade_listing_runtime(keys.clone(), trade_listing_runtime);
     let client = rhi.client.clone();
     let service_cfg = settings.config.service.clone();
     let relays = service_cfg.relays.clone();
@@ -150,7 +157,7 @@ pub async fn run_rhi(settings: &config::Settings, args: &cli_args) -> Result<()>
     let handle = start_subscriber(
         client.clone(),
         keys.clone(),
-        rhi.trade_listing_runtime.state(),
+        rhi.trade_listing_runtime.clone(),
         settings.config.subscriber.backoff.clone(),
     )
     .await;
@@ -222,6 +229,10 @@ mod tests {
                         factor: 1,
                         jitter_ms: 0,
                     },
+                    state: config::SubscriberStateConfig {
+                        path: unique_state_path("settings"),
+                        ..Default::default()
+                    },
                 },
             },
         }
@@ -243,6 +254,14 @@ mod tests {
             .expect("time")
             .as_nanos();
         std::env::temp_dir().join(format!("rhi-{suffix}-{nanos}.json"))
+    }
+
+    fn unique_state_path(suffix: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        std::env::temp_dir().join(format!("rhi-state-{suffix}-{nanos}.json"))
     }
 
     #[tokio::test]

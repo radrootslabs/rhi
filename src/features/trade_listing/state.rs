@@ -1,14 +1,20 @@
 #![forbid(unsafe_code)]
 
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use radroots_nostr::prelude::{RadrootsNostrFilter, RadrootsNostrKind, RadrootsNostrTimestamp};
 use radroots_trade::listing::order::TradeOrderStatus;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use tokio::sync::Mutex;
 
 pub type SharedTradeListingState = Arc<Mutex<TradeListingState>>;
 
-#[derive(Clone, Debug)]
+const TRADE_LISTING_STATE_VERSION: u32 = 1;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TradeOrderState {
     pub order_id: String,
     pub listing_addr: String,
@@ -18,21 +24,54 @@ pub struct TradeOrderState {
     pub seen_event_ids: HashSet<String>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct TradeListingState {
     validated_listings: HashSet<String>,
     orders: HashMap<String, TradeOrderState>,
+    last_event_created_at: Option<u32>,
 }
 
 #[derive(Clone, Debug)]
 pub struct TradeListingRuntime {
     state: SharedTradeListingState,
+    config: TradeListingRuntimeConfig,
+    persistence: Option<Arc<TradeListingStatePersistence>>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TradeListingRuntimeConfig {
+    pub state_path: PathBuf,
+    pub replay_window_secs: u64,
+    pub replay_overlap_secs: u64,
+}
+
+#[derive(Clone, Debug)]
+struct TradeListingStatePersistence {
+    path: PathBuf,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct PersistedTradeListingState {
+    version: u32,
+    state: TradeListingState,
+}
+
+impl Default for TradeListingRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            state_path: PathBuf::from("state/trade-listing-state.json"),
+            replay_window_secs: 24 * 60 * 60,
+            replay_overlap_secs: 5 * 60,
+        }
+    }
 }
 
 impl Default for TradeListingRuntime {
     fn default() -> Self {
         Self {
             state: Arc::new(Mutex::new(TradeListingState::default())),
+            config: TradeListingRuntimeConfig::default(),
+            persistence: None,
         }
     }
 }
@@ -42,8 +81,51 @@ impl TradeListingRuntime {
         Self::default()
     }
 
+    pub async fn load(config: TradeListingRuntimeConfig) -> Result<Self, TradeListingRuntimeError> {
+        let persistence = Arc::new(TradeListingStatePersistence::new(config.state_path.clone()));
+        let state = persistence.load().await?;
+        Ok(Self {
+            state: Arc::new(Mutex::new(state)),
+            config,
+            persistence: Some(persistence),
+        })
+    }
+
     pub fn state(&self) -> SharedTradeListingState {
         Arc::clone(&self.state)
+    }
+
+    pub async fn persist(&self) -> Result<(), TradeListingRuntimeError> {
+        let Some(persistence) = &self.persistence else {
+            return Ok(());
+        };
+        let snapshot = self.state.lock().await.clone();
+        persistence.persist(&snapshot).await
+    }
+
+    pub async fn mark_processed_event(
+        &self,
+        created_at: u32,
+    ) -> Result<(), TradeListingRuntimeError> {
+        {
+            let mut state = self.state.lock().await;
+            state.observe_event_created_at(created_at);
+        }
+        self.persist().await
+    }
+
+    pub async fn recovery_filter(&self, kinds: Vec<RadrootsNostrKind>) -> RadrootsNostrFilter {
+        let since = {
+            let state = self.state.lock().await;
+            state.replay_since(
+                RadrootsNostrTimestamp::now().as_secs(),
+                self.config.replay_window_secs,
+                self.config.replay_overlap_secs,
+            )
+        };
+        RadrootsNostrFilter::new()
+            .kinds(kinds)
+            .since(RadrootsNostrTimestamp::from(since))
     }
 }
 
@@ -82,6 +164,75 @@ impl TradeListingState {
             .map(|state| state.seen_event_ids.contains(event_id))
             .unwrap_or(false)
     }
+
+    pub fn observe_event_created_at(&mut self, created_at: u32) {
+        self.last_event_created_at = Some(
+            self.last_event_created_at
+                .map_or(created_at, |current| current.max(created_at)),
+        );
+    }
+
+    pub fn last_event_created_at(&self) -> Option<u32> {
+        self.last_event_created_at
+    }
+
+    pub fn replay_since(
+        &self,
+        now_secs: u64,
+        replay_window_secs: u64,
+        replay_overlap_secs: u64,
+    ) -> u64 {
+        match self.last_event_created_at {
+            Some(last) => u64::from(last).saturating_sub(replay_overlap_secs),
+            None => now_secs.saturating_sub(replay_window_secs),
+        }
+    }
+}
+
+impl TradeListingStatePersistence {
+    fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+
+    async fn load(&self) -> Result<TradeListingState, TradeListingRuntimeError> {
+        if !tokio::fs::try_exists(&self.path).await? {
+            return Ok(TradeListingState::default());
+        }
+
+        let payload = tokio::fs::read_to_string(&self.path).await?;
+        let snapshot: PersistedTradeListingState = serde_json::from_str(&payload)?;
+        if snapshot.version != TRADE_LISTING_STATE_VERSION {
+            return Err(TradeListingRuntimeError::UnsupportedStateVersion(
+                snapshot.version,
+            ));
+        }
+        Ok(snapshot.state)
+    }
+
+    async fn persist(&self, state: &TradeListingState) -> Result<(), TradeListingRuntimeError> {
+        if let Some(parent) = self.path.parent() {
+            if !parent.as_os_str().is_empty() {
+                tokio::fs::create_dir_all(parent).await?;
+            }
+        }
+
+        let snapshot = PersistedTradeListingState {
+            version: TRADE_LISTING_STATE_VERSION,
+            state: state.clone(),
+        };
+        let payload = serde_json::to_vec_pretty(&snapshot)?;
+        let temp_path = temp_state_path(&self.path)?;
+        tokio::fs::write(&temp_path, payload).await?;
+        tokio::fs::rename(&temp_path, &self.path).await?;
+        Ok(())
+    }
+}
+
+fn temp_state_path(path: &Path) -> Result<PathBuf, TradeListingRuntimeError> {
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| TradeListingRuntimeError::InvalidStatePath(path.to_path_buf()))?;
+    Ok(path.with_file_name(format!("{}.tmp", file_name.to_string_lossy())))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,14 +257,37 @@ impl core::fmt::Display for TradeListingStateError {
 
 impl std::error::Error for TradeListingStateError {}
 
+#[derive(Debug, Error)]
+pub enum TradeListingRuntimeError {
+    #[error("invalid trade listing state path: {0}")]
+    InvalidStatePath(PathBuf),
+    #[error("unsupported trade listing state version: {0}")]
+    UnsupportedStateVersion(u32),
+    #[error("trade listing state io error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("trade listing state json error: {0}")]
+    Json(#[from] serde_json::Error),
+}
+
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    use super::{TradeListingRuntime, TradeListingState, TradeListingStateError, TradeOrderState};
+    use super::{
+        PersistedTradeListingState, TradeListingRuntime, TradeListingRuntimeConfig,
+        TradeListingRuntimeError, TradeListingState, TradeListingStateError, TradeOrderState,
+    };
     use radroots_trade::listing::order::TradeOrderStatus;
 
+    fn unique_state_path(suffix: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        std::env::temp_dir().join(format!("rhi-trade-state-{suffix}-{nanos}.json"))
+    }
+
     #[test]
-    fn state_tracks_listings_and_events() {
+    fn state_tracks_listings_events_and_replay_anchor() {
         let mut state = TradeListingState::default();
         assert!(!state.is_listing_validated("addr"));
         state.mark_listing_validated("addr");
@@ -131,6 +305,11 @@ mod tests {
         assert!(!state.is_event_seen("order-1", "evt"));
         assert!(state.mark_event_seen("order-1", "evt"));
         assert!(state.is_event_seen("order-1", "evt"));
+        assert_eq!(state.replay_since(1_000, 300, 60), 700);
+
+        state.observe_event_created_at(900);
+        assert_eq!(state.last_event_created_at(), Some(900));
+        assert_eq!(state.replay_since(1_000, 300, 60), 840);
     }
 
     #[test]
@@ -163,5 +342,60 @@ mod tests {
         state.lock().await.mark_listing_validated("addr");
 
         assert!(runtime.state().lock().await.is_listing_validated("addr"));
+    }
+
+    #[tokio::test]
+    async fn runtime_persists_and_loads_trade_listing_state() {
+        let path = unique_state_path("roundtrip");
+        let config = TradeListingRuntimeConfig {
+            state_path: path.clone(),
+            replay_window_secs: 600,
+            replay_overlap_secs: 30,
+        };
+        let runtime = TradeListingRuntime::load(config.clone())
+            .await
+            .expect("runtime");
+
+        {
+            let state_handle = runtime.state();
+            let mut state = state_handle.lock().await;
+            state.mark_listing_validated("addr");
+            state.observe_event_created_at(456);
+        }
+        runtime.persist().await.expect("persist");
+
+        let loaded = TradeListingRuntime::load(config).await.expect("load");
+        let loaded_state_handle = loaded.state();
+        let loaded_state = loaded_state_handle.lock().await;
+        assert!(loaded_state.is_listing_validated("addr"));
+        assert_eq!(loaded_state.last_event_created_at(), Some(456));
+
+        let _ = tokio::fs::remove_file(path).await;
+    }
+
+    #[tokio::test]
+    async fn runtime_load_rejects_unsupported_snapshot_version() {
+        let path = unique_state_path("version");
+        let payload = PersistedTradeListingState {
+            version: 99,
+            state: TradeListingState::default(),
+        };
+        tokio::fs::write(&path, serde_json::to_vec(&payload).expect("payload"))
+            .await
+            .expect("write");
+
+        let err = TradeListingRuntime::load(TradeListingRuntimeConfig {
+            state_path: path.clone(),
+            replay_window_secs: 600,
+            replay_overlap_secs: 30,
+        })
+        .await
+        .expect_err("unsupported snapshot should fail");
+        assert!(matches!(
+            err,
+            TradeListingRuntimeError::UnsupportedStateVersion(99)
+        ));
+
+        let _ = tokio::fs::remove_file(path).await;
     }
 }

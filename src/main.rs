@@ -162,7 +162,7 @@ mod tests {
         let handle = rhi::rhi::start_subscriber(
             client,
             keys,
-            TradeListingRuntime::new().state(),
+            TradeListingRuntime::new(),
             radroots_runtime::BackoffConfig {
                 base_ms: 1,
                 max_ms: 2,
