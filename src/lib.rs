@@ -26,9 +26,8 @@ static RUN_RHI_SKIP_SUBSCRIBER: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 #[cfg(test)]
-static RUN_RHI_BOOTSTRAP_HOOK: std::sync::OnceLock<
-    std::sync::Mutex<Option<Result<(), String>>>,
-> = std::sync::OnceLock::new();
+static RUN_RHI_BOOTSTRAP_HOOK: std::sync::OnceLock<std::sync::Mutex<Option<Result<(), String>>>> =
+    std::sync::OnceLock::new();
 
 #[derive(Clone, Copy)]
 enum RunRhiWaitOutcome {
@@ -151,6 +150,7 @@ pub async fn run_rhi(settings: &config::Settings, args: &cli_args) -> Result<()>
     let handle = start_subscriber(
         client.clone(),
         keys.clone(),
+        rhi.trade_listing_runtime.state(),
         settings.config.subscriber.backoff.clone(),
     )
     .await;
@@ -180,8 +180,8 @@ pub async fn run_rhi(settings: &config::Settings, args: &cli_args) -> Result<()>
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::{
-        RUN_RHI_AUTO_STOP, RUN_RHI_SKIP_SUBSCRIBER, RunRhiWaitOutcome, bootstrap_presence,
-        run_rhi, run_rhi_bootstrap_hook, run_rhi_wait_hook,
+        RUN_RHI_AUTO_STOP, RUN_RHI_SKIP_SUBSCRIBER, RunRhiWaitOutcome, bootstrap_presence, run_rhi,
+        run_rhi_bootstrap_hook, run_rhi_wait_hook,
     };
     use crate::{cli_args, config};
     use std::path::PathBuf;
@@ -191,7 +191,9 @@ mod tests {
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     fn test_guard() -> MutexGuard<'static, ()> {
-        let guard = TEST_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let guard = TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         RUN_RHI_AUTO_STOP.store(false, Ordering::Relaxed);
         RUN_RHI_SKIP_SUBSCRIBER.store(false, Ordering::Relaxed);
         *run_rhi_bootstrap_hook()
@@ -278,7 +280,8 @@ mod tests {
         let settings_err = settings_with_relays(vec!["wss://relay.example.com".to_string()]);
         *run_rhi_bootstrap_hook()
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Err("presence failure".to_string()));
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some(Err("presence failure".to_string()));
         let err = run_rhi(&settings_err, &args_err).await;
         RUN_RHI_AUTO_STOP.store(false, Ordering::Relaxed);
         RUN_RHI_SKIP_SUBSCRIBER.store(false, Ordering::Relaxed);
@@ -290,11 +293,9 @@ mod tests {
     async fn bootstrap_presence_fallback_path_is_callable() {
         let _guard = test_guard();
         let identity_path = unique_identity_path("bootstrap");
-        let identity = radroots_identity::RadrootsIdentity::load_or_generate(
-            Some(&identity_path),
-            true,
-        )
-        .expect("identity");
+        let identity =
+            radroots_identity::RadrootsIdentity::load_or_generate(Some(&identity_path), true)
+                .expect("identity");
         let client = radroots_nostr::prelude::RadrootsNostrClient::new(identity.keys().clone());
         let metadata: radroots_nostr::prelude::RadrootsNostrMetadata =
             serde_json::from_str(r#"{"name":"bootstrap"}"#).expect("bootstrap metadata");

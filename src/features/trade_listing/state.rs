@@ -1,8 +1,12 @@
 #![forbid(unsafe_code)]
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use radroots_trade::listing::order::TradeOrderStatus;
+use tokio::sync::Mutex;
+
+pub type SharedTradeListingState = Arc<Mutex<TradeListingState>>;
 
 #[derive(Clone, Debug)]
 pub struct TradeOrderState {
@@ -18,6 +22,29 @@ pub struct TradeOrderState {
 pub struct TradeListingState {
     validated_listings: HashSet<String>,
     orders: HashMap<String, TradeOrderState>,
+}
+
+#[derive(Clone, Debug)]
+pub struct TradeListingRuntime {
+    state: SharedTradeListingState,
+}
+
+impl Default for TradeListingRuntime {
+    fn default() -> Self {
+        Self {
+            state: Arc::new(Mutex::new(TradeListingState::default())),
+        }
+    }
+}
+
+impl TradeListingRuntime {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn state(&self) -> SharedTradeListingState {
+        Arc::clone(&self.state)
+    }
 }
 
 impl TradeListingState {
@@ -60,7 +87,10 @@ impl TradeListingState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TradeListingStateError {
     MissingOrder,
-    InvalidTransition { from: TradeOrderStatus, to: TradeOrderStatus },
+    InvalidTransition {
+        from: TradeOrderStatus,
+        to: TradeOrderStatus,
+    },
 }
 
 impl core::fmt::Display for TradeListingStateError {
@@ -79,7 +109,7 @@ impl std::error::Error for TradeListingStateError {}
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    use super::{TradeListingState, TradeListingStateError, TradeOrderState};
+    use super::{TradeListingRuntime, TradeListingState, TradeListingStateError, TradeOrderState};
     use radroots_trade::listing::order::TradeOrderStatus;
 
     #[test]
@@ -124,5 +154,14 @@ mod tests {
             invalid.to_string(),
             "invalid order transition: Requested -> Completed"
         );
+    }
+
+    #[tokio::test]
+    async fn runtime_reuses_shared_trade_listing_state() {
+        let runtime = TradeListingRuntime::new();
+        let state = runtime.state();
+        state.lock().await.mark_listing_validated("addr");
+
+        assert!(runtime.state().lock().await.is_listing_validated("addr"));
     }
 }

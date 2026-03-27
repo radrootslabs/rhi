@@ -5,6 +5,8 @@ use std::time::{Duration, Instant};
 use radroots_nostr::prelude::{RadrootsNostrClient, RadrootsNostrKeys};
 use radroots_runtime::{Backoff, BackoffConfig};
 
+use crate::features::trade_listing::state::{SharedTradeListingState, TradeListingRuntime};
+
 #[cfg(not(test))]
 fn connection_wait_timeout() -> Duration {
     Duration::from_secs(5)
@@ -21,13 +23,15 @@ static SUBSCRIBER_RESULT_HOOK: std::sync::OnceLock<
 > = std::sync::OnceLock::new();
 
 #[cfg(test)]
-fn subscriber_result_hook() -> &'static std::sync::Mutex<std::collections::VecDeque<Result<(), anyhow::Error>>> {
+fn subscriber_result_hook()
+-> &'static std::sync::Mutex<std::collections::VecDeque<Result<(), anyhow::Error>>> {
     SUBSCRIBER_RESULT_HOOK.get_or_init(|| std::sync::Mutex::new(std::collections::VecDeque::new()))
 }
 
 async fn run_subscriber_once(
     client: RadrootsNostrClient,
     keys: RadrootsNostrKeys,
+    state: SharedTradeListingState,
     stop_rx: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), anyhow::Error> {
     #[cfg(test)]
@@ -39,7 +43,7 @@ async fn run_subscriber_once(
         return result;
     }
 
-    crate::features::trade_listing::subscriber::subscriber(client, keys, stop_rx).await
+    crate::features::trade_listing::subscriber::subscriber(client, keys, state, stop_rx).await
 }
 
 async fn wait_for_connection_or_stop(
@@ -58,6 +62,7 @@ async fn wait_for_connection_or_stop(
 pub struct Rhi {
     pub(crate) _started: Instant,
     pub client: RadrootsNostrClient,
+    pub(crate) trade_listing_runtime: TradeListingRuntime,
 }
 
 impl Rhi {
@@ -66,6 +71,7 @@ impl Rhi {
         Self {
             _started: Instant::now(),
             client,
+            trade_listing_runtime: TradeListingRuntime::new(),
         }
     }
 }
@@ -104,6 +110,7 @@ impl RhiHandle {
 pub async fn start_subscriber(
     client: RadrootsNostrClient,
     keys: RadrootsNostrKeys,
+    state: SharedTradeListingState,
     backoff_cfg: BackoffConfig,
 ) -> RhiHandle {
     let (stop_tx, mut stop_rx) = tokio::sync::watch::channel(false);
@@ -120,12 +127,9 @@ pub async fn start_subscriber(
                 break;
             }
 
-            let res = run_subscriber_once(
-                client.clone(),
-                keys.clone(),
-                stop_rx.clone(),
-            )
-            .await;
+            let res =
+                run_subscriber_once(client.clone(), keys.clone(), state.clone(), stop_rx.clone())
+                    .await;
 
             let failed = res.is_err();
 
@@ -158,20 +162,30 @@ pub async fn start_subscriber(
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    use anyhow::anyhow;
     use super::{
         Rhi, RhiHandle, start_subscriber, subscriber_result_hook, wait_for_connection_or_stop,
     };
+    use crate::features::trade_listing::state::TradeListingRuntime;
+    use anyhow::anyhow;
     use radroots_nostr::prelude::{RadrootsNostrClient, RadrootsNostrKeys};
     use radroots_runtime::BackoffConfig;
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
-    #[test]
-    fn rhi_new_initializes_client() {
+    #[tokio::test]
+    async fn rhi_new_initializes_client_and_runtime() {
         let keys = RadrootsNostrKeys::generate();
         let rhi = Rhi::new(keys);
         let _ = rhi.client.clone();
+        let state = rhi.trade_listing_runtime.state();
+        state.lock().await.mark_listing_validated("addr");
+        assert!(
+            rhi.trade_listing_runtime
+                .state()
+                .lock()
+                .await
+                .is_listing_validated("addr")
+        );
     }
 
     #[tokio::test]
@@ -199,7 +213,13 @@ mod tests {
         };
 
         let client_err = RadrootsNostrClient::new(keys.clone());
-        let handle_err = start_subscriber(client_err, keys.clone(), cfg.clone()).await;
+        let handle_err = start_subscriber(
+            client_err,
+            keys.clone(),
+            TradeListingRuntime::new().state(),
+            cfg.clone(),
+        )
+        .await;
         tokio::time::sleep(std::time::Duration::from_millis(30)).await;
         handle_err.stop();
         handle_err.stopped().await;
@@ -210,7 +230,8 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push_back(Ok(()));
-        let handle_ok = start_subscriber(client_ok, keys, cfg).await;
+        let handle_ok =
+            start_subscriber(client_ok, keys, TradeListingRuntime::new().state(), cfg).await;
         tokio::time::sleep(std::time::Duration::from_millis(30)).await;
         handle_ok.stop();
         handle_ok.stopped().await;
@@ -223,6 +244,7 @@ mod tests {
         let handle = start_subscriber(
             client,
             keys,
+            TradeListingRuntime::new().state(),
             BackoffConfig {
                 base_ms: 25,
                 max_ms: 50,
@@ -248,6 +270,7 @@ mod tests {
         let handle = start_subscriber(
             client,
             keys,
+            TradeListingRuntime::new().state(),
             BackoffConfig {
                 base_ms: 200,
                 max_ms: 200,

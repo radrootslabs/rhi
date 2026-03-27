@@ -1,8 +1,8 @@
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
-use anyhow::Result;
 #[cfg(not(test))]
 use anyhow::Context;
+use anyhow::Result;
 use rhi::{cli_args, config, run_rhi};
 use std::process::ExitCode;
 use tracing::info;
@@ -74,6 +74,7 @@ async fn run() -> Result<()> {
 mod tests {
     use super::{exit_code_from_run, main, run, run_load_hook, run_rhi};
     use radroots_nostr::prelude::{RadrootsNostrClient, RadrootsNostrKeys};
+    use rhi::features::trade_listing::state::TradeListingRuntime;
     use rhi::{cli_args, config};
     use std::path::PathBuf;
     use std::process::ExitCode;
@@ -112,7 +113,9 @@ mod tests {
             },
         };
         let settings = minimal_settings();
-        let err = run_rhi(&settings, &args).await.expect_err("identity should fail");
+        let err = run_rhi(&settings, &args)
+            .await
+            .expect_err("identity should fail");
         let msg = format!("{err:#}");
         assert!(msg.contains("identity"));
     }
@@ -133,7 +136,8 @@ mod tests {
         };
         *run_load_hook()
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Ok((args, minimal_settings())));
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some(Ok((args, minimal_settings())));
         let err = run().await.expect_err("missing identity should bubble");
         let msg = format!("{err:#}");
         assert!(msg.contains("identity"));
@@ -144,7 +148,9 @@ mod tests {
         *run_load_hook()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-        let err = run().await.expect_err("loader hook should be required in test build");
+        let err = run()
+            .await
+            .expect_err("loader hook should be required in test build");
         let msg = format!("{err:#}");
         assert!(msg.contains("run loader hook not set"));
     }
@@ -156,6 +162,7 @@ mod tests {
         let handle = rhi::rhi::start_subscriber(
             client,
             keys,
+            TradeListingRuntime::new().state(),
             radroots_runtime::BackoffConfig {
                 base_ms: 1,
                 max_ms: 2,
