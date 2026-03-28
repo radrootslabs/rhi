@@ -466,6 +466,7 @@ async fn handle_listing_validate_request(
                         listing_addr: listing_addr.to_string(),
                     },
                 };
+                state.lock().await.clear_listing_validation(listing_addr);
                 send_validate_result(event, client, listing_addr, vec![error]).await?;
                 return Ok(());
             }
@@ -477,35 +478,52 @@ async fn handle_listing_validate_request(
                 let error = TradeListingValidationError::ListingEventFetchFailed {
                     listing_addr: listing_addr.to_string(),
                 };
+                state.lock().await.clear_listing_validation(listing_addr);
                 send_validate_result(event, client, listing_addr, vec![error]).await?;
                 return Ok(());
             }
         }
     };
 
-    let errors = if let Some(event) = listing_event {
-        match validate_listing_event_io(&event) {
+    let (validated_event_id, errors) = if let Some(listing_event) = listing_event {
+        match validate_listing_event_io(&listing_event) {
             Ok((validated_listing_addr, farm)) => {
                 if validated_listing_addr != listing_addr {
-                    vec![TradeListingValidationError::ListingEventNotFound {
-                        listing_addr: listing_addr.to_string(),
-                    }]
+                    (
+                        None,
+                        vec![TradeListingValidationError::ListingEventNotFound {
+                            listing_addr: listing_addr.to_string(),
+                        }],
+                    )
                 } else {
                     let errors = validate_farm_dependencies(client, &farm).await?;
                     if errors.is_empty() {
-                        let mut state = state.lock().await;
-                        state.mark_listing_validated(listing_addr);
+                        (Some(listing_event.id.to_string()), errors)
+                    } else {
+                        (None, errors)
                     }
-                    errors
                 }
             }
-            Err(err) => vec![err],
+            Err(err) => (None, vec![err]),
         }
     } else {
-        vec![TradeListingValidationError::ListingEventNotFound {
-            listing_addr: listing_addr.to_string(),
-        }]
+        (
+            None,
+            vec![TradeListingValidationError::ListingEventNotFound {
+                listing_addr: listing_addr.to_string(),
+            }],
+        )
     };
+
+    {
+        let mut state = state.lock().await;
+        match validated_event_id {
+            Some(validated_event_id) => {
+                state.mark_listing_validated(listing_addr, &validated_event_id);
+            }
+            None => state.clear_listing_validation(listing_addr),
+        }
+    }
 
     send_validate_result(event, client, listing_addr, errors).await
 }
@@ -545,10 +563,39 @@ async fn handle_order_request(
         return Err(TradeListingDvmError::InvalidOrder);
     }
 
-    let mut state = state.lock().await;
-    if !state.is_listing_validated(&payload.listing_addr) {
+    {
+        let state = state.lock().await;
+        if state.order_exists(order_id) {
+            return Ok(());
+        }
+    }
+
+    let validated_event_id = {
+        let state = state.lock().await;
+        state
+            .validated_listing_event_id(&payload.listing_addr)
+            .map(str::to_owned)
+    }
+    .ok_or(TradeListingDvmError::ListingNotValidated)?;
+
+    let latest_listing_event = fetch_listing_by_addr(client, &payload.listing_addr).await?;
+    let Some(latest_listing_event) = latest_listing_event else {
+        state
+            .lock()
+            .await
+            .clear_listing_validation(&payload.listing_addr);
+        return Err(TradeListingDvmError::ListingNotValidated);
+    };
+
+    if latest_listing_event.id.to_string() != validated_event_id {
+        state
+            .lock()
+            .await
+            .clear_listing_validation(&payload.listing_addr);
         return Err(TradeListingDvmError::ListingNotValidated);
     }
+
+    let mut state = state.lock().await;
     if state.order_exists(order_id) {
         return Ok(());
     }
@@ -1444,7 +1491,7 @@ mod tests {
     ) -> Arc<AsyncMutex<TradeListingState>> {
         let state = Arc::new(AsyncMutex::new(TradeListingState::default()));
         let mut locked = state.lock().await;
-        locked.mark_listing_validated(listing_addr);
+        locked.mark_listing_validated(listing_addr, "validated-listing-event");
         locked.insert_order(make_order_state(
             order_id,
             listing_addr,
@@ -1909,6 +1956,10 @@ mod tests {
                 .is_ok()
         );
         assert!(state.lock().await.is_listing_validated(&listing_addr));
+        assert_eq!(
+            state.lock().await.validated_listing_event_id(&listing_addr),
+            Some(event.id.to_string().as_str())
+        );
 
         let other_listing_addr = listing_addr_for_seller(&rhi_keys);
         dvm_test_hooks()
@@ -1948,6 +1999,22 @@ mod tests {
                 .await
                 .is_listing_validated(&mismatch_listing_addr)
         );
+
+        state
+            .lock()
+            .await
+            .mark_listing_validated(&listing_addr, "stale-listing-event");
+        push_fetch_events_ok(Vec::new());
+        push_send_ok();
+        let payload = TradeListingValidateRequest {
+            listing_event: None,
+        };
+        assert!(
+            handle_listing_validate_request(&event, payload, &listing_addr, &client, &state)
+                .await
+                .is_ok()
+        );
+        assert!(!state.lock().await.is_listing_validated(&listing_addr));
     }
 
     #[tokio::test]
@@ -1961,7 +2028,15 @@ mod tests {
         let seller_pub = seller_keys.public_key().to_hex();
         let buyer_pub = buyer_keys.public_key().to_hex();
         let state = Arc::new(AsyncMutex::new(TradeListingState::default()));
-        state.lock().await.mark_listing_validated(&listing_addr);
+        let validated_listing_event =
+            RadrootsNostrEventBuilder::new(RadrootsNostrKind::Custom(30402), "listing")
+                .custom_created_at(RadrootsNostrTimestamp::from(10_u64))
+                .sign_with_keys(&seller_keys)
+                .expect("listing event");
+        state
+            .lock()
+            .await
+            .mark_listing_validated(&listing_addr, &validated_listing_event.id.to_string());
 
         let order_event = make_event(
             &buyer_keys,
@@ -1969,6 +2044,7 @@ mod tests {
             "order".to_string(),
             Vec::new(),
         );
+        push_fetch_events_ok(vec![validated_listing_event.clone()]);
         push_send_ok();
         let order_payload = make_order(
             order_id,
@@ -3059,6 +3135,42 @@ mod tests {
             Err(TradeListingDvmError::ListingNotValidated)
         ));
 
+        let stale_listing_event =
+            RadrootsNostrEventBuilder::new(RadrootsNostrKind::Custom(30402), "listing-stale")
+                .custom_created_at(RadrootsNostrTimestamp::from(9_u64))
+                .sign_with_keys(&seller_keys)
+                .expect("stale listing event");
+        state
+            .lock()
+            .await
+            .mark_listing_validated(&listing_addr, &stale_listing_event.id.to_string());
+        let latest_listing_event =
+            RadrootsNostrEventBuilder::new(RadrootsNostrKind::Custom(30402), "listing-latest")
+                .custom_created_at(RadrootsNostrTimestamp::from(10_u64))
+                .sign_with_keys(&seller_keys)
+                .expect("latest listing event");
+        push_fetch_events_ok(vec![latest_listing_event]);
+        let stale_order = make_order(
+            "order-3",
+            &listing_addr,
+            &buyer_pub,
+            &seller_pub,
+            TradeOrderStatus::Requested,
+        );
+        assert!(matches!(
+            handle_order_request(
+                &event,
+                stale_order,
+                &parsed,
+                Some("order-3"),
+                &client,
+                &state
+            )
+            .await,
+            Err(TradeListingDvmError::ListingNotValidated)
+        ));
+        assert!(!state.lock().await.is_listing_validated(&listing_addr));
+
         set_order_status(&state, "order-1", TradeOrderStatus::Requested).await;
         let seller_event = make_event(
             &seller_keys,
@@ -3204,6 +3316,15 @@ mod tests {
             .is_ok()
         );
 
+        let validated_listing_event =
+            RadrootsNostrEventBuilder::new(RadrootsNostrKind::Custom(30402), "listing")
+                .custom_created_at(RadrootsNostrTimestamp::from(10_u64))
+                .sign_with_keys(&seller_keys)
+                .expect("listing event");
+        state
+            .lock()
+            .await
+            .mark_listing_validated(&listing_addr, &validated_listing_event.id.to_string());
         let unauthorized_order = make_order(
             "order-3",
             &listing_addr,
@@ -3211,6 +3332,7 @@ mod tests {
             &seller_pub,
             TradeOrderStatus::Requested,
         );
+        push_fetch_events_ok(vec![validated_listing_event]);
         assert!(matches!(
             handle_order_request(
                 &event,
@@ -4121,6 +4243,15 @@ mod tests {
             "order".to_string(),
             Vec::new(),
         );
+        let validated_listing_event =
+            RadrootsNostrEventBuilder::new(RadrootsNostrKind::Custom(30402), "listing")
+                .custom_created_at(RadrootsNostrTimestamp::from(10_u64))
+                .sign_with_keys(&seller_keys)
+                .expect("listing event");
+        state
+            .lock()
+            .await
+            .mark_listing_validated(&listing_addr, &validated_listing_event.id.to_string());
 
         let mismatch_payload = make_order(
             "order-2",
@@ -4149,6 +4280,7 @@ mod tests {
             "not-seller",
             TradeOrderStatus::Requested,
         );
+        push_fetch_events_ok(vec![validated_listing_event]);
         assert!(matches!(
             handle_order_request(
                 &order_event,

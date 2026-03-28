@@ -189,7 +189,10 @@ mod tests {
         let rhi = Rhi::new(keys);
         let _ = rhi.client.clone();
         let state = rhi.trade_listing_runtime.state();
-        state.lock().await.mark_listing_validated("addr");
+        state
+            .lock()
+            .await
+            .mark_listing_validated("addr", "evt-listing-1");
         assert!(
             rhi.trade_listing_runtime
                 .state()

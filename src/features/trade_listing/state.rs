@@ -24,9 +24,17 @@ pub struct TradeOrderState {
     pub seen_event_ids: HashSet<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ValidatedListingState {
+    pub event_id: String,
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct TradeListingState {
+    #[serde(default)]
     validated_listings: HashSet<String>,
+    #[serde(default)]
+    validated_listing_events: HashMap<String, ValidatedListingState>,
     orders: HashMap<String, TradeOrderState>,
     last_event_created_at: Option<u32>,
 }
@@ -130,12 +138,29 @@ impl TradeListingRuntime {
 }
 
 impl TradeListingState {
-    pub fn mark_listing_validated(&mut self, listing_addr: &str) {
+    pub fn mark_listing_validated(&mut self, listing_addr: &str, event_id: &str) {
         self.validated_listings.insert(listing_addr.to_string());
+        self.validated_listing_events.insert(
+            listing_addr.to_string(),
+            ValidatedListingState {
+                event_id: event_id.to_string(),
+            },
+        );
+    }
+
+    pub fn clear_listing_validation(&mut self, listing_addr: &str) {
+        self.validated_listings.remove(listing_addr);
+        self.validated_listing_events.remove(listing_addr);
+    }
+
+    pub fn validated_listing_event_id(&self, listing_addr: &str) -> Option<&str> {
+        self.validated_listing_events
+            .get(listing_addr)
+            .map(|validated| validated.event_id.as_str())
     }
 
     pub fn is_listing_validated(&self, listing_addr: &str) -> bool {
-        self.validated_listings.contains(listing_addr)
+        self.validated_listing_event_id(listing_addr).is_some()
     }
 
     pub fn order_exists(&self, order_id: &str) -> bool {
@@ -275,8 +300,10 @@ mod tests {
     use super::{
         PersistedTradeListingState, TradeListingRuntime, TradeListingRuntimeConfig,
         TradeListingRuntimeError, TradeListingState, TradeListingStateError, TradeOrderState,
+        ValidatedListingState,
     };
     use radroots_trade::listing::order::TradeOrderStatus;
+    use std::collections::HashMap;
 
     fn unique_state_path(suffix: &str) -> std::path::PathBuf {
         let nanos = std::time::SystemTime::now()
@@ -290,8 +317,12 @@ mod tests {
     fn state_tracks_listings_events_and_replay_anchor() {
         let mut state = TradeListingState::default();
         assert!(!state.is_listing_validated("addr"));
-        state.mark_listing_validated("addr");
+        state.mark_listing_validated("addr", "evt-listing-1");
         assert!(state.is_listing_validated("addr"));
+        assert_eq!(
+            state.validated_listing_event_id("addr"),
+            Some("evt-listing-1")
+        );
 
         let order = TradeOrderState {
             order_id: "order-1".into(),
@@ -339,7 +370,10 @@ mod tests {
     async fn runtime_reuses_shared_trade_listing_state() {
         let runtime = TradeListingRuntime::new();
         let state = runtime.state();
-        state.lock().await.mark_listing_validated("addr");
+        state
+            .lock()
+            .await
+            .mark_listing_validated("addr", "evt-listing-1");
 
         assert!(runtime.state().lock().await.is_listing_validated("addr"));
     }
@@ -359,7 +393,7 @@ mod tests {
         {
             let state_handle = runtime.state();
             let mut state = state_handle.lock().await;
-            state.mark_listing_validated("addr");
+            state.mark_listing_validated("addr", "evt-listing-1");
             state.observe_event_created_at(456);
         }
         runtime.persist().await.expect("persist");
@@ -368,6 +402,10 @@ mod tests {
         let loaded_state_handle = loaded.state();
         let loaded_state = loaded_state_handle.lock().await;
         assert!(loaded_state.is_listing_validated("addr"));
+        assert_eq!(
+            loaded_state.validated_listing_event_id("addr"),
+            Some("evt-listing-1")
+        );
         assert_eq!(loaded_state.last_event_created_at(), Some(456));
 
         let _ = tokio::fs::remove_file(path).await;
@@ -397,5 +435,56 @@ mod tests {
         ));
 
         let _ = tokio::fs::remove_file(path).await;
+    }
+
+    #[tokio::test]
+    async fn runtime_loads_legacy_validation_state_without_trusting_it() {
+        let path = unique_state_path("legacy-validation");
+        let payload = PersistedTradeListingState {
+            version: 1,
+            state: TradeListingState {
+                validated_listings: ["addr".to_string()].into_iter().collect(),
+                validated_listing_events: HashMap::new(),
+                orders: HashMap::new(),
+                last_event_created_at: Some(321),
+            },
+        };
+        tokio::fs::write(&path, serde_json::to_vec(&payload).expect("payload"))
+            .await
+            .expect("write");
+
+        let loaded = TradeListingRuntime::load(TradeListingRuntimeConfig {
+            state_path: path.clone(),
+            replay_window_secs: 600,
+            replay_overlap_secs: 30,
+        })
+        .await
+        .expect("load");
+        let loaded_state_handle = loaded.state();
+        let loaded_state = loaded_state_handle.lock().await;
+        assert!(!loaded_state.is_listing_validated("addr"));
+        assert_eq!(loaded_state.validated_listing_event_id("addr"), None);
+        assert_eq!(loaded_state.last_event_created_at(), Some(321));
+
+        let _ = tokio::fs::remove_file(path).await;
+    }
+
+    #[test]
+    fn state_can_clear_listing_validation() {
+        let mut state = TradeListingState {
+            validated_listings: ["addr".to_string()].into_iter().collect(),
+            validated_listing_events: HashMap::from([(
+                "addr".to_string(),
+                ValidatedListingState {
+                    event_id: "evt-listing-1".to_string(),
+                },
+            )]),
+            orders: HashMap::new(),
+            last_event_created_at: None,
+        };
+        assert!(state.is_listing_validated("addr"));
+        state.clear_listing_validation("addr");
+        assert!(!state.is_listing_validated("addr"));
+        assert_eq!(state.validated_listing_event_id("addr"), None);
     }
 }

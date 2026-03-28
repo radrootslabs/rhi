@@ -192,6 +192,7 @@ async fn process_event_notification(
     client: RadrootsNostrClient,
     runtime: TradeListingRuntime,
 ) -> Result<()> {
+    let created_at = u32::try_from(event.created_at.as_secs()).unwrap_or(u32::MAX);
     if should_delay_before_event_handle() {
         sleep(Duration::from_millis(200)).await;
     }
@@ -220,13 +221,12 @@ async fn process_event_notification(
                 if let Err(err) = handle_error_io(other, &event, &client).await {
                     warn!("trade_listing: failed to send error feedback: {err}");
                 }
-                runtime.persist().await?;
+                runtime.mark_processed_event(created_at).await?;
             }
         }
         return Ok(());
     }
 
-    let created_at = u32::try_from(event.created_at.as_secs()).unwrap_or(u32::MAX);
     runtime.mark_processed_event(created_at).await?;
     Ok(())
 }
@@ -439,7 +439,10 @@ mod tests {
         let client = RadrootsNostrClient::new(keys.clone());
         let runtime = shared_runtime();
         let state = runtime.state();
-        state.lock().await.mark_listing_validated("addr");
+        state
+            .lock()
+            .await
+            .mark_listing_validated("addr", "evt-listing-1");
 
         let (_tx_first, rx_first) = watch::channel(true);
         assert!(
@@ -615,6 +618,37 @@ mod tests {
             .expect_err("notifications closed");
         let msg = format!("{err:#}");
         assert!(msg.contains("notifications closed"));
+    }
+
+    #[tokio::test]
+    async fn handled_domain_errors_advance_replay_anchor() {
+        let _guard = test_guard();
+        let keys = RadrootsNostrKeys::generate();
+        let client = RadrootsNostrClient::new(keys.clone());
+        let runtime = shared_runtime();
+        let event = RadrootsNostrEventBuilder::new(RadrootsNostrKind::Custom(6000), "test")
+            .custom_created_at(1_234_u64.into())
+            .sign_with_keys(&keys)
+            .expect("event");
+
+        let mut hooks = subscriber_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        hooks.resolve_tags_results.push_back(Ok(Vec::new()));
+        hooks
+            .handle_event_results
+            .push_back(Err(TradeListingDvmError::InvalidOrder));
+        hooks.handle_error_results.push_back(Ok(()));
+        drop(hooks);
+
+        process_event_notification(event, keys, client, runtime.clone())
+            .await
+            .expect("notification");
+
+        assert_eq!(
+            runtime.state().lock().await.last_event_created_at(),
+            Some(1_234)
+        );
     }
 
     #[tokio::test]
