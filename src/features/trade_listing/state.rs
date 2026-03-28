@@ -35,6 +35,8 @@ pub struct TradeListingState {
     validated_listings: HashSet<String>,
     #[serde(default)]
     validated_listing_events: HashMap<String, ValidatedListingState>,
+    #[serde(default)]
+    seen_non_order_event_ids: HashSet<String>,
     orders: HashMap<String, TradeOrderState>,
     last_event_created_at: Option<u32>,
 }
@@ -190,6 +192,14 @@ impl TradeListingState {
             .unwrap_or(false)
     }
 
+    pub fn mark_non_order_event_seen(&mut self, event_id: &str) -> bool {
+        self.seen_non_order_event_ids.insert(event_id.to_string())
+    }
+
+    pub fn is_non_order_event_seen(&self, event_id: &str) -> bool {
+        self.seen_non_order_event_ids.contains(event_id)
+    }
+
     pub fn observe_event_created_at(&mut self, created_at: u32) {
         self.last_event_created_at = Some(
             self.last_event_created_at
@@ -303,7 +313,7 @@ mod tests {
         ValidatedListingState,
     };
     use radroots_trade::listing::order::TradeOrderStatus;
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
 
     fn unique_state_path(suffix: &str) -> std::path::PathBuf {
         let nanos = std::time::SystemTime::now()
@@ -336,6 +346,9 @@ mod tests {
         assert!(!state.is_event_seen("order-1", "evt"));
         assert!(state.mark_event_seen("order-1", "evt"));
         assert!(state.is_event_seen("order-1", "evt"));
+        assert!(!state.is_non_order_event_seen("evt-non-order"));
+        assert!(state.mark_non_order_event_seen("evt-non-order"));
+        assert!(state.is_non_order_event_seen("evt-non-order"));
         assert_eq!(state.replay_since(1_000, 300, 60), 700);
 
         state.observe_event_created_at(900);
@@ -350,6 +363,7 @@ mod tests {
         assert!(state.get_order_mut("missing").is_none());
         assert!(!state.mark_event_seen("missing", "evt-1"));
         assert!(!state.is_event_seen("missing", "evt-1"));
+        assert!(!state.is_non_order_event_seen("evt-2"));
 
         assert_eq!(
             TradeListingStateError::MissingOrder.to_string(),
@@ -394,6 +408,7 @@ mod tests {
             let state_handle = runtime.state();
             let mut state = state_handle.lock().await;
             state.mark_listing_validated("addr", "evt-listing-1");
+            state.mark_non_order_event_seen("evt-validate-1");
             state.observe_event_created_at(456);
         }
         runtime.persist().await.expect("persist");
@@ -406,6 +421,7 @@ mod tests {
             loaded_state.validated_listing_event_id("addr"),
             Some("evt-listing-1")
         );
+        assert!(loaded_state.is_non_order_event_seen("evt-validate-1"));
         assert_eq!(loaded_state.last_event_created_at(), Some(456));
 
         let _ = tokio::fs::remove_file(path).await;
@@ -445,6 +461,7 @@ mod tests {
             state: TradeListingState {
                 validated_listings: ["addr".to_string()].into_iter().collect(),
                 validated_listing_events: HashMap::new(),
+                seen_non_order_event_ids: HashSet::new(),
                 orders: HashMap::new(),
                 last_event_created_at: Some(321),
             },
@@ -479,6 +496,7 @@ mod tests {
                     event_id: "evt-listing-1".to_string(),
                 },
             )]),
+            seen_non_order_event_ids: HashSet::new(),
             orders: HashMap::new(),
             last_event_created_at: None,
         };

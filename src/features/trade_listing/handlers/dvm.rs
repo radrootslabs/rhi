@@ -452,6 +452,13 @@ async fn handle_listing_validate_request(
     client: &RadrootsNostrClient,
     state: &Arc<tokio::sync::Mutex<TradeListingState>>,
 ) -> Result<(), TradeListingDvmError> {
+    {
+        let state = state.lock().await;
+        if state.is_non_order_event_seen(&event.id.to_string()) {
+            return Ok(());
+        }
+    }
+
     let listing_event = if let Some(ptr) = payload.listing_event {
         match fetch_event_by_id_io(client, &ptr.id).await {
             Ok(evt) => Some(evt),
@@ -525,7 +532,12 @@ async fn handle_listing_validate_request(
         }
     }
 
-    send_validate_result(event, client, listing_addr, errors).await
+    send_validate_result(event, client, listing_addr, errors).await?;
+    state
+        .lock()
+        .await
+        .mark_non_order_event_seen(&event.id.to_string());
+    Ok(())
 }
 
 async fn send_validate_result(
@@ -1898,10 +1910,10 @@ mod tests {
         let client = make_client(&rhi_keys);
         let listing_addr = listing_addr_for_seller(&seller_keys);
         let state = Arc::new(AsyncMutex::new(TradeListingState::default()));
-        let event = make_event(
+        let missing_event = make_event(
             &seller_keys,
             RadrootsNostrKind::Custom(KIND_TRADE_LISTING_VALIDATE_REQ),
-            "content".to_string(),
+            "missing".to_string(),
             Vec::new(),
         );
 
@@ -1914,27 +1926,51 @@ mod tests {
             }),
         };
         assert!(
-            handle_listing_validate_request(&event, payload, &listing_addr, &client, &state)
-                .await
-                .is_ok()
+            handle_listing_validate_request(
+                &missing_event,
+                payload,
+                &listing_addr,
+                &client,
+                &state
+            )
+            .await
+            .is_ok()
         );
 
+        let fetch_error_event = make_event(
+            &seller_keys,
+            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_VALIDATE_REQ),
+            "fetch-error".to_string(),
+            Vec::new(),
+        );
         push_fetch_events_ok(Vec::new());
         push_send_ok();
         let payload = TradeListingValidateRequest {
             listing_event: None,
         };
         assert!(
-            handle_listing_validate_request(&event, payload, &listing_addr, &client, &state)
-                .await
-                .is_ok()
+            handle_listing_validate_request(
+                &fetch_error_event,
+                payload,
+                &listing_addr,
+                &client,
+                &state,
+            )
+            .await
+            .is_ok()
         );
 
+        let success_event = make_event(
+            &seller_keys,
+            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_VALIDATE_REQ),
+            "success".to_string(),
+            Vec::new(),
+        );
         dvm_test_hooks()
             .lock()
             .expect("hooks")
             .fetch_event_by_id_results
-            .push_back(Ok(event.clone()));
+            .push_back(Ok(success_event.clone()));
         push_validate_listing_ok(
             listing_addr.clone(),
             RadrootsListingFarmRef {
@@ -1946,27 +1982,39 @@ mod tests {
         push_send_ok();
         let payload = TradeListingValidateRequest {
             listing_event: Some(RadrootsNostrEventPtr {
-                id: event.id.to_hex(),
+                id: success_event.id.to_hex(),
                 relays: None,
             }),
         };
         assert!(
-            handle_listing_validate_request(&event, payload, &listing_addr, &client, &state)
-                .await
-                .is_ok()
+            handle_listing_validate_request(
+                &success_event,
+                payload,
+                &listing_addr,
+                &client,
+                &state
+            )
+            .await
+            .is_ok()
         );
         assert!(state.lock().await.is_listing_validated(&listing_addr));
         assert_eq!(
             state.lock().await.validated_listing_event_id(&listing_addr),
-            Some(event.id.to_string().as_str())
+            Some(success_event.id.to_string().as_str())
         );
 
         let other_listing_addr = listing_addr_for_seller(&rhi_keys);
+        let mismatch_event = make_event(
+            &seller_keys,
+            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_VALIDATE_REQ),
+            "mismatch".to_string(),
+            Vec::new(),
+        );
         dvm_test_hooks()
             .lock()
             .expect("hooks")
             .fetch_event_by_id_results
-            .push_back(Ok(event.clone()));
+            .push_back(Ok(mismatch_event.clone()));
         push_validate_listing_ok(
             other_listing_addr,
             RadrootsListingFarmRef {
@@ -1977,14 +2025,14 @@ mod tests {
         push_send_ok();
         let payload = TradeListingValidateRequest {
             listing_event: Some(RadrootsNostrEventPtr {
-                id: event.id.to_hex(),
+                id: mismatch_event.id.to_hex(),
                 relays: None,
             }),
         };
         let mismatch_listing_addr = listing_addr_for_seller(&buyer_keys);
         assert!(
             handle_listing_validate_request(
-                &event,
+                &mismatch_event,
                 payload,
                 &mismatch_listing_addr,
                 &client,
@@ -2004,17 +2052,82 @@ mod tests {
             .lock()
             .await
             .mark_listing_validated(&listing_addr, "stale-listing-event");
+        let stale_event = make_event(
+            &seller_keys,
+            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_VALIDATE_REQ),
+            "stale".to_string(),
+            Vec::new(),
+        );
         push_fetch_events_ok(Vec::new());
         push_send_ok();
         let payload = TradeListingValidateRequest {
             listing_event: None,
         };
         assert!(
-            handle_listing_validate_request(&event, payload, &listing_addr, &client, &state)
+            handle_listing_validate_request(&stale_event, payload, &listing_addr, &client, &state)
                 .await
                 .is_ok()
         );
         assert!(!state.lock().await.is_listing_validated(&listing_addr));
+    }
+
+    #[tokio::test]
+    async fn handle_listing_validate_request_dedupes_replayed_request_event() {
+        let _guard = test_guard();
+        let (rhi_keys, seller_keys, _) = make_keys();
+        let client = make_client(&rhi_keys);
+        let listing_addr = listing_addr_for_seller(&seller_keys);
+        let state = Arc::new(AsyncMutex::new(TradeListingState::default()));
+        let event = make_event(
+            &seller_keys,
+            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_VALIDATE_REQ),
+            "content".to_string(),
+            Vec::new(),
+        );
+        let payload = TradeListingValidateRequest {
+            listing_event: Some(RadrootsNostrEventPtr {
+                id: event.id.to_hex(),
+                relays: None,
+            }),
+        };
+
+        dvm_test_hooks()
+            .lock()
+            .expect("hooks")
+            .fetch_event_by_id_results
+            .push_back(Ok(event.clone()));
+        push_validate_listing_ok(
+            listing_addr.clone(),
+            RadrootsListingFarmRef {
+                pubkey: seller_keys.public_key().to_hex(),
+                d_tag: "farmtag".to_string(),
+            },
+        );
+        push_farm_validation_result(Ok(Vec::new()));
+        push_send_ok();
+        assert!(
+            handle_listing_validate_request(
+                &event,
+                payload.clone(),
+                &listing_addr,
+                &client,
+                &state,
+            )
+            .await
+            .is_ok()
+        );
+        assert!(
+            state
+                .lock()
+                .await
+                .is_non_order_event_seen(&event.id.to_string())
+        );
+
+        assert!(
+            handle_listing_validate_request(&event, payload, &listing_addr, &client, &state)
+                .await
+                .is_ok()
+        );
     }
 
     #[tokio::test]
