@@ -265,15 +265,17 @@ pub async fn handle_event(
     }
 
     let tag_slices: Vec<Vec<String>> = tags.iter().map(|t| t.as_slice().to_vec()).collect();
-    let rhi_pubkey = keys.public_key().to_string();
-    if !tag_has_value(&tag_slices, "p", &rhi_pubkey) {
-        return Err(TradeListingDvmError::MissingRecipient);
-    }
 
     let envelope: TradeListingEnvelope<serde_json::Value> = serde_json::from_str(&event.content)?;
     envelope.validate()?;
     if envelope.message_type.kind() != kind {
         return Err(TradeListingDvmError::TagMismatch("kind"));
+    }
+    if envelope.message_type.is_service() {
+        let rhi_pubkey = keys.public_key().to_string();
+        if !tag_has_value(&tag_slices, "p", &rhi_pubkey) {
+            return Err(TradeListingDvmError::MissingRecipient);
+        }
     }
 
     let listing_addr = tag_value(&tag_slices, "a").ok_or(TradeListingDvmError::MissingTag("a"))?;
@@ -648,15 +650,7 @@ async fn handle_order_request(
 
     drop(state);
 
-    send_envelope(
-        client,
-        payload.seller_pubkey.clone(),
-        TradeListingMessageType::OrderRequest,
-        &payload.listing_addr,
-        Some(order_id),
-        &payload,
-    )
-    .await
+    Ok(())
 }
 
 async fn handle_order_response(
@@ -664,7 +658,7 @@ async fn handle_order_response(
     payload: TradeOrderResponse,
     _listing_addr: &TradeListingAddress,
     order_id: Option<&str>,
-    client: &RadrootsNostrClient,
+    _client: &RadrootsNostrClient,
     state: &Arc<tokio::sync::Mutex<TradeListingState>>,
 ) -> Result<(), TradeListingDvmError> {
     let order_id = order_id.ok_or(TradeListingDvmError::MissingTag("d"))?;
@@ -689,19 +683,9 @@ async fn handle_order_response(
     order.status = next_status;
     order.seen_event_ids.insert(event_id);
 
-    let buyer = order.buyer_pubkey.clone();
-    let listing_addr_str = order.listing_addr.clone();
     drop(state);
 
-    send_envelope(
-        client,
-        buyer,
-        TradeListingMessageType::OrderResponse,
-        &listing_addr_str,
-        Some(order_id),
-        &payload,
-    )
-    .await
+    Ok(())
 }
 
 #[cfg_attr(all(not(test), coverage_nightly), coverage(off))]
@@ -710,7 +694,7 @@ async fn handle_order_revision(
     payload: TradeOrderRevision,
     listing_addr: &TradeListingAddress,
     order_id: Option<&str>,
-    client: &RadrootsNostrClient,
+    _client: &RadrootsNostrClient,
     state: &Arc<tokio::sync::Mutex<TradeListingState>>,
 ) -> Result<(), TradeListingDvmError> {
     let order_id = order_id.ok_or(TradeListingDvmError::MissingTag("d"))?;
@@ -734,19 +718,9 @@ async fn handle_order_revision(
     ensure_transition(order.status.clone(), TradeOrderStatus::Revised)?;
     order.status = TradeOrderStatus::Revised;
     order.seen_event_ids.insert(event_id);
-    let buyer = order.buyer_pubkey.clone();
-    let listing_addr_str = order.listing_addr.clone();
     drop(state);
 
-    send_envelope(
-        client,
-        buyer,
-        TradeListingMessageType::OrderRevision,
-        &listing_addr_str,
-        Some(order_id),
-        &payload,
-    )
-    .await
+    Ok(())
 }
 
 async fn handle_order_revision_response(
@@ -755,7 +729,7 @@ async fn handle_order_revision_response(
     payload: TradeOrderRevisionResponse,
     _listing_addr: &TradeListingAddress,
     order_id: Option<&str>,
-    client: &RadrootsNostrClient,
+    _client: &RadrootsNostrClient,
     state: &Arc<tokio::sync::Mutex<TradeListingState>>,
 ) -> Result<(), TradeListingDvmError> {
     let order_id = order_id.ok_or(TradeListingDvmError::MissingTag("d"))?;
@@ -785,19 +759,9 @@ async fn handle_order_revision_response(
     ensure_transition(order.status.clone(), next_status.clone())?;
     order.status = next_status;
     order.seen_event_ids.insert(event_id);
-    let seller = order.seller_pubkey.clone();
-    let listing_addr_str = order.listing_addr.clone();
     drop(state);
 
-    send_envelope(
-        client,
-        seller,
-        message_type,
-        &listing_addr_str,
-        Some(order_id),
-        &payload,
-    )
-    .await
+    Ok(())
 }
 
 async fn handle_question(
@@ -805,7 +769,7 @@ async fn handle_question(
     payload: TradeQuestion,
     _listing_addr: &TradeListingAddress,
     order_id: Option<&str>,
-    client: &RadrootsNostrClient,
+    _client: &RadrootsNostrClient,
     state: &Arc<tokio::sync::Mutex<TradeListingState>>,
 ) -> Result<(), TradeListingDvmError> {
     let order_id = order_id.ok_or(TradeListingDvmError::MissingTag("d"))?;
@@ -828,19 +792,9 @@ async fn handle_question(
     ensure_transition(order.status.clone(), TradeOrderStatus::Questioned)?;
     order.status = TradeOrderStatus::Questioned;
     order.seen_event_ids.insert(event_id);
-    let seller = order.seller_pubkey.clone();
-    let listing_addr_str = order.listing_addr.clone();
     drop(state);
 
-    send_envelope(
-        client,
-        seller,
-        TradeListingMessageType::Question,
-        &listing_addr_str,
-        Some(order_id),
-        &payload,
-    )
-    .await
+    Ok(())
 }
 
 #[cfg_attr(all(not(test), coverage_nightly), coverage(off))]
@@ -849,7 +803,7 @@ async fn handle_answer(
     payload: TradeAnswer,
     listing_addr: &TradeListingAddress,
     order_id: Option<&str>,
-    client: &RadrootsNostrClient,
+    _client: &RadrootsNostrClient,
     state: &Arc<tokio::sync::Mutex<TradeListingState>>,
 ) -> Result<(), TradeListingDvmError> {
     let order_id = order_id.ok_or(TradeListingDvmError::MissingTag("d"))?;
@@ -874,19 +828,9 @@ async fn handle_answer(
     ensure_transition(order.status.clone(), TradeOrderStatus::Requested)?;
     order.status = TradeOrderStatus::Requested;
     order.seen_event_ids.insert(event_id);
-    let buyer = order.buyer_pubkey.clone();
-    let listing_addr_str = order.listing_addr.clone();
     drop(state);
 
-    send_envelope(
-        client,
-        buyer,
-        TradeListingMessageType::Answer,
-        &listing_addr_str,
-        Some(order_id),
-        &payload,
-    )
-    .await
+    Ok(())
 }
 
 async fn handle_discount_request(
@@ -894,7 +838,7 @@ async fn handle_discount_request(
     payload: TradeDiscountRequest,
     _listing_addr: &TradeListingAddress,
     order_id: Option<&str>,
-    client: &RadrootsNostrClient,
+    _client: &RadrootsNostrClient,
     state: &Arc<tokio::sync::Mutex<TradeListingState>>,
 ) -> Result<(), TradeListingDvmError> {
     let order_id = order_id.ok_or(TradeListingDvmError::MissingTag("d"))?;
@@ -913,19 +857,9 @@ async fn handle_discount_request(
         return Err(TradeListingDvmError::Unauthorized);
     }
     order.seen_event_ids.insert(event_id);
-    let seller = order.seller_pubkey.clone();
-    let listing_addr_str = order.listing_addr.clone();
     drop(state);
 
-    send_envelope(
-        client,
-        seller,
-        TradeListingMessageType::DiscountRequest,
-        &listing_addr_str,
-        Some(order_id),
-        &payload,
-    )
-    .await
+    Ok(())
 }
 
 async fn handle_discount_offer(
@@ -933,7 +867,7 @@ async fn handle_discount_offer(
     payload: TradeDiscountOffer,
     _listing_addr: &TradeListingAddress,
     order_id: Option<&str>,
-    client: &RadrootsNostrClient,
+    _client: &RadrootsNostrClient,
     state: &Arc<tokio::sync::Mutex<TradeListingState>>,
 ) -> Result<(), TradeListingDvmError> {
     let order_id = order_id.ok_or(TradeListingDvmError::MissingTag("d"))?;
@@ -954,19 +888,9 @@ async fn handle_discount_offer(
     ensure_transition(order.status.clone(), TradeOrderStatus::Revised)?;
     order.status = TradeOrderStatus::Revised;
     order.seen_event_ids.insert(event_id);
-    let buyer = order.buyer_pubkey.clone();
-    let listing_addr_str = order.listing_addr.clone();
     drop(state);
 
-    send_envelope(
-        client,
-        buyer,
-        TradeListingMessageType::DiscountOffer,
-        &listing_addr_str,
-        Some(order_id),
-        &payload,
-    )
-    .await
+    Ok(())
 }
 
 async fn handle_discount_decision(
@@ -975,7 +899,7 @@ async fn handle_discount_decision(
     payload: TradeDiscountDecision,
     _listing_addr: &TradeListingAddress,
     order_id: Option<&str>,
-    client: &RadrootsNostrClient,
+    _client: &RadrootsNostrClient,
     state: &Arc<tokio::sync::Mutex<TradeListingState>>,
 ) -> Result<(), TradeListingDvmError> {
     let order_id = order_id.ok_or(TradeListingDvmError::MissingTag("d"))?;
@@ -1006,27 +930,17 @@ async fn handle_discount_decision(
     ensure_transition(order.status.clone(), next_status.clone())?;
     order.status = next_status;
     order.seen_event_ids.insert(event_id);
-    let seller = order.seller_pubkey.clone();
-    let listing_addr_str = order.listing_addr.clone();
     drop(state);
 
-    send_envelope(
-        client,
-        seller,
-        message_type,
-        &listing_addr_str,
-        Some(order_id),
-        &payload,
-    )
-    .await
+    Ok(())
 }
 
 async fn handle_cancel(
     event: &RadrootsNostrEvent,
-    payload: TradeListingCancel,
+    _payload: TradeListingCancel,
     _listing_addr: &TradeListingAddress,
     order_id: Option<&str>,
-    client: &RadrootsNostrClient,
+    _client: &RadrootsNostrClient,
     state: &Arc<tokio::sync::Mutex<TradeListingState>>,
 ) -> Result<(), TradeListingDvmError> {
     let order_id = order_id.ok_or(TradeListingDvmError::MissingTag("d"))?;
@@ -1045,23 +959,9 @@ async fn handle_cancel(
     ensure_transition(order.status.clone(), TradeOrderStatus::Cancelled)?;
     order.status = TradeOrderStatus::Cancelled;
     order.seen_event_ids.insert(event_id);
-    let recipient = if sender == order.buyer_pubkey {
-        order.seller_pubkey.clone()
-    } else {
-        order.buyer_pubkey.clone()
-    };
-    let listing_addr_str = order.listing_addr.clone();
     drop(state);
 
-    send_envelope(
-        client,
-        recipient,
-        TradeListingMessageType::Cancel,
-        &listing_addr_str,
-        Some(order_id),
-        &payload,
-    )
-    .await
+    Ok(())
 }
 
 async fn handle_fulfillment_update(
@@ -1069,7 +969,7 @@ async fn handle_fulfillment_update(
     payload: TradeFulfillmentUpdate,
     _listing_addr: &TradeListingAddress,
     order_id: Option<&str>,
-    client: &RadrootsNostrClient,
+    _client: &RadrootsNostrClient,
     state: &Arc<tokio::sync::Mutex<TradeListingState>>,
 ) -> Result<(), TradeListingDvmError> {
     let order_id = order_id.ok_or(TradeListingDvmError::MissingTag("d"))?;
@@ -1088,19 +988,9 @@ async fn handle_fulfillment_update(
         order.status = next_status;
     }
     order.seen_event_ids.insert(event_id);
-    let buyer = order.buyer_pubkey.clone();
-    let listing_addr_str = order.listing_addr.clone();
     drop(state);
 
-    send_envelope(
-        client,
-        buyer,
-        TradeListingMessageType::FulfillmentUpdate,
-        &listing_addr_str,
-        Some(order_id),
-        &payload,
-    )
-    .await
+    Ok(())
 }
 
 async fn handle_receipt(
@@ -1108,7 +998,7 @@ async fn handle_receipt(
     payload: TradeReceipt,
     _listing_addr: &TradeListingAddress,
     order_id: Option<&str>,
-    client: &RadrootsNostrClient,
+    _client: &RadrootsNostrClient,
     state: &Arc<tokio::sync::Mutex<TradeListingState>>,
 ) -> Result<(), TradeListingDvmError> {
     let order_id = order_id.ok_or(TradeListingDvmError::MissingTag("d"))?;
@@ -1127,19 +1017,9 @@ async fn handle_receipt(
         order.status = next_status;
     }
     order.seen_event_ids.insert(event_id);
-    let seller = order.seller_pubkey.clone();
-    let listing_addr_str = order.listing_addr.clone();
     drop(state);
 
-    send_envelope(
-        client,
-        seller,
-        TradeListingMessageType::Receipt,
-        &listing_addr_str,
-        Some(order_id),
-        &payload,
-    )
-    .await
+    Ok(())
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
@@ -2628,12 +2508,12 @@ mod tests {
 
         let missing_recipient = make_event(
             &buyer_keys,
-            custom_trade_kind(KIND_TRADE_LISTING_ORDER_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_VALIDATE_REQ),
             make_envelope_content(
-                TradeListingMessageType::OrderRequest,
+                TradeListingMessageType::ListingValidateRequest,
                 &listing_addr,
-                Some(order_id),
-                json!({}),
+                None,
+                json!({"listing_event": null}),
             ),
             Vec::new(),
         );

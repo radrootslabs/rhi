@@ -5,7 +5,7 @@ use std::convert::TryFrom;
 use std::time::Duration;
 
 use anyhow::{Result, anyhow};
-use radroots_events::kinds::TRADE_LISTING_KINDS;
+use radroots_events::kinds::{TRADE_LISTING_KINDS, is_trade_service_kind};
 use radroots_nostr::prelude::{
     RadrootsNostrClient, RadrootsNostrEvent, RadrootsNostrFilter, RadrootsNostrKeys,
     RadrootsNostrKind, RadrootsNostrRelayPoolNotification, RadrootsNostrTag,
@@ -206,6 +206,10 @@ async fn process_event_notification(
     };
 
     let state = runtime.state();
+    let event_kind = match event.kind {
+        RadrootsNostrKind::Custom(v) => Some(u32::from(v)),
+        _ => None,
+    };
     if let Err(err) = handle_event_io(
         event.clone(),
         resolved_tags,
@@ -218,8 +222,12 @@ async fn process_event_notification(
         match err {
             TradeListingDvmError::MissingRecipient | TradeListingDvmError::UnsupportedKind => {}
             other => {
-                if let Err(err) = handle_error_io(other, &event, &client).await {
-                    warn!("trade_listing: failed to send error feedback: {err}");
+                if event_kind.is_some_and(is_trade_service_kind) {
+                    if let Err(err) = handle_error_io(other, &event, &client).await {
+                        warn!("trade_listing: failed to send error feedback: {err}");
+                    }
+                } else {
+                    warn!("trade_listing: rejected public trade event: {other}");
                 }
                 runtime.mark_processed_event(created_at).await?;
             }
