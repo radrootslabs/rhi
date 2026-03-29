@@ -20,8 +20,8 @@ use radroots_trade::listing::{
     kinds::is_trade_listing_kind,
     order::{
         TradeAnswer, TradeDiscountDecision, TradeDiscountOffer, TradeDiscountRequest,
-        TradeFulfillmentUpdate, TradeOrder, TradeOrderRevision, TradeOrderStatus, TradeQuestion,
-        TradeReceipt,
+        TradeFulfillmentStatus, TradeFulfillmentUpdate, TradeOrder, TradeOrderRevision,
+        TradeOrderStatus, TradeQuestion, TradeReceipt,
     },
     validation::{TradeListingValidationError, validate_listing_event},
 };
@@ -574,6 +574,9 @@ async fn handle_order_request(
     if payload.order_id != order_id || payload.listing_addr != listing_addr.as_str() {
         return Err(TradeListingDvmError::InvalidOrder);
     }
+    if payload.status != TradeOrderStatus::Requested {
+        return Err(TradeListingDvmError::InvalidOrder);
+    }
 
     {
         let state = state.lock().await;
@@ -1068,8 +1071,9 @@ async fn handle_fulfillment_update(
     if order.seller_pubkey != event.pubkey.to_string() {
         return Err(TradeListingDvmError::Unauthorized);
     }
-    ensure_transition(order.status.clone(), TradeOrderStatus::Fulfilled)?;
-    order.status = TradeOrderStatus::Fulfilled;
+    if let Some(next_status) = next_status_for_fulfillment_update(&order.status, &payload.status)? {
+        order.status = next_status;
+    }
     order.seen_event_ids.insert(event_id);
     let buyer = order.buyer_pubkey.clone();
     let listing_addr_str = order.listing_addr.clone();
@@ -1106,8 +1110,9 @@ async fn handle_receipt(
     if order.buyer_pubkey != event.pubkey.to_string() {
         return Err(TradeListingDvmError::Unauthorized);
     }
-    ensure_transition(order.status.clone(), TradeOrderStatus::Completed)?;
-    order.status = TradeOrderStatus::Completed;
+    if let Some(next_status) = next_status_for_receipt(&order.status, payload.acknowledged)? {
+        order.status = next_status;
+    }
     order.seen_event_ids.insert(event_id);
     let seller = order.seller_pubkey.clone();
     let listing_addr_str = order.listing_addr.clone();
@@ -1325,6 +1330,51 @@ fn ensure_transition(
     }
 }
 
+fn next_status_for_fulfillment_update(
+    current: &TradeOrderStatus,
+    fulfillment_status: &TradeFulfillmentStatus,
+) -> Result<Option<TradeOrderStatus>, TradeListingStateError> {
+    match fulfillment_status {
+        TradeFulfillmentStatus::Preparing
+        | TradeFulfillmentStatus::Shipped
+        | TradeFulfillmentStatus::ReadyForPickup => {
+            if matches!(current, TradeOrderStatus::Accepted) {
+                Ok(None)
+            } else {
+                Err(TradeListingStateError::InvalidTransition {
+                    from: current.clone(),
+                    to: TradeOrderStatus::Accepted,
+                })
+            }
+        }
+        TradeFulfillmentStatus::Delivered => {
+            ensure_transition(current.clone(), TradeOrderStatus::Fulfilled)?;
+            Ok(Some(TradeOrderStatus::Fulfilled))
+        }
+        TradeFulfillmentStatus::Cancelled => {
+            ensure_transition(current.clone(), TradeOrderStatus::Cancelled)?;
+            Ok(Some(TradeOrderStatus::Cancelled))
+        }
+    }
+}
+
+fn next_status_for_receipt(
+    current: &TradeOrderStatus,
+    acknowledged: bool,
+) -> Result<Option<TradeOrderStatus>, TradeListingStateError> {
+    if acknowledged {
+        ensure_transition(current.clone(), TradeOrderStatus::Completed)?;
+        Ok(Some(TradeOrderStatus::Completed))
+    } else if matches!(current, TradeOrderStatus::Fulfilled) {
+        Ok(None)
+    } else {
+        Err(TradeListingStateError::InvalidTransition {
+            from: current.clone(),
+            to: TradeOrderStatus::Fulfilled,
+        })
+    }
+}
+
 pub async fn handle_error(
     error: TradeListingDvmError,
     event: &RadrootsNostrEvent,
@@ -1345,8 +1395,9 @@ mod tests {
         handle_discount_request, handle_error, handle_event, handle_fulfillment_update,
         handle_listing_validate_request, handle_order_request, handle_order_response,
         handle_order_revision, handle_order_revision_response, handle_question, handle_receipt,
-        parse_payload, send_envelope, send_event_io, tag_has_value, tag_value,
-        validate_farm_dependencies, validate_listing_event_io,
+        next_status_for_fulfillment_update, next_status_for_receipt, parse_payload, send_envelope,
+        send_event_io, tag_has_value, tag_value, validate_farm_dependencies,
+        validate_listing_event_io,
     };
     use crate::features::trade_listing::state::{
         TradeListingState, TradeListingStateError, TradeOrderState,
@@ -1729,6 +1780,48 @@ mod tests {
             ensure_transition(TradeOrderStatus::Completed, TradeOrderStatus::Requested).is_err()
         );
         assert!(ensure_transition(TradeOrderStatus::Draft, TradeOrderStatus::Draft).is_ok());
+        assert_eq!(
+            next_status_for_fulfillment_update(
+                &TradeOrderStatus::Accepted,
+                &TradeFulfillmentStatus::Shipped
+            )
+            .expect("shipped keeps accepted"),
+            None
+        );
+        assert_eq!(
+            next_status_for_fulfillment_update(
+                &TradeOrderStatus::Accepted,
+                &TradeFulfillmentStatus::Delivered
+            )
+            .expect("delivered fulfills"),
+            Some(TradeOrderStatus::Fulfilled)
+        );
+        assert_eq!(
+            next_status_for_fulfillment_update(
+                &TradeOrderStatus::Accepted,
+                &TradeFulfillmentStatus::Cancelled
+            )
+            .expect("cancelled cancels"),
+            Some(TradeOrderStatus::Cancelled)
+        );
+        assert!(
+            next_status_for_fulfillment_update(
+                &TradeOrderStatus::Requested,
+                &TradeFulfillmentStatus::Shipped
+            )
+            .is_err()
+        );
+        assert_eq!(
+            next_status_for_receipt(&TradeOrderStatus::Fulfilled, false)
+                .expect("unacknowledged receipt keeps fulfilled"),
+            None
+        );
+        assert_eq!(
+            next_status_for_receipt(&TradeOrderStatus::Fulfilled, true)
+                .expect("acknowledged receipt completes"),
+            Some(TradeOrderStatus::Completed)
+        );
+        assert!(next_status_for_receipt(&TradeOrderStatus::Requested, false).is_err());
 
         let tags = vec![
             vec!["p".to_string(), "pk".to_string()],
@@ -2429,7 +2522,7 @@ mod tests {
             handle_fulfillment_update(
                 &fulfill_event,
                 TradeFulfillmentUpdate {
-                    status: TradeFulfillmentStatus::Shipped,
+                    status: TradeFulfillmentStatus::Delivered,
                     tracking: None,
                     eta: None,
                     notes: None,
@@ -3438,6 +3531,27 @@ mod tests {
             .lock()
             .await
             .mark_listing_validated(&listing_addr, &validated_listing_event.id.to_string());
+        let invalid_status_order = make_order(
+            "order-4",
+            &listing_addr,
+            &buyer_pub,
+            &seller_pub,
+            TradeOrderStatus::Accepted,
+        );
+        push_fetch_events_ok(vec![validated_listing_event.clone()]);
+        assert!(matches!(
+            handle_order_request(
+                &event,
+                invalid_status_order,
+                &parsed,
+                Some("order-4"),
+                &client,
+                &state,
+            )
+            .await,
+            Err(TradeListingDvmError::InvalidOrder)
+        ));
+
         let unauthorized_order = make_order(
             "order-3",
             &listing_addr,
@@ -4291,6 +4405,196 @@ mod tests {
             )
             .await
             .is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn fulfillment_and_receipt_handlers_follow_projection_semantics() {
+        let _guard = test_guard();
+        let (rhi_keys, seller_keys, buyer_keys) = make_keys();
+        let client = make_client(&rhi_keys);
+        let listing_addr = listing_addr_for_seller(&seller_keys);
+        let parsed = TradeListingAddress::parse(&listing_addr).expect("listing");
+        let buyer_pub = buyer_keys.public_key().to_hex();
+        let seller_pub = seller_keys.public_key().to_hex();
+        let state = state_with_order(
+            &listing_addr,
+            "order-1",
+            &buyer_pub,
+            &seller_pub,
+            TradeOrderStatus::Accepted,
+        )
+        .await;
+
+        push_send_ok();
+        assert!(
+            handle_fulfillment_update(
+                &make_event(
+                    &seller_keys,
+                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_FULFILLMENT_UPDATE_REQ),
+                    "fulfillment-shipped".to_string(),
+                    Vec::new(),
+                ),
+                TradeFulfillmentUpdate {
+                    status: TradeFulfillmentStatus::Shipped,
+                    tracking: None,
+                    eta: None,
+                    notes: None,
+                },
+                &parsed,
+                Some("order-1"),
+                &client,
+                &state,
+            )
+            .await
+            .is_ok()
+        );
+        assert_eq!(
+            state
+                .lock()
+                .await
+                .get_order_mut("order-1")
+                .expect("order")
+                .status,
+            TradeOrderStatus::Accepted
+        );
+
+        push_send_ok();
+        assert!(
+            handle_fulfillment_update(
+                &make_event(
+                    &seller_keys,
+                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_FULFILLMENT_UPDATE_REQ),
+                    "fulfillment-delivered".to_string(),
+                    Vec::new(),
+                ),
+                TradeFulfillmentUpdate {
+                    status: TradeFulfillmentStatus::Delivered,
+                    tracking: None,
+                    eta: None,
+                    notes: None,
+                },
+                &parsed,
+                Some("order-1"),
+                &client,
+                &state,
+            )
+            .await
+            .is_ok()
+        );
+        assert_eq!(
+            state
+                .lock()
+                .await
+                .get_order_mut("order-1")
+                .expect("order")
+                .status,
+            TradeOrderStatus::Fulfilled
+        );
+
+        push_send_ok();
+        assert!(
+            handle_receipt(
+                &make_event(
+                    &buyer_keys,
+                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_RECEIPT_REQ),
+                    "receipt-unacknowledged".to_string(),
+                    Vec::new(),
+                ),
+                TradeReceipt {
+                    acknowledged: false,
+                    at: 1,
+                    note: None,
+                },
+                &parsed,
+                Some("order-1"),
+                &client,
+                &state,
+            )
+            .await
+            .is_ok()
+        );
+        assert_eq!(
+            state
+                .lock()
+                .await
+                .get_order_mut("order-1")
+                .expect("order")
+                .status,
+            TradeOrderStatus::Fulfilled
+        );
+
+        push_send_ok();
+        assert!(
+            handle_receipt(
+                &make_event(
+                    &buyer_keys,
+                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_RECEIPT_REQ),
+                    "receipt-acknowledged".to_string(),
+                    Vec::new(),
+                ),
+                TradeReceipt {
+                    acknowledged: true,
+                    at: 2,
+                    note: None,
+                },
+                &parsed,
+                Some("order-1"),
+                &client,
+                &state,
+            )
+            .await
+            .is_ok()
+        );
+        assert_eq!(
+            state
+                .lock()
+                .await
+                .get_order_mut("order-1")
+                .expect("order")
+                .status,
+            TradeOrderStatus::Completed
+        );
+
+        let cancelled_state = state_with_order(
+            &listing_addr,
+            "order-2",
+            &buyer_pub,
+            &seller_pub,
+            TradeOrderStatus::Accepted,
+        )
+        .await;
+        push_send_ok();
+        assert!(
+            handle_fulfillment_update(
+                &make_event(
+                    &seller_keys,
+                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_FULFILLMENT_UPDATE_REQ),
+                    "fulfillment-cancelled".to_string(),
+                    Vec::new(),
+                ),
+                TradeFulfillmentUpdate {
+                    status: TradeFulfillmentStatus::Cancelled,
+                    tracking: None,
+                    eta: None,
+                    notes: None,
+                },
+                &parsed,
+                Some("order-2"),
+                &client,
+                &cancelled_state,
+            )
+            .await
+            .is_ok()
+        );
+        assert_eq!(
+            cancelled_state
+                .lock()
+                .await
+                .get_order_mut("order-2")
+                .expect("order")
+                .status,
+            TradeOrderStatus::Cancelled
         );
     }
 
