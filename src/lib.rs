@@ -9,6 +9,7 @@ pub mod rhi;
 pub use cli::Args as cli_args;
 
 use anyhow::Result;
+use radroots_events::kinds::TRADE_LISTING_KINDS;
 use std::time::Duration;
 
 use crate::features::trade_listing::state::{TradeListingRuntime, TradeListingRuntimeConfig};
@@ -17,7 +18,6 @@ use radroots_identity::RadrootsIdentity;
 use radroots_nostr::prelude::{
     RadrootsNostrApplicationHandlerSpec, radroots_nostr_bootstrap_service_presence,
 };
-use radroots_trade::listing::kinds::TRADE_LISTING_KINDS;
 use tracing::{info, warn};
 
 #[cfg(test)]

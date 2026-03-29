@@ -3,29 +3,40 @@
 
 use std::{sync::Arc, time::Duration};
 
-use radroots_events::kinds::KIND_FARM;
+use radroots_events::kinds::{KIND_FARM, is_trade_listing_kind};
 use radroots_events::listing::RadrootsListingFarmRef;
+use radroots_events::trade::{
+    RadrootsTradeAnswer as TradeAnswer, RadrootsTradeDiscountDecision as TradeDiscountDecision,
+    RadrootsTradeDiscountOffer as TradeDiscountOffer,
+    RadrootsTradeDiscountRequest as TradeDiscountRequest,
+    RadrootsTradeEnvelope as TradeListingEnvelope,
+    RadrootsTradeEnvelopeError as TradeListingEnvelopeError,
+    RadrootsTradeFulfillmentStatus as TradeFulfillmentStatus,
+    RadrootsTradeFulfillmentUpdate as TradeFulfillmentUpdate,
+    RadrootsTradeListingCancel as TradeListingCancel,
+    RadrootsTradeListingValidateRequest as TradeListingValidateRequest,
+    RadrootsTradeListingValidateResult as TradeListingValidateResult,
+    RadrootsTradeListingValidationError as TradeListingValidationError,
+    RadrootsTradeMessageType as TradeListingMessageType, RadrootsTradeOrder as TradeOrder,
+    RadrootsTradeOrderResponse as TradeOrderResponse,
+    RadrootsTradeOrderRevision as TradeOrderRevision,
+    RadrootsTradeOrderRevisionResponse as TradeOrderRevisionResponse,
+    RadrootsTradeOrderStatus as TradeOrderStatus, RadrootsTradeQuestion as TradeQuestion,
+    RadrootsTradeReceipt as TradeReceipt,
+};
+use radroots_events_codec::trade::{
+    RadrootsTradeListingAddress as TradeListingAddress,
+    trade_envelope_event_build as trade_listing_envelope_event_build,
+};
 use radroots_nostr::prelude::{
     RadrootsNostrClient, RadrootsNostrEvent, RadrootsNostrEventBuilder, RadrootsNostrFilter,
     RadrootsNostrKeys, RadrootsNostrKind, RadrootsNostrTag, radroots_event_from_nostr,
     radroots_nostr_build_event, radroots_nostr_build_event_job_feedback,
     radroots_nostr_fetch_event_by_id, radroots_nostr_parse_pubkey, radroots_nostr_send_event,
 };
-use radroots_trade::listing::{
-    dvm::{
-        TradeListingAddress, TradeListingCancel, TradeListingEnvelope, TradeListingEnvelopeError,
-        TradeListingMessageType, TradeListingValidateRequest, TradeListingValidateResult,
-        TradeOrderResponse, TradeOrderRevisionResponse, trade_listing_envelope_event_build,
-    },
-    kinds::is_trade_listing_kind,
-    order::{
-        TradeAnswer, TradeDiscountDecision, TradeDiscountOffer, TradeDiscountRequest,
-        TradeFulfillmentStatus, TradeFulfillmentUpdate, TradeOrder, TradeOrderRevision,
-        TradeOrderStatus, TradeQuestion, TradeReceipt,
-    },
-    validation::{TradeListingValidationError, validate_listing_event},
-};
+use radroots_trade::listing::validation::validate_listing_event;
 use serde::de::DeserializeOwned;
+use std::convert::TryFrom;
 use thiserror::Error;
 
 use crate::features::trade_listing::state::{
@@ -242,7 +253,7 @@ pub async fn handle_event(
     state: Arc<tokio::sync::Mutex<TradeListingState>>,
 ) -> Result<(), TradeListingDvmError> {
     let kind = match event.kind {
-        RadrootsNostrKind::Custom(v) => v,
+        RadrootsNostrKind::Custom(v) => u32::from(v),
         _ => return Err(TradeListingDvmError::UnsupportedKind),
     };
     if !is_trade_listing_kind(kind) {
@@ -492,35 +503,37 @@ async fn handle_listing_validate_request(
         }
     };
 
-    let (validated_event_id, errors) = if let Some(listing_event) = listing_event {
-        match validate_listing_event_io(&listing_event) {
-            Ok((validated_listing_addr, farm)) => {
-                if validated_listing_addr != listing_addr {
-                    (
-                        None,
-                        vec![TradeListingValidationError::ListingEventNotFound {
-                            listing_addr: listing_addr.to_string(),
-                        }],
-                    )
-                } else {
-                    let errors = validate_farm_dependencies(client, &farm).await?;
-                    if errors.is_empty() {
-                        (Some(listing_event.id.to_string()), errors)
+    let (validated_event_id, errors): (Option<String>, Vec<TradeListingValidationError>) =
+        if let Some(listing_event) = listing_event {
+            match validate_listing_event_io(&listing_event) {
+                Ok((validated_listing_addr, farm)) => {
+                    if validated_listing_addr != listing_addr {
+                        (
+                            None,
+                            vec![TradeListingValidationError::ListingEventNotFound {
+                                listing_addr: listing_addr.to_string(),
+                            }],
+                        )
                     } else {
-                        (None, errors)
+                        let errors: Vec<TradeListingValidationError> =
+                            validate_farm_dependencies(client, &farm).await?;
+                        if errors.is_empty() {
+                            (Some(listing_event.id.to_string()), errors)
+                        } else {
+                            (None, errors)
+                        }
                     }
                 }
+                Err(err) => (None, vec![err]),
             }
-            Err(err) => (None, vec![err]),
-        }
-    } else {
-        (
-            None,
-            vec![TradeListingValidationError::ListingEventNotFound {
-                listing_addr: listing_addr.to_string(),
-            }],
-        )
-    };
+        } else {
+            (
+                None,
+                vec![TradeListingValidationError::ListingEventNotFound {
+                    listing_addr: listing_addr.to_string(),
+                }],
+            )
+        };
 
     {
         let mut state = state.lock().await;
@@ -1163,14 +1176,15 @@ async fn fetch_listing_by_addr(
         .map_err(|_| TradeListingDvmError::InvalidListingAddr)?;
     let author = radroots_nostr_parse_pubkey(&addr.seller_pubkey)
         .map_err(|_| TradeListingDvmError::InvalidListingAddr)?;
+    let kind = u16::try_from(addr.kind).map_err(|_| TradeListingDvmError::InvalidListingAddr)?;
     let filter = RadrootsNostrFilter::new()
-        .kind(RadrootsNostrKind::Custom(addr.kind))
+        .kind(RadrootsNostrKind::Custom(kind))
         .author(author)
         .identifier(addr.listing_id);
     let events = fetch_events_io(client, filter, Duration::from_secs(10)).await?;
     let latest = events
         .into_iter()
-        .filter(|ev| ev.kind == RadrootsNostrKind::Custom(addr.kind))
+        .filter(|ev| ev.kind == RadrootsNostrKind::Custom(kind))
         .max_by_key(|ev| ev.created_at);
     Ok(latest)
 }
@@ -1404,18 +1418,7 @@ mod tests {
     };
     use radroots_core::{RadrootsCoreCurrency, RadrootsCoreDiscountValue, RadrootsCoreMoney};
     use radroots_events::RadrootsNostrEventPtr;
-    use radroots_events::listing::RadrootsListingFarmRef;
-    use radroots_nostr::error::RadrootsNostrError;
-    use radroots_nostr::prelude::{
-        RadrootsNostrClient, RadrootsNostrEvent, RadrootsNostrEventBuilder, RadrootsNostrFilter,
-        RadrootsNostrKeys, RadrootsNostrKind, RadrootsNostrTag, RadrootsNostrTagKind,
-        RadrootsNostrTimestamp,
-    };
-    use radroots_trade::listing::dvm::{
-        TradeListingAddress, TradeListingCancel, TradeListingEnvelope, TradeListingMessageType,
-        TradeListingValidateRequest, TradeOrderResponse, TradeOrderRevisionResponse,
-    };
-    use radroots_trade::listing::kinds::{
+    use radroots_events::kinds::{
         KIND_TRADE_LISTING_ANSWER_RES, KIND_TRADE_LISTING_CANCEL_REQ,
         KIND_TRADE_LISTING_DISCOUNT_ACCEPT_REQ, KIND_TRADE_LISTING_DISCOUNT_DECLINE_REQ,
         KIND_TRADE_LISTING_DISCOUNT_OFFER_RES, KIND_TRADE_LISTING_DISCOUNT_REQ,
@@ -1425,12 +1428,31 @@ mod tests {
         KIND_TRADE_LISTING_RECEIPT_REQ, KIND_TRADE_LISTING_VALIDATE_REQ,
         KIND_TRADE_LISTING_VALIDATE_RES,
     };
-    use radroots_trade::listing::order::{
-        TradeAnswer, TradeDiscountDecision, TradeDiscountOffer, TradeDiscountRequest,
-        TradeFulfillmentStatus, TradeFulfillmentUpdate, TradeOrder, TradeOrderRevision,
-        TradeOrderStatus, TradeQuestion, TradeReceipt,
+    use radroots_events::listing::RadrootsListingFarmRef;
+    use radroots_events::trade::RadrootsTradeListingValidationError as TradeListingValidationError;
+    use radroots_events::trade::{
+        RadrootsTradeAnswer as TradeAnswer, RadrootsTradeDiscountDecision as TradeDiscountDecision,
+        RadrootsTradeDiscountOffer as TradeDiscountOffer,
+        RadrootsTradeDiscountRequest as TradeDiscountRequest,
+        RadrootsTradeEnvelope as TradeListingEnvelope,
+        RadrootsTradeFulfillmentStatus as TradeFulfillmentStatus,
+        RadrootsTradeFulfillmentUpdate as TradeFulfillmentUpdate,
+        RadrootsTradeListingCancel as TradeListingCancel,
+        RadrootsTradeListingValidateRequest as TradeListingValidateRequest,
+        RadrootsTradeMessageType as TradeListingMessageType, RadrootsTradeOrder as TradeOrder,
+        RadrootsTradeOrderResponse as TradeOrderResponse,
+        RadrootsTradeOrderRevision as TradeOrderRevision,
+        RadrootsTradeOrderRevisionResponse as TradeOrderRevisionResponse,
+        RadrootsTradeOrderStatus as TradeOrderStatus, RadrootsTradeQuestion as TradeQuestion,
+        RadrootsTradeReceipt as TradeReceipt,
     };
-    use radroots_trade::listing::validation::TradeListingValidationError;
+    use radroots_events_codec::trade::RadrootsTradeListingAddress as TradeListingAddress;
+    use radroots_nostr::error::RadrootsNostrError;
+    use radroots_nostr::prelude::{
+        RadrootsNostrClient, RadrootsNostrEvent, RadrootsNostrEventBuilder, RadrootsNostrFilter,
+        RadrootsNostrKeys, RadrootsNostrKind, RadrootsNostrTag, RadrootsNostrTagKind,
+        RadrootsNostrTimestamp,
+    };
     use serde_json::json;
     use std::collections::HashSet;
     use std::sync::{Arc, Mutex, MutexGuard};
@@ -1444,6 +1466,13 @@ mod tests {
             .lock()
             .unwrap_or_else(|err| err.into_inner()) = DvmTestHooks::default();
         guard
+    }
+
+    fn custom_trade_kind(kind: u32) -> RadrootsNostrKind {
+        RadrootsNostrKind::Custom(
+            kind.try_into()
+                .expect("trade listing kinds fit in nostr custom range"),
+        )
     }
 
     fn push_send_ok() {
@@ -2005,7 +2034,7 @@ mod tests {
         let state = Arc::new(AsyncMutex::new(TradeListingState::default()));
         let missing_event = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_VALIDATE_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_VALIDATE_REQ),
             "missing".to_string(),
             Vec::new(),
         );
@@ -2032,7 +2061,7 @@ mod tests {
 
         let fetch_error_event = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_VALIDATE_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_VALIDATE_REQ),
             "fetch-error".to_string(),
             Vec::new(),
         );
@@ -2055,7 +2084,7 @@ mod tests {
 
         let success_event = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_VALIDATE_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_VALIDATE_REQ),
             "success".to_string(),
             Vec::new(),
         );
@@ -2099,7 +2128,7 @@ mod tests {
         let other_listing_addr = listing_addr_for_seller(&rhi_keys);
         let mismatch_event = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_VALIDATE_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_VALIDATE_REQ),
             "mismatch".to_string(),
             Vec::new(),
         );
@@ -2147,7 +2176,7 @@ mod tests {
             .mark_listing_validated(&listing_addr, "stale-listing-event");
         let stale_event = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_VALIDATE_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_VALIDATE_REQ),
             "stale".to_string(),
             Vec::new(),
         );
@@ -2173,7 +2202,7 @@ mod tests {
         let state = Arc::new(AsyncMutex::new(TradeListingState::default()));
         let event = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_VALIDATE_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_VALIDATE_REQ),
             "content".to_string(),
             Vec::new(),
         );
@@ -2246,7 +2275,7 @@ mod tests {
 
         let order_event = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_REQ),
             "order".to_string(),
             Vec::new(),
         );
@@ -2274,7 +2303,7 @@ mod tests {
 
         let response_event = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_RES),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_RES),
             "resp".to_string(),
             Vec::new(),
         );
@@ -2303,7 +2332,7 @@ mod tests {
             .status = TradeOrderStatus::Requested;
         let revision_event = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REVISION_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_REVISION_REQ),
             "rev".to_string(),
             Vec::new(),
         );
@@ -2328,7 +2357,7 @@ mod tests {
 
         let revision_response_event = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REVISION_RES),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_REVISION_RES),
             "revresp".to_string(),
             Vec::new(),
         );
@@ -2358,7 +2387,7 @@ mod tests {
             .status = TradeOrderStatus::Requested;
         let question_event = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_QUESTION_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_QUESTION_REQ),
             "q".to_string(),
             Vec::new(),
         );
@@ -2383,7 +2412,7 @@ mod tests {
 
         let answer_event = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ANSWER_RES),
+            custom_trade_kind(KIND_TRADE_LISTING_ANSWER_RES),
             "a".to_string(),
             Vec::new(),
         );
@@ -2408,7 +2437,7 @@ mod tests {
 
         let discount_request_event = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_DISCOUNT_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_DISCOUNT_REQ),
             "dr".to_string(),
             Vec::new(),
         );
@@ -2433,7 +2462,7 @@ mod tests {
 
         let discount_offer_event = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_DISCOUNT_OFFER_RES),
+            custom_trade_kind(KIND_TRADE_LISTING_DISCOUNT_OFFER_RES),
             "do".to_string(),
             Vec::new(),
         );
@@ -2458,7 +2487,7 @@ mod tests {
 
         let discount_accept_event = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_DISCOUNT_ACCEPT_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_DISCOUNT_ACCEPT_REQ),
             "da".to_string(),
             Vec::new(),
         );
@@ -2487,7 +2516,7 @@ mod tests {
             .status = TradeOrderStatus::Requested;
         let cancel_event = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_CANCEL_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_CANCEL_REQ),
             "cancel".to_string(),
             Vec::new(),
         );
@@ -2513,7 +2542,7 @@ mod tests {
             .status = TradeOrderStatus::Accepted;
         let fulfill_event = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_FULFILLMENT_UPDATE_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_FULFILLMENT_UPDATE_REQ),
             "fulfill".to_string(),
             Vec::new(),
         );
@@ -2538,7 +2567,7 @@ mod tests {
 
         let receipt_event = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_RECEIPT_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_RECEIPT_REQ),
             "receipt".to_string(),
             Vec::new(),
         );
@@ -2599,7 +2628,7 @@ mod tests {
 
         let missing_recipient = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_REQ),
             make_envelope_content(
                 TradeListingMessageType::OrderRequest,
                 &listing_addr,
@@ -2645,7 +2674,7 @@ mod tests {
 
         let self_event = make_event(
             &rhi_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_REQ),
             make_envelope_content(
                 TradeListingMessageType::OrderRequest,
                 &listing_addr,
@@ -2668,7 +2697,7 @@ mod tests {
 
         let kind_mismatch = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_REQ),
             make_envelope_content(
                 TradeListingMessageType::Question,
                 &listing_addr,
@@ -2691,7 +2720,7 @@ mod tests {
 
         let a_mismatch_event = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_REQ),
             make_envelope_content(
                 TradeListingMessageType::OrderRequest,
                 "30402:deadbeef:AAAAAAAAAAAAAAAAAAAAAA",
@@ -2715,7 +2744,7 @@ mod tests {
         let d_mismatch_tags = make_custom_tags(&rhi_pub, &listing_addr, Some("other-order"));
         let d_mismatch_event = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_REQ),
             make_envelope_content(
                 TradeListingMessageType::OrderRequest,
                 &listing_addr,
@@ -2743,7 +2772,7 @@ mod tests {
         let bad_addr_tags = make_custom_tags(&rhi_pub, &bad_addr, Some(order_id));
         let bad_addr_event = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_REQ),
             make_envelope_content(
                 TradeListingMessageType::OrderRequest,
                 &bad_addr,
@@ -2861,12 +2890,7 @@ mod tests {
                 },
                 payload,
             );
-            let event = make_event(
-                &buyer_keys,
-                RadrootsNostrKind::Custom(kind),
-                content,
-                tags.clone(),
-            );
+            let event = make_event(&buyer_keys, custom_trade_kind(kind), content, tags.clone());
             let _ = handle_event(
                 event,
                 tags.clone(),
@@ -2921,7 +2945,7 @@ mod tests {
 
         let event = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_REQ),
             "x".to_string(),
             Vec::new(),
         );
@@ -2951,7 +2975,7 @@ mod tests {
         );
         let listing_event = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(listing_kind),
+            custom_trade_kind(listing_kind),
             "listing".to_string(),
             Vec::new(),
         );
@@ -3046,7 +3070,7 @@ mod tests {
         assert!(send_event_io(&client, builder).await.is_err());
         let event = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_REQ),
             "{}".to_string(),
             Vec::new(),
         );
@@ -3076,7 +3100,7 @@ mod tests {
         push_send_ok();
         let validate_event = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_VALIDATE_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_VALIDATE_REQ),
             make_envelope_content(
                 TradeListingMessageType::ListingValidateRequest,
                 &listing_addr,
@@ -3096,7 +3120,7 @@ mod tests {
 
         let cases: Vec<(
             TradeListingMessageType,
-            u16,
+            u32,
             serde_json::Value,
             TradeOrderStatus,
         )> = vec![
@@ -3272,12 +3296,7 @@ mod tests {
             let content =
                 make_envelope_content(message_type, &listing_addr, Some(order_id), payload);
             let tags = make_custom_tags(&rhi_pub, &listing_addr, Some(order_id));
-            let event = make_event(
-                sender,
-                RadrootsNostrKind::Custom(kind),
-                content,
-                tags.clone(),
-            );
+            let event = make_event(sender, custom_trade_kind(kind), content, tags.clone());
             let _ =
                 handle_event(event, tags, rhi_keys.clone(), client.clone(), state.clone()).await;
         }
@@ -3310,7 +3329,7 @@ mod tests {
         );
         let event = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_REQ),
             "x".to_string(),
             Vec::new(),
         );
@@ -3380,7 +3399,7 @@ mod tests {
         set_order_status(&state, "order-1", TradeOrderStatus::Requested).await;
         let seller_event = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_RES),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_RES),
             "x".to_string(),
             Vec::new(),
         );
@@ -3409,7 +3428,7 @@ mod tests {
 
         let wrong_buyer = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REVISION_RES),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_REVISION_RES),
             "x".to_string(),
             Vec::new(),
         );
@@ -3433,7 +3452,7 @@ mod tests {
         set_order_status(&state, "order-1", TradeOrderStatus::Requested).await;
         let wrong_sender = make_event(
             &rhi_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_CANCEL_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_CANCEL_REQ),
             "x".to_string(),
             Vec::new(),
         );
@@ -3452,7 +3471,7 @@ mod tests {
 
         let validate_event = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_VALIDATE_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_VALIDATE_REQ),
             "x".to_string(),
             Vec::new(),
         );
@@ -3596,7 +3615,7 @@ mod tests {
         set_order_status(&state, "order-1", TradeOrderStatus::Requested).await;
         let buyer_event = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_RES),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_RES),
             "x".to_string(),
             Vec::new(),
         );
@@ -3622,7 +3641,7 @@ mod tests {
             handle_order_response(
                 &make_event(
                     &seller_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_RES),
+                    custom_trade_kind(KIND_TRADE_LISTING_ORDER_RES),
                     "x".to_string(),
                     Vec::new(),
                 ),
@@ -3644,7 +3663,7 @@ mod tests {
             handle_order_revision(
                 &make_event(
                     &buyer_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REVISION_REQ),
+                    custom_trade_kind(KIND_TRADE_LISTING_ORDER_REVISION_REQ),
                     "revision-wrong-sender".to_string(),
                     Vec::new(),
                 ),
@@ -3668,7 +3687,7 @@ mod tests {
             handle_order_revision(
                 &make_event(
                     &seller_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REVISION_REQ),
+                    custom_trade_kind(KIND_TRADE_LISTING_ORDER_REVISION_REQ),
                     "x".to_string(),
                     Vec::new(),
                 ),
@@ -3689,7 +3708,7 @@ mod tests {
 
         let seen_event = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REVISION_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_REVISION_REQ),
             "x".to_string(),
             Vec::new(),
         );
@@ -3723,7 +3742,7 @@ mod tests {
             handle_question(
                 &make_event(
                     &buyer_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_QUESTION_REQ),
+                    custom_trade_kind(KIND_TRADE_LISTING_QUESTION_REQ),
                     "x".to_string(),
                     Vec::new(),
                 ),
@@ -3747,7 +3766,7 @@ mod tests {
             handle_answer(
                 &make_event(
                     &seller_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ANSWER_RES),
+                    custom_trade_kind(KIND_TRADE_LISTING_ANSWER_RES),
                     "x".to_string(),
                     Vec::new(),
                 ),
@@ -3771,7 +3790,7 @@ mod tests {
             handle_discount_request(
                 &make_event(
                     &buyer_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_DISCOUNT_REQ),
+                    custom_trade_kind(KIND_TRADE_LISTING_DISCOUNT_REQ),
                     "x".to_string(),
                     Vec::new(),
                 ),
@@ -3795,7 +3814,7 @@ mod tests {
             handle_discount_offer(
                 &make_event(
                     &seller_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_DISCOUNT_OFFER_RES),
+                    custom_trade_kind(KIND_TRADE_LISTING_DISCOUNT_OFFER_RES),
                     "x".to_string(),
                     Vec::new(),
                 ),
@@ -3819,7 +3838,7 @@ mod tests {
             handle_discount_decision(
                 &make_event(
                     &buyer_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_DISCOUNT_ACCEPT_REQ),
+                    custom_trade_kind(KIND_TRADE_LISTING_DISCOUNT_ACCEPT_REQ),
                     "x".to_string(),
                     Vec::new(),
                 ),
@@ -3837,7 +3856,7 @@ mod tests {
             handle_discount_decision(
                 &make_event(
                     &buyer_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_DISCOUNT_DECLINE_REQ),
+                    custom_trade_kind(KIND_TRADE_LISTING_DISCOUNT_DECLINE_REQ),
                     "x".to_string(),
                     Vec::new(),
                 ),
@@ -3859,7 +3878,7 @@ mod tests {
             handle_discount_decision(
                 &make_event(
                     &buyer_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_DISCOUNT_DECLINE_REQ),
+                    custom_trade_kind(KIND_TRADE_LISTING_DISCOUNT_DECLINE_REQ),
                     "x".to_string(),
                     Vec::new(),
                 ),
@@ -3877,7 +3896,7 @@ mod tests {
         set_order_status(&state, "order-1", TradeOrderStatus::Requested).await;
         let cancel_by_seller = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_CANCEL_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_CANCEL_REQ),
             "x".to_string(),
             Vec::new(),
         );
@@ -3900,7 +3919,7 @@ mod tests {
             handle_fulfillment_update(
                 &make_event(
                     &buyer_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_FULFILLMENT_UPDATE_REQ),
+                    custom_trade_kind(KIND_TRADE_LISTING_FULFILLMENT_UPDATE_REQ),
                     "x".to_string(),
                     Vec::new(),
                 ),
@@ -3924,7 +3943,7 @@ mod tests {
             handle_receipt(
                 &make_event(
                     &seller_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_RECEIPT_REQ),
+                    custom_trade_kind(KIND_TRADE_LISTING_RECEIPT_REQ),
                     "x".to_string(),
                     Vec::new(),
                 ),
@@ -3966,7 +3985,7 @@ mod tests {
             TradeListingAddress::parse(&mismatched_addr).expect("mismatched listing");
         let revision_event = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REVISION_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_REVISION_REQ),
             "revision".to_string(),
             Vec::new(),
         );
@@ -3990,7 +4009,7 @@ mod tests {
 
         let seen_revision_response = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REVISION_RES),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_REVISION_RES),
             "seen".to_string(),
             Vec::new(),
         );
@@ -4016,7 +4035,7 @@ mod tests {
             handle_order_revision_response(
                 &make_event(
                     &buyer_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REVISION_RES),
+                    custom_trade_kind(KIND_TRADE_LISTING_ORDER_REVISION_RES),
                     "accept-invalid".to_string(),
                     Vec::new(),
                 ),
@@ -4037,7 +4056,7 @@ mod tests {
             handle_order_revision_response(
                 &make_event(
                     &buyer_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REVISION_RES),
+                    custom_trade_kind(KIND_TRADE_LISTING_ORDER_REVISION_RES),
                     "decline-invalid".to_string(),
                     Vec::new(),
                 ),
@@ -4061,7 +4080,7 @@ mod tests {
             handle_question(
                 &make_event(
                     &buyer_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_QUESTION_REQ),
+                    custom_trade_kind(KIND_TRADE_LISTING_QUESTION_REQ),
                     "question-ok".to_string(),
                     Vec::new(),
                 ),
@@ -4082,7 +4101,7 @@ mod tests {
 
         let seen_question = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_QUESTION_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_QUESTION_REQ),
             "question-seen".to_string(),
             Vec::new(),
         );
@@ -4108,7 +4127,7 @@ mod tests {
             handle_question(
                 &make_event(
                     &seller_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_QUESTION_REQ),
+                    custom_trade_kind(KIND_TRADE_LISTING_QUESTION_REQ),
                     "question-unauthorized".to_string(),
                     Vec::new(),
                 ),
@@ -4133,7 +4152,7 @@ mod tests {
             handle_answer(
                 &make_event(
                     &seller_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ANSWER_RES),
+                    custom_trade_kind(KIND_TRADE_LISTING_ANSWER_RES),
                     "answer-ok".to_string(),
                     Vec::new(),
                 ),
@@ -4154,7 +4173,7 @@ mod tests {
 
         let seen_answer = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ANSWER_RES),
+            custom_trade_kind(KIND_TRADE_LISTING_ANSWER_RES),
             "answer-seen".to_string(),
             Vec::new(),
         );
@@ -4180,7 +4199,7 @@ mod tests {
             handle_answer(
                 &make_event(
                     &buyer_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ANSWER_RES),
+                    custom_trade_kind(KIND_TRADE_LISTING_ANSWER_RES),
                     "answer-unauthorized".to_string(),
                     Vec::new(),
                 ),
@@ -4202,7 +4221,7 @@ mod tests {
         set_order_status(&state, "order-1", TradeOrderStatus::Requested).await;
         let seen_discount_request = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_DISCOUNT_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_DISCOUNT_REQ),
             "discount-request-seen".to_string(),
             Vec::new(),
         );
@@ -4228,7 +4247,7 @@ mod tests {
             handle_discount_request(
                 &make_event(
                     &seller_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_DISCOUNT_REQ),
+                    custom_trade_kind(KIND_TRADE_LISTING_DISCOUNT_REQ),
                     "discount-request-unauthorized".to_string(),
                     Vec::new(),
                 ),
@@ -4250,7 +4269,7 @@ mod tests {
         set_order_status(&state, "order-1", TradeOrderStatus::Requested).await;
         let seen_discount_offer = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_DISCOUNT_OFFER_RES),
+            custom_trade_kind(KIND_TRADE_LISTING_DISCOUNT_OFFER_RES),
             "discount-offer-seen".to_string(),
             Vec::new(),
         );
@@ -4276,7 +4295,7 @@ mod tests {
             handle_discount_offer(
                 &make_event(
                     &buyer_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_DISCOUNT_OFFER_RES),
+                    custom_trade_kind(KIND_TRADE_LISTING_DISCOUNT_OFFER_RES),
                     "discount-offer-unauthorized".to_string(),
                     Vec::new(),
                 ),
@@ -4298,7 +4317,7 @@ mod tests {
         set_order_status(&state, "order-1", TradeOrderStatus::Revised).await;
         let seen_discount_decision = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_DISCOUNT_DECLINE_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_DISCOUNT_DECLINE_REQ),
             "discount-decision-seen".to_string(),
             Vec::new(),
         );
@@ -4320,7 +4339,7 @@ mod tests {
             handle_discount_decision(
                 &make_event(
                     &seller_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_DISCOUNT_DECLINE_REQ),
+                    custom_trade_kind(KIND_TRADE_LISTING_DISCOUNT_DECLINE_REQ),
                     "discount-decision-unauthorized".to_string(),
                     Vec::new(),
                 ),
@@ -4338,7 +4357,7 @@ mod tests {
         set_order_status(&state, "order-1", TradeOrderStatus::Requested).await;
         let seen_cancel = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_CANCEL_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_CANCEL_REQ),
             "cancel-seen".to_string(),
             Vec::new(),
         );
@@ -4359,7 +4378,7 @@ mod tests {
         set_order_status(&state, "order-1", TradeOrderStatus::Accepted).await;
         let seen_fulfillment = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_FULFILLMENT_UPDATE_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_FULFILLMENT_UPDATE_REQ),
             "fulfillment-seen".to_string(),
             Vec::new(),
         );
@@ -4385,7 +4404,7 @@ mod tests {
         set_order_status(&state, "order-1", TradeOrderStatus::Fulfilled).await;
         let seen_receipt = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_RECEIPT_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_RECEIPT_REQ),
             "receipt-seen".to_string(),
             Vec::new(),
         );
@@ -4431,7 +4450,7 @@ mod tests {
             handle_fulfillment_update(
                 &make_event(
                     &seller_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_FULFILLMENT_UPDATE_REQ),
+                    custom_trade_kind(KIND_TRADE_LISTING_FULFILLMENT_UPDATE_REQ),
                     "fulfillment-shipped".to_string(),
                     Vec::new(),
                 ),
@@ -4464,7 +4483,7 @@ mod tests {
             handle_fulfillment_update(
                 &make_event(
                     &seller_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_FULFILLMENT_UPDATE_REQ),
+                    custom_trade_kind(KIND_TRADE_LISTING_FULFILLMENT_UPDATE_REQ),
                     "fulfillment-delivered".to_string(),
                     Vec::new(),
                 ),
@@ -4497,7 +4516,7 @@ mod tests {
             handle_receipt(
                 &make_event(
                     &buyer_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_RECEIPT_REQ),
+                    custom_trade_kind(KIND_TRADE_LISTING_RECEIPT_REQ),
                     "receipt-unacknowledged".to_string(),
                     Vec::new(),
                 ),
@@ -4529,7 +4548,7 @@ mod tests {
             handle_receipt(
                 &make_event(
                     &buyer_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_RECEIPT_REQ),
+                    custom_trade_kind(KIND_TRADE_LISTING_RECEIPT_REQ),
                     "receipt-acknowledged".to_string(),
                     Vec::new(),
                 ),
@@ -4569,7 +4588,7 @@ mod tests {
             handle_fulfillment_update(
                 &make_event(
                     &seller_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_FULFILLMENT_UPDATE_REQ),
+                    custom_trade_kind(KIND_TRADE_LISTING_FULFILLMENT_UPDATE_REQ),
                     "fulfillment-cancelled".to_string(),
                     Vec::new(),
                 ),
@@ -4611,7 +4630,7 @@ mod tests {
         let state_validate = Arc::new(AsyncMutex::new(TradeListingState::default()));
         let validate_event = make_event(
             &seller_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_VALIDATE_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_VALIDATE_REQ),
             "content".to_string(),
             Vec::new(),
         );
@@ -4656,7 +4675,7 @@ mod tests {
         .await;
         let order_event = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_REQ),
             "order".to_string(),
             Vec::new(),
         );
@@ -4720,7 +4739,7 @@ mod tests {
             handle_order_revision(
                 &make_event(
                     &seller_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REVISION_REQ),
+                    custom_trade_kind(KIND_TRADE_LISTING_ORDER_REVISION_REQ),
                     "revision".to_string(),
                     Vec::new(),
                 ),
@@ -4744,7 +4763,7 @@ mod tests {
             handle_answer(
                 &make_event(
                     &seller_keys,
-                    RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ANSWER_RES),
+                    custom_trade_kind(KIND_TRADE_LISTING_ANSWER_RES),
                     "answer".to_string(),
                     Vec::new(),
                 ),
@@ -4764,12 +4783,12 @@ mod tests {
         ));
 
         let listing_event_new =
-            RadrootsNostrEventBuilder::new(RadrootsNostrKind::Custom(parsed.kind), "listing-new")
+            RadrootsNostrEventBuilder::new(custom_trade_kind(parsed.kind), "listing-new")
                 .custom_created_at(RadrootsNostrTimestamp::from(10_u64))
                 .sign_with_keys(&seller_keys)
                 .expect("listing new");
         let listing_event_old =
-            RadrootsNostrEventBuilder::new(RadrootsNostrKind::Custom(parsed.kind), "listing-old")
+            RadrootsNostrEventBuilder::new(custom_trade_kind(parsed.kind), "listing-old")
                 .custom_created_at(RadrootsNostrTimestamp::from(9_u64))
                 .sign_with_keys(&seller_keys)
                 .expect("listing old");
@@ -4822,7 +4841,7 @@ mod tests {
 
         let invalid_json_event = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_REQ),
             "{".to_string(),
             make_custom_tags(&rhi_pub, &listing_addr, Some(order_id)),
         );
@@ -4841,7 +4860,7 @@ mod tests {
 
         let invalid_envelope_event = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_REQ),
             make_envelope_content(
                 TradeListingMessageType::OrderRequest,
                 &listing_addr,
@@ -4869,7 +4888,7 @@ mod tests {
         )];
         let missing_a_event = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_REQ),
             make_envelope_content(
                 TradeListingMessageType::OrderRequest,
                 &listing_addr,
@@ -4901,7 +4920,7 @@ mod tests {
         let invalid_addr_tags = make_custom_tags(&rhi_pub, invalid_addr, Some(order_id));
         let invalid_addr_event = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_ORDER_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_ORDER_REQ),
             make_envelope_content(
                 TradeListingMessageType::OrderRequest,
                 invalid_addr,
@@ -4931,7 +4950,7 @@ mod tests {
 
         let listing_validate_parse_error_event = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_VALIDATE_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_VALIDATE_REQ),
             make_envelope_content(
                 TradeListingMessageType::ListingValidateRequest,
                 &listing_addr,
@@ -4956,7 +4975,7 @@ mod tests {
         push_fetch_event_by_id_error_not_found();
         let listing_validate_send_err_event = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_VALIDATE_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_VALIDATE_REQ),
             make_envelope_content(
                 TradeListingMessageType::ListingValidateRequest,
                 &listing_addr,
@@ -4979,7 +4998,7 @@ mod tests {
 
         let listing_validate_fetch_err_event = make_event(
             &buyer_keys,
-            RadrootsNostrKind::Custom(KIND_TRADE_LISTING_VALIDATE_REQ),
+            custom_trade_kind(KIND_TRADE_LISTING_VALIDATE_REQ),
             make_envelope_content(
                 TradeListingMessageType::ListingValidateRequest,
                 &listing_addr,
@@ -5000,7 +5019,7 @@ mod tests {
             Err(TradeListingDvmError::Nostr(_))
         ));
 
-        let missing_d_cases: Vec<(TradeListingMessageType, u16)> = vec![
+        let missing_d_cases: Vec<(TradeListingMessageType, u32)> = vec![
             (
                 TradeListingMessageType::OrderRequest,
                 KIND_TRADE_LISTING_ORDER_REQ,
@@ -5062,7 +5081,7 @@ mod tests {
             let sender = sender_for_message(message_type, &seller_keys, &buyer_keys);
             let event = make_event(
                 sender,
-                RadrootsNostrKind::Custom(kind),
+                custom_trade_kind(kind),
                 make_envelope_content(
                     message_type,
                     &listing_addr,
@@ -5088,7 +5107,7 @@ mod tests {
             assert!(matches!(result, Err(TradeListingDvmError::MissingTag("d"))));
         }
 
-        let missing_order_cases: Vec<(TradeListingMessageType, u16)> = vec![
+        let missing_order_cases: Vec<(TradeListingMessageType, u32)> = vec![
             (
                 TradeListingMessageType::OrderResponse,
                 KIND_TRADE_LISTING_ORDER_RES,
@@ -5146,7 +5165,7 @@ mod tests {
             let sender = sender_for_message(message_type, &seller_keys, &buyer_keys);
             let event = make_event(
                 sender,
-                RadrootsNostrKind::Custom(kind),
+                custom_trade_kind(kind),
                 make_envelope_content(
                     message_type,
                     &listing_addr,
@@ -5177,7 +5196,7 @@ mod tests {
             ));
         }
 
-        let transition_cases: Vec<(TradeListingMessageType, u16, TradeOrderStatus)> = vec![
+        let transition_cases: Vec<(TradeListingMessageType, u32, TradeOrderStatus)> = vec![
             (
                 TradeListingMessageType::OrderResponse,
                 KIND_TRADE_LISTING_ORDER_RES,
@@ -5244,7 +5263,7 @@ mod tests {
             let sender = sender_for_message(message_type, &seller_keys, &buyer_keys);
             let event = make_event(
                 sender,
-                RadrootsNostrKind::Custom(kind),
+                custom_trade_kind(kind),
                 make_envelope_content(
                     message_type,
                     &listing_addr,

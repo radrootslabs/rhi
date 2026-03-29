@@ -1,9 +1,11 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(coverage_nightly, coverage(off))]
 
+use std::convert::TryFrom;
 use std::time::Duration;
 
 use anyhow::{Result, anyhow};
+use radroots_events::kinds::TRADE_LISTING_KINDS;
 use radroots_nostr::prelude::{
     RadrootsNostrClient, RadrootsNostrEvent, RadrootsNostrFilter, RadrootsNostrKeys,
     RadrootsNostrKind, RadrootsNostrRelayPoolNotification, RadrootsNostrTag,
@@ -12,8 +14,6 @@ use radroots_nostr::prelude::{
 use tokio::sync::watch;
 use tokio::time::sleep;
 use tracing::{info, warn};
-
-use radroots_trade::listing::kinds::TRADE_LISTING_KINDS;
 
 use crate::features::trade_listing::{
     handlers::dvm::{TradeListingDvmError, handle_error, handle_event},
@@ -253,7 +253,8 @@ pub async fn subscriber(
 
     let kinds: Vec<RadrootsNostrKind> = TRADE_LISTING_KINDS
         .iter()
-        .map(|kind| RadrootsNostrKind::Custom(*kind))
+        .map(|kind| u16::try_from(*kind).expect("trade listing kinds fit in nostr custom range"))
+        .map(RadrootsNostrKind::Custom)
         .collect();
     let filter: RadrootsNostrFilter = runtime.recovery_filter(kinds).await;
 
