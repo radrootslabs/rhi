@@ -1,5 +1,0 @@
-# required source files that must appear in coverage summary output
-src/adapters/nostr/event.rs
-src/features/trade_listing/state.rs
-src/lib.rs
-src/main.rs
