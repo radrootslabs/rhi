@@ -5,7 +5,9 @@ use std::convert::TryFrom;
 use std::time::Duration;
 
 use anyhow::{Result, anyhow};
-use radroots_events::kinds::{TRADE_LISTING_KINDS, is_trade_service_kind};
+use radroots_events::kinds::{
+    KIND_LISTING, KIND_LISTING_DRAFT, TRADE_LISTING_KINDS, is_trade_service_kind,
+};
 use radroots_nostr::prelude::{
     RadrootsNostrClient, RadrootsNostrEvent, RadrootsNostrFilter, RadrootsNostrKeys,
     RadrootsNostrKind, RadrootsNostrRelayPoolNotification, RadrootsNostrTag,
@@ -254,12 +256,16 @@ pub async fn subscriber(
     runtime: TradeListingRuntime,
     mut stop_rx: watch::Receiver<bool>,
 ) -> Result<()> {
+    let subscribed_kinds = [KIND_LISTING, KIND_LISTING_DRAFT]
+        .into_iter()
+        .chain(TRADE_LISTING_KINDS)
+        .collect::<Vec<_>>();
     info!(
-        "Starting subscriber for trade listing DVM kinds: {:?}",
-        TRADE_LISTING_KINDS
+        "Starting subscriber for trade listing and public trade kinds: {:?}",
+        subscribed_kinds
     );
 
-    let kinds: Vec<RadrootsNostrKind> = TRADE_LISTING_KINDS
+    let kinds: Vec<RadrootsNostrKind> = subscribed_kinds
         .iter()
         .map(|kind| u16::try_from(*kind).expect("trade listing kinds fit in nostr custom range"))
         .map(RadrootsNostrKind::Custom)

@@ -21,6 +21,12 @@ pub struct TradeOrderState {
     pub buyer_pubkey: String,
     pub seller_pubkey: String,
     pub status: TradeOrderStatus,
+    #[serde(default)]
+    pub listing_snapshot_event_id: Option<String>,
+    #[serde(default)]
+    pub root_event_id: Option<String>,
+    #[serde(default)]
+    pub last_event_id: Option<String>,
     pub seen_event_ids: HashSet<String>,
 }
 
@@ -29,12 +35,20 @@ pub struct ValidatedListingState {
     pub event_id: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListingEventState {
+    pub event_id: String,
+    pub kind: u32,
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct TradeListingState {
     #[serde(default)]
     validated_listings: HashSet<String>,
     #[serde(default)]
     validated_listing_events: HashMap<String, ValidatedListingState>,
+    #[serde(default)]
+    listing_events: HashMap<String, ListingEventState>,
     #[serde(default)]
     seen_non_order_event_ids: HashSet<String>,
     orders: HashMap<String, TradeOrderState>,
@@ -140,6 +154,22 @@ impl TradeListingRuntime {
 }
 
 impl TradeListingState {
+    pub fn upsert_listing_event(&mut self, listing_addr: &str, event_id: &str, kind: u32) {
+        self.listing_events.insert(
+            listing_addr.to_string(),
+            ListingEventState {
+                event_id: event_id.to_string(),
+                kind,
+            },
+        );
+    }
+
+    pub fn listing_event_id(&self, listing_addr: &str) -> Option<&str> {
+        self.listing_events
+            .get(listing_addr)
+            .map(|listing| listing.event_id.as_str())
+    }
+
     pub fn mark_listing_validated(&mut self, listing_addr: &str, event_id: &str) {
         self.validated_listings.insert(listing_addr.to_string());
         self.validated_listing_events.insert(
@@ -308,9 +338,9 @@ pub enum TradeListingRuntimeError {
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::{
-        PersistedTradeListingState, TradeListingRuntime, TradeListingRuntimeConfig,
-        TradeListingRuntimeError, TradeListingState, TradeListingStateError, TradeOrderState,
-        ValidatedListingState,
+        ListingEventState, PersistedTradeListingState, TradeListingRuntime,
+        TradeListingRuntimeConfig, TradeListingRuntimeError, TradeListingState,
+        TradeListingStateError, TradeOrderState, ValidatedListingState,
     };
     use radroots_events::trade::RadrootsTradeOrderStatus as TradeOrderStatus;
     use std::collections::{HashMap, HashSet};
@@ -340,6 +370,9 @@ mod tests {
             buyer_pubkey: "buyer".into(),
             seller_pubkey: "seller".into(),
             status: TradeOrderStatus::Requested,
+            listing_snapshot_event_id: Some("evt-listing-1".into()),
+            root_event_id: Some("evt-root-1".into()),
+            last_event_id: Some("evt-root-1".into()),
             seen_event_ids: Default::default(),
         };
         state.insert_order(order);
@@ -349,6 +382,8 @@ mod tests {
         assert!(!state.is_non_order_event_seen("evt-non-order"));
         assert!(state.mark_non_order_event_seen("evt-non-order"));
         assert!(state.is_non_order_event_seen("evt-non-order"));
+        state.upsert_listing_event("addr", "evt-listing-1", 30402);
+        assert_eq!(state.listing_event_id("addr"), Some("evt-listing-1"));
         assert_eq!(state.replay_since(1_000, 300, 60), 700);
 
         state.observe_event_created_at(900);
@@ -461,6 +496,7 @@ mod tests {
             state: TradeListingState {
                 validated_listings: ["addr".to_string()].into_iter().collect(),
                 validated_listing_events: HashMap::new(),
+                listing_events: HashMap::new(),
                 seen_non_order_event_ids: HashSet::new(),
                 orders: HashMap::new(),
                 last_event_created_at: Some(321),
@@ -494,6 +530,13 @@ mod tests {
                 "addr".to_string(),
                 ValidatedListingState {
                     event_id: "evt-listing-1".to_string(),
+                },
+            )]),
+            listing_events: HashMap::from([(
+                "addr".to_string(),
+                ListingEventState {
+                    event_id: "evt-listing-1".to_string(),
+                    kind: 30402,
                 },
             )]),
             seen_non_order_event_ids: HashSet::new(),
