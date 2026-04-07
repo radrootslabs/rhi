@@ -28,8 +28,7 @@ use radroots_events::trade::{
 use radroots_events_codec::trade::{
     RadrootsTradeEnvelopeParseError as TradeListingEnvelopeParseError,
     RadrootsTradeListingAddress as TradeListingAddress,
-    trade_envelope_from_event,
-    trade_envelope_event_build as trade_listing_envelope_event_build,
+    trade_envelope_event_build as trade_listing_envelope_event_build, trade_envelope_from_event,
 };
 use radroots_nostr::prelude::{
     RadrootsNostrClient, RadrootsNostrEvent, RadrootsNostrEventBuilder, RadrootsNostrFilter,
@@ -273,8 +272,9 @@ pub async fn handle_event(
         return Ok(());
     }
 
-    let envelope_hint: TradeListingEnvelope<serde_json::Value> = serde_json::from_str(&event.content)
-        .map_err(|error| TradeListingDvmError::InvalidPayload(error.to_string()))?;
+    let envelope_hint: TradeListingEnvelope<serde_json::Value> =
+        serde_json::from_str(&event.content)
+            .map_err(|error| TradeListingDvmError::InvalidPayload(error.to_string()))?;
     if envelope_hint.message_type.kind() != kind {
         return Err(TradeListingDvmError::TagMismatch("kind"));
     }
@@ -468,7 +468,9 @@ fn map_trade_envelope_parse_error(error: TradeListingEnvelopeParseError) -> Trad
         TradeListingEnvelopeParseError::ListingAddrTagMismatch => {
             TradeListingDvmError::TagMismatch("a")
         }
-        TradeListingEnvelopeParseError::OrderIdTagMismatch => TradeListingDvmError::TagMismatch("d"),
+        TradeListingEnvelopeParseError::OrderIdTagMismatch => {
+            TradeListingDvmError::TagMismatch("d")
+        }
         TradeListingEnvelopeParseError::InvalidListingAddr(_) => {
             TradeListingDvmError::InvalidListingAddr
         }
@@ -626,10 +628,7 @@ fn workflow_message_from_event(
         .map_err(|error| TradeListingDvmError::InvalidPayload(error.to_string()))
 }
 
-fn ensure_order_counterparty(
-    actual: &str,
-    expected: &str,
-) -> Result<(), TradeListingDvmError> {
+fn ensure_order_counterparty(actual: &str, expected: &str) -> Result<(), TradeListingDvmError> {
     if actual == expected {
         Ok(())
     } else {
@@ -1760,15 +1759,15 @@ mod tests {
                     errors: Vec::new(),
                 })
             }
-            TradeListingMessageType::OrderRequest => TradeListingMessagePayload::OrderRequest(
-                make_order(
+            TradeListingMessageType::OrderRequest => {
+                TradeListingMessagePayload::OrderRequest(make_order(
                     order_id,
                     listing_addr,
                     buyer_pub,
                     seller_pub,
                     TradeOrderStatus::Requested,
-                ),
-            ),
+                ))
+            }
             TradeListingMessageType::OrderResponse => {
                 TradeListingMessagePayload::OrderResponse(TradeOrderResponse {
                     accepted: true,
@@ -4499,12 +4498,10 @@ mod tests {
                     "order-1",
                     &buyer_pub,
                     &seller_pub,
-                    TradeListingMessagePayload::OrderRevisionAccept(
-                        TradeOrderRevisionResponse {
-                            accepted: false,
-                            reason: None,
-                        },
-                    ),
+                    TradeListingMessagePayload::OrderRevisionAccept(TradeOrderRevisionResponse {
+                        accepted: false,
+                        reason: None,
+                    },),
                     listing_event_id,
                     root_event_id,
                     prev_event_id,
@@ -4538,12 +4535,10 @@ mod tests {
                     "order-1",
                     &buyer_pub,
                     &seller_pub,
-                    TradeListingMessagePayload::OrderRevisionDecline(
-                        TradeOrderRevisionResponse {
-                            accepted: true,
-                            reason: None,
-                        },
-                    ),
+                    TradeListingMessagePayload::OrderRevisionDecline(TradeOrderRevisionResponse {
+                        accepted: true,
+                        reason: None,
+                    },),
                     listing_event_id,
                     root_event_id,
                     prev_event_id,
@@ -5669,14 +5664,8 @@ mod tests {
                 Some(&state),
             )
             .await;
-            let result = handle_event(
-                event,
-                tags,
-                rhi_keys.clone(),
-                client.clone(),
-                state.clone(),
-            )
-            .await;
+            let result =
+                handle_event(event, tags, rhi_keys.clone(), client.clone(), state.clone()).await;
             assert!(
                 matches!(
                     result,
@@ -5709,10 +5698,7 @@ mod tests {
                 TradeListingMessageType::Question,
                 TradeOrderStatus::Completed,
             ),
-            (
-                TradeListingMessageType::Answer,
-                TradeOrderStatus::Completed,
-            ),
+            (TradeListingMessageType::Answer, TradeOrderStatus::Completed),
             (
                 TradeListingMessageType::DiscountOffer,
                 TradeOrderStatus::Completed,
@@ -5725,10 +5711,7 @@ mod tests {
                 TradeListingMessageType::DiscountDecline,
                 TradeOrderStatus::Completed,
             ),
-            (
-                TradeListingMessageType::Cancel,
-                TradeOrderStatus::Completed,
-            ),
+            (TradeListingMessageType::Cancel, TradeOrderStatus::Completed),
             (
                 TradeListingMessageType::FulfillmentUpdate,
                 TradeOrderStatus::Completed,
@@ -5751,14 +5734,8 @@ mod tests {
                 Some(&state),
             )
             .await;
-            let result = handle_event(
-                event,
-                tags,
-                rhi_keys.clone(),
-                client.clone(),
-                state.clone(),
-            )
-            .await;
+            let result =
+                handle_event(event, tags, rhi_keys.clone(), client.clone(), state.clone()).await;
             assert!(matches!(
                 result,
                 Err(TradeListingDvmError::State(

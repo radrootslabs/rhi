@@ -83,7 +83,7 @@ mod tests {
     use super::NostrEventAdapter;
     use radroots_events_codec::job::traits::{JobEventBorrow, JobEventLike};
     use radroots_nostr::prelude::{
-        RadrootsNostrEvent, RadrootsNostrEventBuilder, RadrootsNostrKind, RadrootsNostrKeys,
+        RadrootsNostrEvent, RadrootsNostrEventBuilder, RadrootsNostrKeys, RadrootsNostrKind,
         RadrootsNostrTag, RadrootsNostrTagKind,
     };
 
@@ -111,7 +111,10 @@ mod tests {
         let adapter = NostrEventAdapter::new(&event);
 
         assert_eq!(JobEventBorrow::raw_id(&adapter), event.id.to_hex());
-        assert_eq!(JobEventBorrow::raw_author(&adapter), event.pubkey.to_string());
+        assert_eq!(
+            JobEventBorrow::raw_author(&adapter),
+            event.pubkey.to_string()
+        );
         assert_eq!(JobEventBorrow::raw_content(&adapter), "content");
         assert_eq!(JobEventBorrow::raw_kind(&adapter), 5322);
 

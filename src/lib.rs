@@ -4,6 +4,7 @@ pub mod adapters;
 pub mod cli;
 pub mod config;
 pub mod features;
+pub mod identity_storage;
 pub mod rhi;
 
 pub use cli::Args as cli_args;
@@ -13,6 +14,7 @@ use radroots_events::kinds::{KIND_LISTING, KIND_LISTING_DRAFT, TRADE_LISTING_KIN
 use std::time::Duration;
 
 use crate::features::trade_listing::state::{TradeListingRuntime, TradeListingRuntimeConfig};
+use crate::identity_storage::load_service_identity;
 use crate::rhi::{Rhi, start_subscriber};
 use radroots_identity::RadrootsIdentity;
 use radroots_nostr::prelude::{
@@ -106,8 +108,8 @@ async fn wait_for_shutdown_or_stopped(handle: crate::rhi::RhiHandle) -> RunRhiWa
 }
 
 pub async fn run_rhi(settings: &config::Settings, args: &cli_args) -> Result<()> {
-    let identity = RadrootsIdentity::load_or_generate(
-        args.service.identity.as_ref(),
+    let identity = load_service_identity(
+        args.service.identity.as_deref(),
         args.service.allow_generate_identity,
     )?;
     let keys = identity.keys().clone();
@@ -253,7 +255,12 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .expect("time")
             .as_nanos();
-        std::env::temp_dir().join(format!("rhi-{suffix}-{nanos}.json"))
+        std::env::temp_dir().join(format!("rhi-{suffix}-{nanos}.secret.json"))
+    }
+
+    fn cleanup_identity_artifacts(path: &std::path::Path) {
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(crate::identity_storage::encrypted_identity_key_path(path));
     }
 
     fn unique_state_path(suffix: &str) -> PathBuf {
@@ -274,7 +281,7 @@ mod tests {
         let settings = settings_with_relays(Vec::new());
         let result = run_rhi(&settings, &args).await;
         RUN_RHI_AUTO_STOP.store(false, Ordering::Relaxed);
-        let _ = std::fs::remove_file(path);
+        cleanup_identity_artifacts(&path);
         assert!(result.is_ok());
     }
 
@@ -291,7 +298,7 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Ok(()));
         let ok = run_rhi(&settings_ok, &args_ok).await;
-        let _ = std::fs::remove_file(path_ok);
+        cleanup_identity_artifacts(&path_ok);
         assert!(ok.is_ok());
 
         let path_err = unique_identity_path("presence-err");
@@ -304,7 +311,7 @@ mod tests {
         let err = run_rhi(&settings_err, &args_err).await;
         RUN_RHI_AUTO_STOP.store(false, Ordering::Relaxed);
         RUN_RHI_SKIP_SUBSCRIBER.store(false, Ordering::Relaxed);
-        let _ = std::fs::remove_file(path_err);
+        cleanup_identity_artifacts(&path_err);
         assert!(err.is_ok());
     }
 
@@ -312,9 +319,8 @@ mod tests {
     async fn bootstrap_presence_fallback_path_is_callable() {
         let _guard = test_guard();
         let identity_path = unique_identity_path("bootstrap");
-        let identity =
-            radroots_identity::RadrootsIdentity::load_or_generate(Some(&identity_path), true)
-                .expect("identity");
+        let identity = crate::identity_storage::load_service_identity(Some(&identity_path), true)
+            .expect("identity");
         let client = radroots_nostr::prelude::RadrootsNostrClient::new(identity.keys().clone());
         let metadata: radroots_nostr::prelude::RadrootsNostrMetadata =
             serde_json::from_str(r#"{"name":"bootstrap"}"#).expect("bootstrap metadata");
@@ -327,7 +333,7 @@ mod tests {
             nostrconnect_url: None,
         };
         let result = bootstrap_presence(&client, &identity, &metadata, &handler_spec).await;
-        let _ = std::fs::remove_file(identity_path);
+        cleanup_identity_artifacts(&identity_path);
         assert!(result.is_err());
     }
 
@@ -344,7 +350,7 @@ mod tests {
         let args = args_for_identity(path.clone());
         let settings = settings_with_relays(Vec::new());
         let result = run_rhi(&settings, &args).await;
-        let _ = std::fs::remove_file(path);
+        cleanup_identity_artifacts(&path);
         assert!(result.is_ok());
     }
 
@@ -358,7 +364,7 @@ mod tests {
         let args = args_for_identity(path.clone());
         let settings = settings_with_relays(vec!["not-a-relay-url".to_string()]);
         let result = run_rhi(&settings, &args).await;
-        let _ = std::fs::remove_file(path);
+        cleanup_identity_artifacts(&path);
         assert!(result.is_err());
     }
 
@@ -371,7 +377,7 @@ mod tests {
         let args = cli_args {
             service: radroots_runtime::RadrootsServiceCliArgs {
                 config: PathBuf::from("config.toml"),
-                identity: Some(PathBuf::from("/tmp/rhi-lib-missing-identity.json")),
+                identity: Some(PathBuf::from("/tmp/rhi-lib-missing-identity.secret.json")),
                 allow_generate_identity: false,
             },
         };

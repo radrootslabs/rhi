@@ -38,3 +38,6 @@ serde_json = { version = "1", default-features = false }
 tokio = { version = "1", features = ["full"] }
 thiserror = { version = "2" }
 tracing = { version = "0.1" }
+
+[dev-dependencies]
+tempfile = { version = "3" }

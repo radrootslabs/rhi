@@ -108,7 +108,7 @@ mod tests {
         let args = cli_args {
             service: radroots_runtime::RadrootsServiceCliArgs {
                 config: PathBuf::from("config.toml"),
-                identity: Some(PathBuf::from("/tmp/rhi-missing-identity.json")),
+                identity: Some(PathBuf::from("/tmp/rhi-missing-identity.secret.json")),
                 allow_generate_identity: false,
             },
         };
@@ -130,7 +130,7 @@ mod tests {
         let args = cli_args {
             service: radroots_runtime::RadrootsServiceCliArgs {
                 config: PathBuf::from("config.toml"),
-                identity: Some(PathBuf::from("/tmp/rhi-run-hook-missing.json")),
+                identity: Some(PathBuf::from("/tmp/rhi-run-hook-missing.secret.json")),
                 allow_generate_identity: false,
             },
         };
