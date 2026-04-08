@@ -83,7 +83,8 @@ struct PersistedTradeListingState {
 impl Default for TradeListingRuntimeConfig {
     fn default() -> Self {
         Self {
-            state_path: PathBuf::from("state/trade-listing-state.json"),
+            state_path: crate::config::default_subscriber_state_path_for_process()
+                .expect("resolve canonical rhi trade-listing state path"),
             replay_window_secs: 24 * 60 * 60,
             replay_overlap_secs: 5 * 60,
         }

@@ -3,6 +3,8 @@
 #[cfg(not(test))]
 use anyhow::Context;
 use anyhow::Result;
+#[cfg(not(test))]
+use clap::Parser;
 use rhi::{cli_args, config, run_rhi};
 use std::process::ExitCode;
 use tracing::info;
@@ -53,12 +55,19 @@ fn load_args_and_settings() -> Result<(cli_args, config::Settings)> {
     }
 
     #[cfg(not(test))]
-    radroots_runtime::parse_and_load_path_with_init(
-        |a: &cli_args| Some(a.service.config.as_path()),
-        |cfg: &config::Settings| cfg.config.service.logs_dir.as_str(),
-        None,
-    )
-    .context("load configuration")
+    {
+        let args = cli_args::try_parse().map_err(radroots_runtime::RuntimeCliError::from)?;
+        let config_path = args
+            .service
+            .config
+            .clone()
+            .map(Ok)
+            .unwrap_or_else(config::default_config_path_for_process)?;
+        let settings =
+            config::load_settings_from_path(&config_path).context("load configuration")?;
+        radroots_runtime::init_with(settings.config.service.logs_dir.as_str(), None)?;
+        Ok((args, settings))
+    }
 }
 
 async fn run() -> Result<()> {
@@ -84,7 +93,10 @@ mod tests {
             metadata: serde_json::from_str(r#"{"name":"rhi-test"}"#).expect("metadata"),
             config: config::Configuration {
                 service: radroots_runtime::RadrootsNostrServiceConfig {
-                    logs_dir: "logs".to_string(),
+                    logs_dir: std::env::temp_dir()
+                        .join("rhi-test-logs")
+                        .display()
+                        .to_string(),
                     relays: Vec::new(),
                     nip89_identifier: Some("rhi".to_string()),
                     nip89_extra_tags: Vec::new(),
@@ -107,7 +119,7 @@ mod tests {
     async fn run_rhi_returns_error_when_identity_is_missing() {
         let args = cli_args {
             service: radroots_runtime::RadrootsServiceCliArgs {
-                config: PathBuf::from("config.toml"),
+                config: Some(PathBuf::from("config.toml")),
                 identity: Some(PathBuf::from("/tmp/rhi-missing-identity.secret.json")),
                 allow_generate_identity: false,
             },
@@ -129,7 +141,7 @@ mod tests {
     async fn run_uses_injected_config_loader_result() {
         let args = cli_args {
             service: radroots_runtime::RadrootsServiceCliArgs {
-                config: PathBuf::from("config.toml"),
+                config: Some(PathBuf::from("config.toml")),
                 identity: Some(PathBuf::from("/tmp/rhi-run-hook-missing.secret.json")),
                 allow_generate_identity: false,
             },

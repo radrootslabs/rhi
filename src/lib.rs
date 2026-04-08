@@ -219,7 +219,10 @@ mod tests {
             metadata: serde_json::from_str(r#"{"name":"rhi-test"}"#).expect("metadata"),
             config: config::Configuration {
                 service: radroots_runtime::RadrootsNostrServiceConfig {
-                    logs_dir: "logs".to_string(),
+                    logs_dir: std::env::temp_dir()
+                        .join("rhi-test-logs")
+                        .display()
+                        .to_string(),
                     relays,
                     nip89_identifier: Some("rhi".to_string()),
                     nip89_extra_tags: Vec::new(),
@@ -243,7 +246,7 @@ mod tests {
     fn args_for_identity(path: PathBuf) -> cli_args {
         cli_args {
             service: radroots_runtime::RadrootsServiceCliArgs {
-                config: PathBuf::from("config.toml"),
+                config: Some(PathBuf::from("config.toml")),
                 identity: Some(path),
                 allow_generate_identity: true,
             },
@@ -376,7 +379,7 @@ mod tests {
 
         let args = cli_args {
             service: radroots_runtime::RadrootsServiceCliArgs {
-                config: PathBuf::from("config.toml"),
+                config: Some(PathBuf::from("config.toml")),
                 identity: Some(PathBuf::from("/tmp/rhi-lib-missing-identity.secret.json")),
                 allow_generate_identity: false,
             },

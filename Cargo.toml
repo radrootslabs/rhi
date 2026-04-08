@@ -17,6 +17,7 @@ radroots-events-codec = { path = "../lib/crates/events-codec" }
 radroots-identity = { path = "../lib/crates/identity" }
 radroots-nostr = { path = "../lib/crates/nostr" }
 radroots-runtime = { path = "../lib/crates/runtime" }
+radroots-runtime-paths = { path = "../lib/crates/runtime-paths" }
 radroots-trade = { path = "../lib/crates/trade" }
 
 [lints.rust]
@@ -29,6 +30,7 @@ radroots-events-codec = { workspace = true, features = ["nostr"] }
 radroots-identity = { workspace = true }
 radroots-nostr = { workspace = true, features = ["client", "codec", "events", "http"] }
 radroots-runtime = { workspace = true, features = ["cli"] }
+radroots-runtime-paths = { workspace = true }
 radroots-trade = { workspace = true }
 
 anyhow = { version = "1" }
@@ -37,6 +39,7 @@ serde = { version = "1", default-features = false }
 serde_json = { version = "1", default-features = false }
 tokio = { version = "1", features = ["full"] }
 thiserror = { version = "2" }
+toml = { version = "0.8" }
 tracing = { version = "0.1" }
 
 [dev-dependencies]
