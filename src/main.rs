@@ -6,6 +6,7 @@ use anyhow::Result;
 #[cfg(not(test))]
 use clap::Parser;
 use rhi::{cli_args, config, run_rhi};
+use std::path::PathBuf;
 use std::process::ExitCode;
 use tracing::info;
 
@@ -41,6 +42,21 @@ fn run_load_hook() -> &'static std::sync::Mutex<Option<Result<(cli_args, config:
     RUN_LOAD_HOOK.get_or_init(|| std::sync::Mutex::new(None))
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RhiRuntimeStartupReport {
+    active_profile: String,
+    config_path: PathBuf,
+    canonical_config_path: PathBuf,
+    logs_dir: PathBuf,
+    canonical_logs_dir: PathBuf,
+    identity_path: PathBuf,
+    canonical_identity_path: PathBuf,
+    subscriber_state_path: PathBuf,
+    canonical_subscriber_state_path: PathBuf,
+    default_shared_secret_backend: String,
+    allowed_shared_secret_backends: Vec<String>,
+}
+
 fn load_args_and_settings() -> Result<(cli_args, config::Settings)> {
     #[cfg(test)]
     {
@@ -65,13 +81,70 @@ fn load_args_and_settings() -> Result<(cli_args, config::Settings)> {
             .unwrap_or_else(config::default_config_path_for_process)?;
         let settings =
             config::load_settings_from_path(&config_path).context("load configuration")?;
-        radroots_runtime::init_with(settings.config.service.logs_dir.as_str(), None)?;
+        radroots_runtime::init_with_logs_dir(
+            std::path::Path::new(settings.config.service.logs_dir.as_str()),
+            None,
+        )?;
         Ok((args, settings))
     }
 }
 
+fn runtime_startup_report(
+    args: &cli_args,
+    settings: &config::Settings,
+    contract: &config::RhiRuntimeContractOutput,
+) -> RhiRuntimeStartupReport {
+    RhiRuntimeStartupReport {
+        active_profile: contract.active_profile.clone(),
+        config_path: args
+            .service
+            .config
+            .clone()
+            .unwrap_or_else(|| contract.canonical_config_path.clone()),
+        canonical_config_path: contract.canonical_config_path.clone(),
+        logs_dir: PathBuf::from(settings.config.service.logs_dir.as_str()),
+        canonical_logs_dir: contract.canonical_logs_dir.clone(),
+        identity_path: args
+            .service
+            .identity
+            .clone()
+            .unwrap_or_else(|| contract.canonical_identity_path.clone()),
+        canonical_identity_path: contract.canonical_identity_path.clone(),
+        subscriber_state_path: settings.config.subscriber.state.path.clone(),
+        canonical_subscriber_state_path: contract.canonical_subscriber_state_path.clone(),
+        default_shared_secret_backend: contract.default_shared_secret_backend.clone(),
+        allowed_shared_secret_backends: contract.allowed_shared_secret_backends.clone(),
+    }
+}
+
+#[cfg(not(test))]
+fn log_runtime_startup_report(report: &RhiRuntimeStartupReport) {
+    info!(
+        active_profile = report.active_profile.as_str(),
+        config_path = %report.config_path.display(),
+        canonical_config_path = %report.canonical_config_path.display(),
+        logs_dir = %report.logs_dir.display(),
+        canonical_logs_dir = %report.canonical_logs_dir.display(),
+        identity_path = %report.identity_path.display(),
+        canonical_identity_path = %report.canonical_identity_path.display(),
+        subscriber_state_path = %report.subscriber_state_path.display(),
+        canonical_subscriber_state_path = %report.canonical_subscriber_state_path.display(),
+        default_shared_secret_backend = report.default_shared_secret_backend.as_str(),
+        allowed_shared_secret_backends = ?report.allowed_shared_secret_backends,
+        "rhi runtime contract"
+    );
+}
+
 async fn run() -> Result<()> {
     let (args, settings): (cli_args, config::Settings) = load_args_and_settings()?;
+
+    #[cfg(not(test))]
+    {
+        let contract =
+            config::runtime_contract_for_process().context("resolve runtime contract")?;
+        let report = runtime_startup_report(&args, &settings, &contract);
+        log_runtime_startup_report(&report);
+    }
 
     info!("Starting");
 
@@ -81,7 +154,10 @@ async fn run() -> Result<()> {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    use super::{exit_code_from_run, main, run, run_load_hook, run_rhi};
+    use super::{
+        RhiRuntimeStartupReport, exit_code_from_run, main, run, run_load_hook, run_rhi,
+        runtime_startup_report,
+    };
     use radroots_nostr::prelude::{RadrootsNostrClient, RadrootsNostrKeys};
     use rhi::features::trade_listing::state::TradeListingRuntime;
     use rhi::{cli_args, config};
@@ -103,6 +179,29 @@ mod tests {
                 },
                 subscriber: config::SubscriberConfig::default(),
             },
+        }
+    }
+
+    fn sample_runtime_contract() -> config::RhiRuntimeContractOutput {
+        config::RhiRuntimeContractOutput {
+            active_profile: "interactive_user".to_string(),
+            allowed_profiles: vec![
+                "interactive_user".to_string(),
+                "service_host".to_string(),
+                "repo_local".to_string(),
+            ],
+            default_shared_secret_backend: "encrypted_file".to_string(),
+            allowed_shared_secret_backends: vec!["encrypted_file".to_string()],
+            canonical_config_path: PathBuf::from(
+                "/home/treesap/.radroots/config/workers/rhi/config.toml",
+            ),
+            canonical_logs_dir: PathBuf::from("/home/treesap/.radroots/logs/workers/rhi"),
+            canonical_identity_path: PathBuf::from(
+                "/home/treesap/.radroots/secrets/workers/rhi/identity.secret.json",
+            ),
+            canonical_subscriber_state_path: PathBuf::from(
+                "/home/treesap/.radroots/data/workers/rhi/trade-listing/state.json",
+            ),
         }
     }
 
@@ -186,5 +285,74 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         handle.stop();
         handle.stopped().await;
+    }
+
+    #[test]
+    fn runtime_startup_report_prefers_explicit_cli_paths() {
+        let args = cli_args {
+            service: radroots_runtime::RadrootsServiceCliArgs {
+                config: Some(PathBuf::from("/tmp/rhi/config.toml")),
+                identity: Some(PathBuf::from("/tmp/rhi/identity.secret.json")),
+                allow_generate_identity: false,
+            },
+        };
+        let mut settings = minimal_settings();
+        settings.config.service.logs_dir = "/tmp/rhi/logs".to_string();
+        settings.config.subscriber.state.path = PathBuf::from("/tmp/rhi/state.json");
+
+        let report = runtime_startup_report(&args, &settings, &sample_runtime_contract());
+
+        assert_eq!(
+            report,
+            RhiRuntimeStartupReport {
+                active_profile: "interactive_user".to_string(),
+                config_path: PathBuf::from("/tmp/rhi/config.toml"),
+                canonical_config_path: PathBuf::from(
+                    "/home/treesap/.radroots/config/workers/rhi/config.toml"
+                ),
+                logs_dir: PathBuf::from("/tmp/rhi/logs"),
+                canonical_logs_dir: PathBuf::from("/home/treesap/.radroots/logs/workers/rhi"),
+                identity_path: PathBuf::from("/tmp/rhi/identity.secret.json"),
+                canonical_identity_path: PathBuf::from(
+                    "/home/treesap/.radroots/secrets/workers/rhi/identity.secret.json"
+                ),
+                subscriber_state_path: PathBuf::from("/tmp/rhi/state.json"),
+                canonical_subscriber_state_path: PathBuf::from(
+                    "/home/treesap/.radroots/data/workers/rhi/trade-listing/state.json"
+                ),
+                default_shared_secret_backend: "encrypted_file".to_string(),
+                allowed_shared_secret_backends: vec!["encrypted_file".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn runtime_startup_report_falls_back_to_canonical_contract_paths() {
+        let args = cli_args {
+            service: radroots_runtime::RadrootsServiceCliArgs {
+                config: None,
+                identity: None,
+                allow_generate_identity: false,
+            },
+        };
+        let contract = sample_runtime_contract();
+        let mut settings = minimal_settings();
+        settings.config.service.logs_dir = contract.canonical_logs_dir.display().to_string();
+        settings.config.subscriber.state.path = contract.canonical_subscriber_state_path.clone();
+
+        let report = runtime_startup_report(&args, &settings, &contract);
+
+        assert_eq!(report.config_path, contract.canonical_config_path);
+        assert_eq!(report.logs_dir, contract.canonical_logs_dir);
+        assert_eq!(report.identity_path, contract.canonical_identity_path);
+        assert_eq!(
+            report.subscriber_state_path,
+            contract.canonical_subscriber_state_path
+        );
+        assert_eq!(report.default_shared_secret_backend, "encrypted_file");
+        assert_eq!(
+            report.allowed_shared_secret_backends,
+            vec!["encrypted_file".to_string()]
+        );
     }
 }

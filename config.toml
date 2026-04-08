@@ -17,6 +17,17 @@ name = "rhi"
 #
 # Manual operator runs may instead place this file at:
 #   ~/.radroots/config/workers/rhi/config.toml
+# when path-like values are omitted, the active profile derives:
+#   interactive_user:
+#     logs_dir = ~/.radroots/logs/workers/rhi
+#     worker identity = ~/.radroots/secrets/workers/rhi/identity.secret.json
+#     subscriber state = ~/.radroots/data/workers/rhi/trade-listing/state.json
+#   service_host:
+#     logs_dir = /var/log/radroots/workers/rhi
+#     worker identity = /etc/radroots/secrets/workers/rhi/identity.secret.json
+#     subscriber state = /var/lib/radroots/workers/rhi/trade-listing/state.json
+# the canonical live worker identity is always an encrypted local envelope
+# only override logs_dir or config.subscriber.state.path intentionally
 relays = [
   "ws://127.0.0.1:8080"
 ]

@@ -13,6 +13,9 @@ const SUBSCRIBER_STATE_DIR_NAME: &str = "trade-listing";
 const SUBSCRIBER_STATE_FILE_NAME: &str = "state.json";
 const RHI_PATHS_PROFILE_ENV: &str = "RHI_PATHS_PROFILE";
 const RHI_PATHS_REPO_LOCAL_ROOT_ENV: &str = "RHI_PATHS_REPO_LOCAL_ROOT";
+const RHI_DEFAULT_SHARED_SECRET_BACKEND: &str = "encrypted_file";
+const RHI_ALLOWED_PROFILES: [&str; 3] = ["interactive_user", "service_host", "repo_local"];
+const RHI_ALLOWED_SHARED_SECRET_BACKENDS: [&str; 1] = ["encrypted_file"];
 
 fn default_replay_window_secs() -> u64 {
     24 * 60 * 60
@@ -28,6 +31,18 @@ struct RhiRuntimePaths {
     logs_dir: PathBuf,
     identity_path: PathBuf,
     subscriber_state_path: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RhiRuntimeContractOutput {
+    pub active_profile: String,
+    pub allowed_profiles: Vec<String>,
+    pub default_shared_secret_backend: String,
+    pub allowed_shared_secret_backends: Vec<String>,
+    pub canonical_config_path: PathBuf,
+    pub canonical_logs_dir: PathBuf,
+    pub canonical_identity_path: PathBuf,
+    pub canonical_subscriber_state_path: PathBuf,
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
@@ -252,6 +267,39 @@ pub fn default_subscriber_state_path_for_process() -> Result<PathBuf> {
     Ok(default_runtime_paths_for_process()?.subscriber_state_path)
 }
 
+pub fn runtime_contract_for_process() -> Result<RhiRuntimeContractOutput> {
+    let (profile, repo_local_root) = process_path_selection()?;
+    runtime_contract_with_resolver(
+        &RadrootsPathResolver::current(),
+        profile,
+        repo_local_root.as_deref(),
+    )
+}
+
+fn runtime_contract_with_resolver(
+    resolver: &RadrootsPathResolver,
+    profile: RadrootsPathProfile,
+    repo_local_root: Option<&Path>,
+) -> Result<RhiRuntimeContractOutput> {
+    let paths = resolve_runtime_paths_with_resolver(resolver, profile, repo_local_root)?;
+    Ok(RhiRuntimeContractOutput {
+        active_profile: profile.to_string(),
+        allowed_profiles: RHI_ALLOWED_PROFILES
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        default_shared_secret_backend: RHI_DEFAULT_SHARED_SECRET_BACKEND.to_owned(),
+        allowed_shared_secret_backends: RHI_ALLOWED_SHARED_SECRET_BACKENDS
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        canonical_config_path: paths.config_path,
+        canonical_logs_dir: paths.logs_dir,
+        canonical_identity_path: paths.identity_path,
+        canonical_subscriber_state_path: paths.subscriber_state_path,
+    })
+}
+
 fn load_settings_from_path_with_resolver(
     path: &Path,
     resolver: &RadrootsPathResolver,
@@ -280,7 +328,7 @@ pub fn load_settings_from_path(path: &Path) -> Result<Settings> {
 mod tests {
     use super::{
         default_subscriber_state_path_for_process, load_settings_from_path_with_resolver,
-        resolve_runtime_paths_with_resolver,
+        resolve_runtime_paths_with_resolver, runtime_contract_with_resolver,
     };
     use radroots_runtime_paths::{
         RadrootsHostEnvironment, RadrootsPathOverrides, RadrootsPathProfile, RadrootsPathResolver,
@@ -451,5 +499,73 @@ replay_overlap_secs = 45
         let path =
             default_subscriber_state_path_for_process().expect("resolve current process defaults");
         assert!(path.ends_with("trade-listing/state.json"));
+    }
+
+    #[test]
+    fn runtime_contract_output_matches_interactive_user_contract() {
+        let contract = runtime_contract_with_resolver(
+            &linux_resolver(),
+            RadrootsPathProfile::InteractiveUser,
+            None,
+        )
+        .expect("interactive-user contract");
+
+        assert_eq!(contract.active_profile, "interactive_user");
+        assert_eq!(
+            contract.allowed_profiles,
+            vec![
+                "interactive_user".to_owned(),
+                "service_host".to_owned(),
+                "repo_local".to_owned(),
+            ]
+        );
+        assert_eq!(contract.default_shared_secret_backend, "encrypted_file");
+        assert_eq!(
+            contract.allowed_shared_secret_backends,
+            vec!["encrypted_file".to_owned()]
+        );
+        assert_eq!(
+            contract.canonical_config_path,
+            PathBuf::from("/home/treesap/.radroots/config/workers/rhi/config.toml")
+        );
+        assert_eq!(
+            contract.canonical_logs_dir,
+            PathBuf::from("/home/treesap/.radroots/logs/workers/rhi")
+        );
+        assert_eq!(
+            contract.canonical_identity_path,
+            PathBuf::from("/home/treesap/.radroots/secrets/workers/rhi/identity.secret.json")
+        );
+        assert_eq!(
+            contract.canonical_subscriber_state_path,
+            PathBuf::from("/home/treesap/.radroots/data/workers/rhi/trade-listing/state.json")
+        );
+    }
+
+    #[test]
+    fn runtime_contract_output_matches_service_host_contract() {
+        let resolver =
+            RadrootsPathResolver::new(RadrootsPlatform::Linux, RadrootsHostEnvironment::default());
+        let contract =
+            runtime_contract_with_resolver(&resolver, RadrootsPathProfile::ServiceHost, None)
+                .expect("service-host contract");
+
+        assert_eq!(contract.active_profile, "service_host");
+        assert_eq!(
+            contract.canonical_config_path,
+            PathBuf::from("/etc/radroots/workers/rhi/config.toml")
+        );
+        assert_eq!(
+            contract.canonical_logs_dir,
+            PathBuf::from("/var/log/radroots/workers/rhi")
+        );
+        assert_eq!(
+            contract.canonical_identity_path,
+            PathBuf::from("/etc/radroots/secrets/workers/rhi/identity.secret.json")
+        );
+        assert_eq!(
+            contract.canonical_subscriber_state_path,
+            PathBuf::from("/var/lib/radroots/workers/rhi/trade-listing/state.json")
+        );
     }
 }
