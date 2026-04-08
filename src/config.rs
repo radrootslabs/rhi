@@ -381,6 +381,31 @@ mod tests {
     }
 
     #[test]
+    fn runtime_paths_follow_repo_local_contract() {
+        let repo_local_root = PathBuf::from("/repo/.local/radroots/dev/rhi");
+        let paths = resolve_runtime_paths_with_resolver(
+            &linux_resolver(),
+            RadrootsPathProfile::RepoLocal,
+            Some(repo_local_root.as_path()),
+        )
+        .expect("repo_local paths should resolve");
+
+        assert_eq!(
+            paths.config_path,
+            repo_local_root.join("config/workers/rhi/config.toml")
+        );
+        assert_eq!(paths.logs_dir, repo_local_root.join("logs/workers/rhi"));
+        assert_eq!(
+            paths.identity_path,
+            repo_local_root.join("secrets/workers/rhi/identity.secret.json")
+        );
+        assert_eq!(
+            paths.subscriber_state_path,
+            repo_local_root.join("data/workers/rhi/trade-listing/state.json")
+        );
+    }
+
+    #[test]
     fn load_settings_materializes_profile_defaults_when_paths_are_omitted() {
         let temp = tempfile::tempdir().expect("tempdir");
         let config_path = temp.path().join("config.toml");
