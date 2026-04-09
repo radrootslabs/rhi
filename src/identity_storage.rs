@@ -41,7 +41,7 @@ pub fn load_encrypted_identity(path: impl AsRef<Path>) -> Result<RadrootsIdentit
 
 fn resolved_identity_path(path: Option<&Path>) -> PathBuf {
     path.map(Path::to_path_buf).unwrap_or_else(|| {
-        crate::config::default_identity_path_for_process()
+        crate::paths::default_identity_path_for_process()
             .expect("resolve canonical rhi identity path")
     })
 }

@@ -5,6 +5,7 @@ pub mod cli;
 pub mod config;
 pub mod features;
 pub mod identity_storage;
+pub mod paths;
 pub mod rhi;
 
 pub use cli::Args as cli_args;

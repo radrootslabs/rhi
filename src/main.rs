@@ -5,7 +5,7 @@ use anyhow::Context;
 use anyhow::Result;
 #[cfg(not(test))]
 use clap::Parser;
-use rhi::{cli_args, config, run_rhi};
+use rhi::{cli_args, config, paths, run_rhi};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use tracing::info;
@@ -78,7 +78,7 @@ fn load_args_and_settings() -> Result<(cli_args, config::Settings)> {
             .config
             .clone()
             .map(Ok)
-            .unwrap_or_else(config::default_config_path_for_process)?;
+            .unwrap_or_else(paths::default_config_path_for_process)?;
         let settings =
             config::load_settings_from_path(&config_path).context("load configuration")?;
         radroots_runtime::init_with_logs_dir(
@@ -92,7 +92,7 @@ fn load_args_and_settings() -> Result<(cli_args, config::Settings)> {
 fn runtime_startup_report(
     args: &cli_args,
     settings: &config::Settings,
-    contract: &config::RhiRuntimeContractOutput,
+    contract: &paths::RhiRuntimeContractOutput,
 ) -> RhiRuntimeStartupReport {
     RhiRuntimeStartupReport {
         active_profile: contract.active_profile.clone(),
@@ -140,8 +140,7 @@ async fn run() -> Result<()> {
 
     #[cfg(not(test))]
     {
-        let contract =
-            config::runtime_contract_for_process().context("resolve runtime contract")?;
+        let contract = paths::runtime_contract_for_process().context("resolve runtime contract")?;
         let report = runtime_startup_report(&args, &settings, &contract);
         log_runtime_startup_report(&report);
     }
@@ -160,7 +159,7 @@ mod tests {
     };
     use radroots_nostr::prelude::{RadrootsNostrClient, RadrootsNostrKeys};
     use rhi::features::trade_listing::state::TradeListingRuntime;
-    use rhi::{cli_args, config};
+    use rhi::{cli_args, config, paths};
     use std::path::PathBuf;
     use std::process::ExitCode;
 
@@ -182,8 +181,8 @@ mod tests {
         }
     }
 
-    fn sample_runtime_contract() -> config::RhiRuntimeContractOutput {
-        config::RhiRuntimeContractOutput {
+    fn sample_runtime_contract() -> paths::RhiRuntimeContractOutput {
+        paths::RhiRuntimeContractOutput {
             active_profile: "interactive_user".to_string(),
             allowed_profiles: vec![
                 "interactive_user".to_string(),
