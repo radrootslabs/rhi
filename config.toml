@@ -17,6 +17,8 @@ name = "rhi"
 #
 # Manual operator runs may instead place this file at:
 #   ~/.radroots/config/workers/rhi/config.toml
+# Repo-owned local runs should prefer the root .env.local control plane, which derives
+# RHI_PATHS_PROFILE=repo_local and RHI_PATHS_REPO_LOCAL_ROOT automatically
 # when path-like values are omitted, the active profile derives:
 #   interactive_user:
 #     logs_dir = ~/.radroots/logs/workers/rhi
