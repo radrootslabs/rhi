@@ -46,13 +46,18 @@ fn run_load_hook() -> &'static std::sync::Mutex<Option<Result<(cli_args, config:
 struct RhiRuntimeStartupReport {
     active_profile: String,
     config_path: PathBuf,
+    config_path_source: String,
     canonical_config_path: PathBuf,
     logs_dir: PathBuf,
+    logs_dir_source: String,
     canonical_logs_dir: PathBuf,
     identity_path: PathBuf,
+    identity_path_source: String,
     canonical_identity_path: PathBuf,
     subscriber_state_path: PathBuf,
+    subscriber_state_path_source: String,
     canonical_subscriber_state_path: PathBuf,
+    path_overrides: paths::RhiRuntimePathOverrideContractOutput,
     default_shared_secret_backend: String,
     allowed_shared_secret_backends: Vec<String>,
 }
@@ -101,19 +106,66 @@ fn runtime_startup_report(
             .config
             .clone()
             .unwrap_or_else(|| contract.canonical_config_path.clone()),
+        config_path_source: cli_or_profile_path_source(
+            args.service.config.is_some(),
+            &args
+                .service
+                .config
+                .clone()
+                .unwrap_or_else(|| contract.canonical_config_path.clone()),
+            &contract.canonical_config_path,
+        ),
         canonical_config_path: contract.canonical_config_path.clone(),
         logs_dir: PathBuf::from(settings.config.service.logs_dir.as_str()),
+        logs_dir_source: config_or_profile_path_source(
+            &PathBuf::from(settings.config.service.logs_dir.as_str()),
+            &contract.canonical_logs_dir,
+        ),
         canonical_logs_dir: contract.canonical_logs_dir.clone(),
         identity_path: args
             .service
             .identity
             .clone()
             .unwrap_or_else(|| contract.canonical_identity_path.clone()),
+        identity_path_source: cli_or_profile_path_source(
+            args.service.identity.is_some(),
+            &args
+                .service
+                .identity
+                .clone()
+                .unwrap_or_else(|| contract.canonical_identity_path.clone()),
+            &contract.canonical_identity_path,
+        ),
         canonical_identity_path: contract.canonical_identity_path.clone(),
         subscriber_state_path: settings.config.subscriber.state.path.clone(),
+        subscriber_state_path_source: config_or_profile_path_source(
+            &settings.config.subscriber.state.path,
+            &contract.canonical_subscriber_state_path,
+        ),
         canonical_subscriber_state_path: contract.canonical_subscriber_state_path.clone(),
+        path_overrides: contract.path_overrides.clone(),
         default_shared_secret_backend: contract.default_shared_secret_backend.clone(),
         allowed_shared_secret_backends: contract.allowed_shared_secret_backends.clone(),
+    }
+}
+
+fn cli_or_profile_path_source(
+    is_cli_arg: bool,
+    actual_path: &PathBuf,
+    canonical_path: &PathBuf,
+) -> String {
+    if is_cli_arg {
+        "cli_arg".to_owned()
+    } else {
+        config_or_profile_path_source(actual_path, canonical_path)
+    }
+}
+
+fn config_or_profile_path_source(actual_path: &PathBuf, canonical_path: &PathBuf) -> String {
+    if actual_path == canonical_path {
+        "profile_default".to_owned()
+    } else {
+        "config_artifact".to_owned()
     }
 }
 
@@ -121,13 +173,22 @@ fn runtime_startup_report(
 fn log_runtime_startup_report(report: &RhiRuntimeStartupReport) {
     info!(
         active_profile = report.active_profile.as_str(),
+        profile_source = report.path_overrides.profile_source.as_str(),
+        root_source = report.path_overrides.root_source.as_str(),
+        repo_local_root = ?report.path_overrides.repo_local_root,
+        repo_local_root_source = ?report.path_overrides.repo_local_root_source,
+        subordinate_path_override_source = report.path_overrides.subordinate_path_override_source.as_str(),
         config_path = %report.config_path.display(),
+        config_path_source = report.config_path_source.as_str(),
         canonical_config_path = %report.canonical_config_path.display(),
         logs_dir = %report.logs_dir.display(),
+        logs_dir_source = report.logs_dir_source.as_str(),
         canonical_logs_dir = %report.canonical_logs_dir.display(),
         identity_path = %report.identity_path.display(),
+        identity_path_source = report.identity_path_source.as_str(),
         canonical_identity_path = %report.canonical_identity_path.display(),
         subscriber_state_path = %report.subscriber_state_path.display(),
+        subscriber_state_path_source = report.subscriber_state_path_source.as_str(),
         canonical_subscriber_state_path = %report.canonical_subscriber_state_path.display(),
         default_shared_secret_backend = report.default_shared_secret_backend.as_str(),
         allowed_shared_secret_backends = ?report.allowed_shared_secret_backends,
@@ -189,6 +250,17 @@ mod tests {
                 "service_host".to_string(),
                 "repo_local".to_string(),
             ],
+            path_overrides: paths::RhiRuntimePathOverrideContractOutput {
+                profile_source: "caller".to_string(),
+                root_source: "host_defaults".to_string(),
+                repo_local_root: None,
+                repo_local_root_source: None,
+                subordinate_path_override_source: "config_artifact".to_string(),
+                subordinate_path_override_keys: vec![
+                    "config.service.logs_dir".to_string(),
+                    "config.subscriber.state.path".to_string(),
+                ],
+            },
             default_shared_secret_backend: "encrypted_file".to_string(),
             allowed_shared_secret_backends: vec!["encrypted_file".to_string()],
             canonical_config_path: PathBuf::from(
@@ -306,19 +378,24 @@ mod tests {
             RhiRuntimeStartupReport {
                 active_profile: "interactive_user".to_string(),
                 config_path: PathBuf::from("/tmp/rhi/config.toml"),
+                config_path_source: "cli_arg".to_string(),
                 canonical_config_path: PathBuf::from(
                     "/home/treesap/.radroots/config/workers/rhi/config.toml"
                 ),
                 logs_dir: PathBuf::from("/tmp/rhi/logs"),
+                logs_dir_source: "config_artifact".to_string(),
                 canonical_logs_dir: PathBuf::from("/home/treesap/.radroots/logs/workers/rhi"),
                 identity_path: PathBuf::from("/tmp/rhi/identity.secret.json"),
+                identity_path_source: "cli_arg".to_string(),
                 canonical_identity_path: PathBuf::from(
                     "/home/treesap/.radroots/secrets/workers/rhi/identity.secret.json"
                 ),
                 subscriber_state_path: PathBuf::from("/tmp/rhi/state.json"),
+                subscriber_state_path_source: "config_artifact".to_string(),
                 canonical_subscriber_state_path: PathBuf::from(
                     "/home/treesap/.radroots/data/workers/rhi/trade-listing/state.json"
                 ),
+                path_overrides: sample_runtime_contract().path_overrides,
                 default_shared_secret_backend: "encrypted_file".to_string(),
                 allowed_shared_secret_backends: vec!["encrypted_file".to_string()],
             }
@@ -342,12 +419,17 @@ mod tests {
         let report = runtime_startup_report(&args, &settings, &contract);
 
         assert_eq!(report.config_path, contract.canonical_config_path);
+        assert_eq!(report.config_path_source, "profile_default");
         assert_eq!(report.logs_dir, contract.canonical_logs_dir);
+        assert_eq!(report.logs_dir_source, "profile_default");
         assert_eq!(report.identity_path, contract.canonical_identity_path);
+        assert_eq!(report.identity_path_source, "profile_default");
         assert_eq!(
             report.subscriber_state_path,
             contract.canonical_subscriber_state_path
         );
+        assert_eq!(report.subscriber_state_path_source, "profile_default");
+        assert_eq!(report.path_overrides, contract.path_overrides);
         assert_eq!(report.default_shared_secret_backend, "encrypted_file");
         assert_eq!(
             report.allowed_shared_secret_backends,
