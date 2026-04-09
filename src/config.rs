@@ -397,6 +397,17 @@ replay_overlap_secs = 45
             vec!["encrypted_file".to_owned()]
         );
         assert_eq!(
+            contract.migration.posture,
+            "explicit_operator_import_required"
+        );
+        assert_eq!(contract.migration.state, "ready");
+        assert_eq!(contract.migration.silent_startup_relocation, false);
+        assert_eq!(
+            contract.migration.compatibility_window,
+            "detect_and_report_only"
+        );
+        assert!(contract.migration.detected_legacy_paths.is_empty());
+        assert_eq!(
             contract.canonical_config_path,
             PathBuf::from("/home/treesap/.radroots/config/workers/rhi/config.toml")
         );

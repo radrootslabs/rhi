@@ -58,6 +58,7 @@ struct RhiRuntimeStartupReport {
     subscriber_state_path_source: String,
     canonical_subscriber_state_path: PathBuf,
     path_overrides: paths::RhiRuntimePathOverrideContractOutput,
+    migration: paths::RhiRuntimeMigrationContractOutput,
     default_shared_secret_backend: String,
     allowed_shared_secret_backends: Vec<String>,
 }
@@ -98,6 +99,7 @@ fn runtime_startup_report(
     args: &cli_args,
     settings: &config::Settings,
     contract: &paths::RhiRuntimeContractOutput,
+    migration: paths::RhiRuntimeMigrationContractOutput,
 ) -> RhiRuntimeStartupReport {
     RhiRuntimeStartupReport {
         active_profile: contract.active_profile.clone(),
@@ -144,6 +146,7 @@ fn runtime_startup_report(
         ),
         canonical_subscriber_state_path: contract.canonical_subscriber_state_path.clone(),
         path_overrides: contract.path_overrides.clone(),
+        migration,
         default_shared_secret_backend: contract.default_shared_secret_backend.clone(),
         allowed_shared_secret_backends: contract.allowed_shared_secret_backends.clone(),
     }
@@ -178,6 +181,10 @@ fn log_runtime_startup_report(report: &RhiRuntimeStartupReport) {
         repo_local_root = ?report.path_overrides.repo_local_root,
         repo_local_root_source = ?report.path_overrides.repo_local_root_source,
         subordinate_path_override_source = report.path_overrides.subordinate_path_override_source.as_str(),
+        migration_posture = report.migration.posture.as_str(),
+        migration_state = report.migration.state.as_str(),
+        migration_detected_legacy_paths = report.migration.detected_legacy_paths.len(),
+        silent_startup_relocation = report.migration.silent_startup_relocation,
         config_path = %report.config_path.display(),
         config_path_source = report.config_path_source.as_str(),
         canonical_config_path = %report.canonical_config_path.display(),
@@ -202,7 +209,9 @@ async fn run() -> Result<()> {
     #[cfg(not(test))]
     {
         let contract = paths::runtime_contract_for_process().context("resolve runtime contract")?;
-        let report = runtime_startup_report(&args, &settings, &contract);
+        let migration =
+            paths::runtime_migration_for_process(&contract).context("inspect runtime migration")?;
+        let report = runtime_startup_report(&args, &settings, &contract, migration);
         log_runtime_startup_report(&report);
     }
 
@@ -263,6 +272,13 @@ mod tests {
             },
             default_shared_secret_backend: "encrypted_file".to_string(),
             allowed_shared_secret_backends: vec!["encrypted_file".to_string()],
+            migration: paths::RhiRuntimeMigrationContractOutput {
+                posture: "explicit_operator_import_required".to_string(),
+                state: "ready".to_string(),
+                silent_startup_relocation: false,
+                compatibility_window: "detect_and_report_only".to_string(),
+                detected_legacy_paths: Vec::new(),
+            },
             canonical_config_path: PathBuf::from(
                 "/home/treesap/.radroots/config/workers/rhi/config.toml",
             ),
@@ -371,7 +387,9 @@ mod tests {
         settings.config.service.logs_dir = "/tmp/rhi/logs".to_string();
         settings.config.subscriber.state.path = PathBuf::from("/tmp/rhi/state.json");
 
-        let report = runtime_startup_report(&args, &settings, &sample_runtime_contract());
+        let contract = sample_runtime_contract();
+        let report =
+            runtime_startup_report(&args, &settings, &contract, contract.migration.clone());
 
         assert_eq!(
             report,
@@ -396,6 +414,7 @@ mod tests {
                     "/home/treesap/.radroots/data/workers/rhi/trade-listing/state.json"
                 ),
                 path_overrides: sample_runtime_contract().path_overrides,
+                migration: sample_runtime_contract().migration,
                 default_shared_secret_backend: "encrypted_file".to_string(),
                 allowed_shared_secret_backends: vec!["encrypted_file".to_string()],
             }
@@ -416,7 +435,8 @@ mod tests {
         settings.config.service.logs_dir = contract.canonical_logs_dir.display().to_string();
         settings.config.subscriber.state.path = contract.canonical_subscriber_state_path.clone();
 
-        let report = runtime_startup_report(&args, &settings, &contract);
+        let report =
+            runtime_startup_report(&args, &settings, &contract, contract.migration.clone());
 
         assert_eq!(report.config_path, contract.canonical_config_path);
         assert_eq!(report.config_path_source, "profile_default");
@@ -430,6 +450,7 @@ mod tests {
         );
         assert_eq!(report.subscriber_state_path_source, "profile_default");
         assert_eq!(report.path_overrides, contract.path_overrides);
+        assert_eq!(report.migration, contract.migration);
         assert_eq!(report.default_shared_secret_backend, "encrypted_file");
         assert_eq!(
             report.allowed_shared_secret_backends,

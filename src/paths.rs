@@ -2,8 +2,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use radroots_runtime_paths::{
-    DEFAULT_CONFIG_FILE_NAME, DEFAULT_SERVICE_IDENTITY_FILE_NAME, RadrootsPathOverrides,
-    RadrootsPathProfile, RadrootsPathResolver, RadrootsRuntimeNamespace,
+    DEFAULT_CONFIG_FILE_NAME, DEFAULT_SERVICE_IDENTITY_FILE_NAME, RadrootsLegacyPathCandidate,
+    RadrootsMigrationReport, RadrootsPathOverrides, RadrootsPathProfile, RadrootsPathResolver,
+    RadrootsRuntimeNamespace, inspect_legacy_paths,
 };
 use serde::Serialize;
 
@@ -18,6 +19,7 @@ const RHI_ALLOWED_SHARED_SECRET_BACKENDS: [&str; 1] = ["encrypted_file"];
 const SUBORDINATE_PATH_OVERRIDE_SOURCE: &str = "config_artifact";
 const SUBORDINATE_PATH_OVERRIDE_KEYS: [&str; 2] =
     ["config.service.logs_dir", "config.subscriber.state.path"];
+const MIGRATION_IMPORT_HINT: &str = "stop the worker, inspect this legacy path, then perform an explicit import or manual copy into the canonical destination; rhi will not move it on startup";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RhiRuntimePaths {
@@ -34,10 +36,30 @@ pub struct RhiRuntimeContractOutput {
     pub path_overrides: RhiRuntimePathOverrideContractOutput,
     pub default_shared_secret_backend: String,
     pub allowed_shared_secret_backends: Vec<String>,
+    pub migration: RhiRuntimeMigrationContractOutput,
     pub canonical_config_path: PathBuf,
     pub canonical_logs_dir: PathBuf,
     pub canonical_identity_path: PathBuf,
     pub canonical_subscriber_state_path: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RhiRuntimeMigrationContractOutput {
+    pub posture: String,
+    pub state: String,
+    pub silent_startup_relocation: bool,
+    pub compatibility_window: String,
+    pub detected_legacy_paths: Vec<RhiRuntimeLegacyPathOutput>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RhiRuntimeLegacyPathOutput {
+    pub id: String,
+    pub description: String,
+    pub path: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub destination: Option<PathBuf>,
+    pub import_hint: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -209,11 +231,79 @@ fn runtime_contract_with_selection(
             .into_iter()
             .map(str::to_owned)
             .collect(),
+        migration: migration_contract_output(RadrootsMigrationReport::empty()),
         canonical_config_path: paths.config_path,
         canonical_logs_dir: paths.logs_dir,
         canonical_identity_path: paths.identity_path,
         canonical_subscriber_state_path: paths.subscriber_state_path,
     })
+}
+
+pub fn runtime_migration_for_process(
+    contract: &RhiRuntimeContractOutput,
+) -> Result<RhiRuntimeMigrationContractOutput> {
+    let current_dir = std::env::current_dir().context("resolve current directory")?;
+    Ok(runtime_migration_for_current_dir(
+        contract,
+        current_dir.as_path(),
+    ))
+}
+
+pub(crate) fn runtime_migration_for_current_dir(
+    contract: &RhiRuntimeContractOutput,
+    current_dir: &Path,
+) -> RhiRuntimeMigrationContractOutput {
+    let report = inspect_legacy_paths(legacy_path_candidates(contract, current_dir));
+    migration_contract_output(report)
+}
+
+fn legacy_path_candidates(
+    contract: &RhiRuntimeContractOutput,
+    current_dir: &Path,
+) -> Vec<RadrootsLegacyPathCandidate> {
+    vec![
+        RadrootsLegacyPathCandidate::new(
+            "rhi_repo_config_v0",
+            "legacy rhi repo-relative config",
+            current_dir.join(DEFAULT_CONFIG_FILE_NAME),
+            Some(contract.canonical_config_path.clone()),
+            MIGRATION_IMPORT_HINT,
+        ),
+        RadrootsLegacyPathCandidate::new(
+            "rhi_repo_logs_v0",
+            "legacy rhi repo-relative logs directory",
+            current_dir.join("logs"),
+            Some(contract.canonical_logs_dir.clone()),
+            MIGRATION_IMPORT_HINT,
+        ),
+        RadrootsLegacyPathCandidate::new(
+            "rhi_repo_subscriber_state_v0",
+            "legacy rhi repo-relative subscriber state",
+            current_dir.join("state/trade-listing-state.json"),
+            Some(contract.canonical_subscriber_state_path.clone()),
+            MIGRATION_IMPORT_HINT,
+        ),
+    ]
+}
+
+fn migration_contract_output(report: RadrootsMigrationReport) -> RhiRuntimeMigrationContractOutput {
+    RhiRuntimeMigrationContractOutput {
+        posture: report.posture.to_owned(),
+        state: report.state.to_owned(),
+        silent_startup_relocation: report.silent_startup_relocation,
+        compatibility_window: report.compatibility_window.to_owned(),
+        detected_legacy_paths: report
+            .detected_legacy_paths
+            .into_iter()
+            .map(|path| RhiRuntimeLegacyPathOutput {
+                id: path.id,
+                description: path.description,
+                path: path.path,
+                destination: path.destination,
+                import_hint: path.import_hint,
+            })
+            .collect(),
+    }
 }
 
 fn root_source_for_profile(profile: RadrootsPathProfile) -> &'static str {
@@ -222,5 +312,61 @@ fn root_source_for_profile(profile: RadrootsPathProfile) -> &'static str {
         RadrootsPathProfile::ServiceHost => "service_host_defaults",
         RadrootsPathProfile::RepoLocal => "repo_local_root",
         RadrootsPathProfile::MobileNative => "mobile_native_defaults",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use radroots_runtime_paths::{
+        RadrootsHostEnvironment, RadrootsPathProfile, RadrootsPathResolver, RadrootsPlatform,
+    };
+
+    use super::{runtime_contract_with_resolver, runtime_migration_for_current_dir};
+
+    fn linux_resolver() -> RadrootsPathResolver {
+        RadrootsPathResolver::new(
+            RadrootsPlatform::Linux,
+            RadrootsHostEnvironment {
+                home_dir: Some(PathBuf::from("/home/treesap")),
+                ..RadrootsHostEnvironment::default()
+            },
+        )
+    }
+
+    #[test]
+    fn runtime_migration_detects_legacy_repo_relative_state_without_moving_it() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            temp.path().join("config.toml"),
+            "[metadata]\nname = \"old\"\n",
+        )
+        .expect("write old config");
+        std::fs::create_dir_all(temp.path().join("state")).expect("state dir");
+        std::fs::write(temp.path().join("state/trade-listing-state.json"), "{}")
+            .expect("write old subscriber state");
+        let contract = runtime_contract_with_resolver(
+            &linux_resolver(),
+            RadrootsPathProfile::InteractiveUser,
+            None,
+        )
+        .expect("contract");
+
+        let report = runtime_migration_for_current_dir(&contract, temp.path());
+
+        assert_eq!(report.posture, "explicit_operator_import_required");
+        assert_eq!(report.state, "legacy_state_detected");
+        assert!(!report.silent_startup_relocation);
+        assert_eq!(report.detected_legacy_paths.len(), 2);
+        assert_eq!(report.detected_legacy_paths[0].id, "rhi_repo_config_v0");
+        assert_eq!(
+            report.detected_legacy_paths[1].id,
+            "rhi_repo_subscriber_state_v0"
+        );
+        assert_eq!(
+            report.detected_legacy_paths[1].destination,
+            Some(contract.canonical_subscriber_state_path)
+        );
     }
 }
