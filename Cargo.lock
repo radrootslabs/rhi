@@ -1584,7 +1584,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
-name = "radroots-core"
+name = "radroots_core"
 version = "0.1.0-alpha.1"
 dependencies = [
  "rust_decimal",
@@ -1594,34 +1594,34 @@ dependencies = [
 ]
 
 [[package]]
-name = "radroots-events"
+name = "radroots_events"
 version = "0.1.0-alpha.1"
 dependencies = [
- "radroots-core",
+ "radroots_core",
  "serde",
  "ts-rs",
  "typeshare",
 ]
 
 [[package]]
-name = "radroots-events-codec"
+name = "radroots_events_codec"
 version = "0.1.0-alpha.1"
 dependencies = [
  "nostr",
- "radroots-core",
- "radroots-events",
+ "radroots_core",
+ "radroots_events",
  "serde",
  "serde_json",
 ]
 
 [[package]]
-name = "radroots-identity"
+name = "radroots_identity"
 version = "0.1.0-alpha.1"
 dependencies = [
  "nostr",
- "radroots-events",
- "radroots-runtime",
- "radroots-runtime-paths",
+ "radroots_events",
+ "radroots_runtime",
+ "radroots_runtime_paths",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
@@ -1629,7 +1629,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "radroots-log"
+name = "radroots_log"
 version = "0.1.0-alpha.1"
 dependencies = [
  "chrono",
@@ -1640,14 +1640,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "radroots-nostr"
+name = "radroots_nostr"
 version = "0.1.0-alpha.1"
 dependencies = [
  "nostr",
  "nostr-sdk",
- "radroots-events",
- "radroots-events-codec",
- "radroots-identity",
+ "radroots_events",
+ "radroots_events_codec",
+ "radroots_identity",
  "reqwest",
  "serde",
  "serde_json",
@@ -1655,19 +1655,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "radroots-protected-store"
+name = "radroots_protected_store"
 version = "0.1.0-alpha.1"
 dependencies = [
  "chacha20poly1305",
  "getrandom 0.2.17",
- "radroots-secret-vault",
+ "radroots_secret_vault",
  "serde",
  "serde_json",
  "zeroize",
 ]
 
 [[package]]
-name = "radroots-runtime"
+name = "radroots_runtime"
 version = "0.1.0-alpha.1"
 dependencies = [
  "anyhow",
@@ -1675,10 +1675,10 @@ dependencies = [
  "clap",
  "config",
  "getrandom 0.2.17",
- "radroots-log",
- "radroots-protected-store",
- "radroots-runtime-paths",
- "radroots-secret-vault",
+ "radroots_log",
+ "radroots_protected_store",
+ "radroots_runtime_paths",
+ "radroots_secret_vault",
  "serde",
  "serde_json",
  "tempfile",
@@ -1690,23 +1690,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "radroots-runtime-paths"
+name = "radroots_runtime_paths"
 version = "0.1.0-alpha.1"
 dependencies = [
  "thiserror 1.0.69",
 ]
 
 [[package]]
-name = "radroots-secret-vault"
+name = "radroots_secret_vault"
 version = "0.1.0-alpha.1"
 
 [[package]]
-name = "radroots-trade"
+name = "radroots_trade"
 version = "0.1.0-alpha.1"
 dependencies = [
- "radroots-core",
- "radroots-events",
- "radroots-events-codec",
+ "radroots_core",
+ "radroots_events",
+ "radroots_events_codec",
  "serde",
  "serde_json",
  "ts-rs",
@@ -1841,14 +1841,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "radroots-core",
- "radroots-events",
- "radroots-events-codec",
- "radroots-identity",
- "radroots-nostr",
- "radroots-runtime",
- "radroots-runtime-paths",
- "radroots-trade",
+ "radroots_core",
+ "radroots_events",
+ "radroots_events_codec",
+ "radroots_identity",
+ "radroots_nostr",
+ "radroots_runtime",
+ "radroots_runtime_paths",
+ "radroots_trade",
  "serde",
  "serde_json",
  "tempfile",

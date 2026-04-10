@@ -11,27 +11,27 @@ description = "Radroots trade validation and receipt worker"
 resolver = "2"
 
 [workspace.dependencies]
-radroots-core = { path = "../lib/crates/core" }
-radroots-events = { path = "../lib/crates/events" }
-radroots-events-codec = { path = "../lib/crates/events-codec" }
-radroots-identity = { path = "../lib/crates/identity" }
-radroots-nostr = { path = "../lib/crates/nostr" }
-radroots-runtime = { path = "../lib/crates/runtime" }
-radroots-runtime-paths = { path = "../lib/crates/runtime-paths" }
-radroots-trade = { path = "../lib/crates/trade" }
+radroots_core = { path = "../lib/crates/core" }
+radroots_events = { path = "../lib/crates/events" }
+radroots_events_codec = { path = "../lib/crates/events_codec" }
+radroots_identity = { path = "../lib/crates/identity" }
+radroots_nostr = { path = "../lib/crates/nostr" }
+radroots_runtime = { path = "../lib/crates/runtime" }
+radroots_runtime_paths = { path = "../lib/crates/runtime_paths" }
+radroots_trade = { path = "../lib/crates/trade" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 
 [dependencies]
-radroots-core = { workspace = true, features = ["std", "serde", "typeshare"]  }
-radroots-events = { workspace = true, features = ["serde"] }
-radroots-events-codec = { workspace = true, features = ["nostr"] }
-radroots-identity = { workspace = true }
-radroots-nostr = { workspace = true, features = ["client", "codec", "events", "http"] }
-radroots-runtime = { workspace = true, features = ["cli"] }
-radroots-runtime-paths = { workspace = true }
-radroots-trade = { workspace = true }
+radroots_core = { workspace = true, features = ["std", "serde", "typeshare"]  }
+radroots_events = { workspace = true, features = ["serde"] }
+radroots_events_codec = { workspace = true, features = ["nostr"] }
+radroots_identity = { workspace = true }
+radroots_nostr = { workspace = true, features = ["client", "codec", "events", "http"] }
+radroots_runtime = { workspace = true, features = ["cli"] }
+radroots_runtime_paths = { workspace = true }
+radroots_trade = { workspace = true }
 
 anyhow = { version = "1" }
 clap = { version = "4", features = ["derive"] }
