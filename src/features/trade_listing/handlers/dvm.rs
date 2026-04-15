@@ -3,8 +3,8 @@
 
 use std::{sync::Arc, time::Duration};
 
+use radroots_events::farm::RadrootsFarmRef;
 use radroots_events::kinds::{KIND_FARM, is_listing_kind, is_trade_kind};
-use radroots_events::listing::RadrootsListingFarmRef;
 use radroots_events::trade::{
     RadrootsTradeAnswer as TradeAnswer, RadrootsTradeDiscountDecision as TradeDiscountDecision,
     RadrootsTradeDiscountOffer as TradeDiscountOffer,
@@ -86,7 +86,7 @@ struct DvmTestHooks {
         std::collections::VecDeque<Result<Vec<RadrootsNostrEvent>, TradeListingDvmError>>,
     send_event_results: std::collections::VecDeque<Result<(), TradeListingDvmError>>,
     validate_listing_results: std::collections::VecDeque<
-        Result<(String, RadrootsListingFarmRef), TradeListingValidationError>,
+        Result<(String, RadrootsFarmRef), TradeListingValidationError>,
     >,
     farm_validation_results:
         std::collections::VecDeque<Result<Vec<TradeListingValidationError>, TradeListingDvmError>>,
@@ -130,7 +130,7 @@ fn pop_send_event_hook() -> Option<Result<(), TradeListingDvmError>> {
 
 #[cfg(test)]
 fn pop_validate_listing_hook()
--> Option<Result<(String, RadrootsListingFarmRef), TradeListingValidationError>> {
+-> Option<Result<(String, RadrootsFarmRef), TradeListingValidationError>> {
     dvm_test_hooks()
         .lock()
         .expect("dvm test hooks lock")
@@ -183,14 +183,14 @@ fn take_send_event_hook() -> Option<Result<(), TradeListingDvmError>> {
 
 #[cfg(test)]
 fn take_validate_listing_hook()
--> Option<Result<(String, RadrootsListingFarmRef), TradeListingValidationError>> {
+-> Option<Result<(String, RadrootsFarmRef), TradeListingValidationError>> {
     pop_validate_listing_hook()
 }
 
 #[cfg(not(test))]
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn take_validate_listing_hook()
--> Option<Result<(String, RadrootsListingFarmRef), TradeListingValidationError>> {
+-> Option<Result<(String, RadrootsFarmRef), TradeListingValidationError>> {
     None
 }
 
@@ -239,7 +239,7 @@ async fn send_event_io(
 #[cfg_attr(all(not(test), coverage_nightly), coverage(off))]
 fn validate_listing_event_io(
     event: &RadrootsNostrEvent,
-) -> Result<(String, RadrootsListingFarmRef), TradeListingValidationError> {
+) -> Result<(String, RadrootsFarmRef), TradeListingValidationError> {
     let hook_result = take_validate_listing_hook();
     let validated = match hook_result {
         Some(result) => result?,
@@ -1224,7 +1224,7 @@ async fn fetch_latest_event_by_kind(
 
 async fn validate_farm_dependencies(
     client: &RadrootsNostrClient,
-    farm: &RadrootsListingFarmRef,
+    farm: &RadrootsFarmRef,
 ) -> Result<Vec<TradeListingValidationError>, TradeListingDvmError> {
     #[cfg(test)]
     if let Some(result) = pop_farm_validation_hook() {
@@ -1449,7 +1449,7 @@ mod tests {
         KIND_TRADE_LISTING_RECEIPT_REQ, KIND_TRADE_LISTING_VALIDATE_REQ,
         KIND_TRADE_LISTING_VALIDATE_RES,
     };
-    use radroots_events::listing::RadrootsListingFarmRef;
+    use radroots_events::farm::RadrootsFarmRef;
     use radroots_events::trade::RadrootsTradeListingValidationError as TradeListingValidationError;
     use radroots_events::trade::{
         RadrootsTradeAnswer as TradeAnswer, RadrootsTradeDiscountDecision as TradeDiscountDecision,
@@ -1525,7 +1525,7 @@ mod tests {
             )));
     }
 
-    fn push_validate_listing_ok(listing_addr: impl Into<String>, farm: RadrootsListingFarmRef) {
+    fn push_validate_listing_ok(listing_addr: impl Into<String>, farm: RadrootsFarmRef) {
         dvm_test_hooks()
             .lock()
             .expect("hooks")
@@ -2198,7 +2198,7 @@ mod tests {
         .expect("builder");
         assert!(send_event_io(&client, builder).await.is_ok());
 
-        let farm = RadrootsListingFarmRef {
+        let farm = RadrootsFarmRef {
             pubkey: rhi_keys.public_key().to_hex(),
             d_tag: "farmtag".to_string(),
         };
@@ -2215,7 +2215,7 @@ mod tests {
         let (rhi_keys, seller_keys, _) = make_keys();
         let client = make_client(&rhi_keys);
 
-        let invalid_farm = RadrootsListingFarmRef {
+        let invalid_farm = RadrootsFarmRef {
             pubkey: "bad".to_string(),
             d_tag: "farmtag".to_string(),
         };
@@ -2225,7 +2225,7 @@ mod tests {
         assert!(errors.contains(&TradeListingValidationError::MissingFarmProfile));
         assert!(errors.contains(&TradeListingValidationError::MissingFarmRecord));
 
-        let farm = RadrootsListingFarmRef {
+        let farm = RadrootsFarmRef {
             pubkey: seller_keys.public_key().to_hex(),
             d_tag: "farmtag".to_string(),
         };
@@ -2330,7 +2330,7 @@ mod tests {
             .push_back(Ok(success_event.clone()));
         push_validate_listing_ok(
             listing_addr.clone(),
-            RadrootsListingFarmRef {
+            RadrootsFarmRef {
                 pubkey: seller_keys.public_key().to_hex(),
                 d_tag: "farmtag".to_string(),
             },
@@ -2374,7 +2374,7 @@ mod tests {
             .push_back(Ok(mismatch_event.clone()));
         push_validate_listing_ok(
             other_listing_addr,
-            RadrootsListingFarmRef {
+            RadrootsFarmRef {
                 pubkey: seller_keys.public_key().to_hex(),
                 d_tag: "farmtag".to_string(),
             },
@@ -2455,7 +2455,7 @@ mod tests {
             .push_back(Ok(event.clone()));
         push_validate_listing_ok(
             listing_addr.clone(),
-            RadrootsListingFarmRef {
+            RadrootsFarmRef {
                 pubkey: seller_keys.public_key().to_hex(),
                 d_tag: "farmtag".to_string(),
             },
@@ -3296,7 +3296,7 @@ mod tests {
         .expect("latest metadata");
         assert!(fetched_latest.is_some());
 
-        let farm = RadrootsListingFarmRef {
+        let farm = RadrootsFarmRef {
             pubkey: seller_keys.public_key().to_hex(),
             d_tag: "farm".to_string(),
         };
@@ -3316,7 +3316,7 @@ mod tests {
         assert!(errors.contains(&TradeListingValidationError::MissingFarmProfile));
         assert!(errors.contains(&TradeListingValidationError::MissingFarmRecord));
 
-        let empty_farm_tag = RadrootsListingFarmRef {
+        let empty_farm_tag = RadrootsFarmRef {
             pubkey: seller_keys.public_key().to_hex(),
             d_tag: String::new(),
         };
@@ -3630,7 +3630,7 @@ mod tests {
             .push_back(Ok(fetched_snapshot_event));
         push_validate_listing_ok(
             listing_addr.clone(),
-            RadrootsListingFarmRef {
+            RadrootsFarmRef {
                 pubkey: seller_pub.clone(),
                 d_tag: "farmtag".to_string(),
             },
@@ -3682,7 +3682,7 @@ mod tests {
             .push_back(Ok(mismatched_snapshot_event));
         push_validate_listing_ok(
             listing_addr_for_seller(&buyer_keys),
-            RadrootsListingFarmRef {
+            RadrootsFarmRef {
                 pubkey: buyer_pub.clone(),
                 d_tag: "farmtag".to_string(),
             },
@@ -5156,7 +5156,7 @@ mod tests {
             .push_back(Ok(validate_event.clone()));
         push_validate_listing_ok(
             listing_addr.clone(),
-            RadrootsListingFarmRef {
+            RadrootsFarmRef {
                 pubkey: seller_keys.public_key().to_hex(),
                 d_tag: "farmtag".to_string(),
             },
