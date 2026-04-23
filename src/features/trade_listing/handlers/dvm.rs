@@ -85,9 +85,8 @@ struct DvmTestHooks {
     fetch_events_results:
         std::collections::VecDeque<Result<Vec<RadrootsNostrEvent>, TradeListingDvmError>>,
     send_event_results: std::collections::VecDeque<Result<(), TradeListingDvmError>>,
-    validate_listing_results: std::collections::VecDeque<
-        Result<(String, RadrootsFarmRef), TradeListingValidationError>,
-    >,
+    validate_listing_results:
+        std::collections::VecDeque<Result<(String, RadrootsFarmRef), TradeListingValidationError>>,
     farm_validation_results:
         std::collections::VecDeque<Result<Vec<TradeListingValidationError>, TradeListingDvmError>>,
 }
@@ -1439,6 +1438,7 @@ mod tests {
     };
     use radroots_core::{RadrootsCoreCurrency, RadrootsCoreDiscountValue, RadrootsCoreMoney};
     use radroots_events::RadrootsNostrEventPtr;
+    use radroots_events::farm::RadrootsFarmRef;
     use radroots_events::kinds::{
         KIND_TRADE_LISTING_ANSWER_RES, KIND_TRADE_LISTING_CANCEL_REQ,
         KIND_TRADE_LISTING_DISCOUNT_ACCEPT_REQ, KIND_TRADE_LISTING_DISCOUNT_DECLINE_REQ,
@@ -1449,7 +1449,6 @@ mod tests {
         KIND_TRADE_LISTING_RECEIPT_REQ, KIND_TRADE_LISTING_VALIDATE_REQ,
         KIND_TRADE_LISTING_VALIDATE_RES,
     };
-    use radroots_events::farm::RadrootsFarmRef;
     use radroots_events::trade::RadrootsTradeListingValidationError as TradeListingValidationError;
     use radroots_events::trade::{
         RadrootsTradeAnswer as TradeAnswer, RadrootsTradeDiscountDecision as TradeDiscountDecision,
