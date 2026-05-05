@@ -1477,14 +1477,17 @@ mod tests {
     };
     use serde_json::json;
     use std::collections::HashSet;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, Mutex, MutexGuard};
     use tokio::sync::Mutex as AsyncMutex;
 
     static TEST_LOCK: Mutex<()> = Mutex::new(());
+    static TEST_EVENT_TIMESTAMP: AtomicU64 = AtomicU64::new(1_700_000_000);
     const TEST_LISTING_EVENT_ID: &str = "listing-event";
 
     fn test_guard() -> MutexGuard<'static, ()> {
         let guard = TEST_LOCK.lock().unwrap_or_else(|err| err.into_inner());
+        TEST_EVENT_TIMESTAMP.store(1_700_000_000, Ordering::Relaxed);
         *dvm_test_hooks()
             .lock()
             .unwrap_or_else(|err| err.into_inner()) = DvmTestHooks::default();
@@ -1496,6 +1499,10 @@ mod tests {
             kind.try_into()
                 .expect("trade listing kinds fit in nostr custom range"),
         )
+    }
+
+    fn next_test_timestamp() -> RadrootsNostrTimestamp {
+        RadrootsNostrTimestamp::from(TEST_EVENT_TIMESTAMP.fetch_add(1, Ordering::Relaxed))
     }
 
     fn push_send_ok() {
@@ -1701,6 +1708,7 @@ mod tests {
         tags: Vec<RadrootsNostrTag>,
     ) -> RadrootsNostrEvent {
         RadrootsNostrEventBuilder::new(kind, content)
+            .custom_created_at(next_test_timestamp())
             .tags(tags)
             .sign_with_keys(sender)
             .expect("event")
@@ -1972,7 +1980,10 @@ mod tests {
             envelope_event.tags,
         )
         .expect("event builder");
-        builder.sign_with_keys(sender).expect("event")
+        builder
+            .custom_created_at(next_test_timestamp())
+            .sign_with_keys(sender)
+            .expect("event")
     }
 
     async fn make_handle_event_trade_event(
@@ -4265,37 +4276,38 @@ mod tests {
             .await,
             Err(TradeListingDvmError::InvalidOrder)
         ));
-        assert!(matches!(
-            handle_discount_decision(
-                &make_public_trade_event(
-                    &buyer_keys,
-                    TradeListingMessageType::DiscountDecline,
-                    &listing_addr,
-                    "order-1",
-                    &buyer_pub,
-                    &seller_pub,
-                    Some(&state),
-                )
-                .await,
+        let result = handle_discount_decision(
+            &make_public_trade_event(
+                &buyer_keys,
                 TradeListingMessageType::DiscountDecline,
-                TradeDiscountDecision::Accept {
-                    value: sample_discount_value(),
-                },
-                &parsed,
-                Some("order-1"),
-                &client,
-                &state,
+                &listing_addr,
+                "order-1",
+                &buyer_pub,
+                &seller_pub,
+                Some(&state),
             )
             .await,
-            Err(TradeListingDvmError::InvalidOrder)
-        ));
+            TradeListingMessageType::DiscountDecline,
+            TradeDiscountDecision::Accept {
+                value: sample_discount_value(),
+            },
+            &parsed,
+            Some("order-1"),
+            &client,
+            &state,
+        )
+        .await;
+        assert!(
+            matches!(result, Err(TradeListingDvmError::InvalidPayload(ref message)) if message.contains("3431")),
+            "unexpected discount decline mismatch result: {result:?}"
+        );
 
         push_send_ok();
         assert!(
             handle_discount_decision(
                 &make_public_trade_event(
                     &buyer_keys,
-                    TradeListingMessageType::DiscountDecline,
+                    TradeListingMessageType::DiscountAccept,
                     &listing_addr,
                     "order-1",
                     &buyer_pub,
@@ -4304,7 +4316,9 @@ mod tests {
                 )
                 .await,
                 TradeListingMessageType::Cancel,
-                TradeDiscountDecision::Decline { reason: None },
+                TradeDiscountDecision::Accept {
+                    value: sample_discount_value(),
+                },
                 &parsed,
                 Some("order-1"),
                 &client,
@@ -4811,7 +4825,7 @@ mod tests {
         set_order_status(&state, "order-1", TradeOrderStatus::Revised).await;
         let seen_discount_decision = make_public_trade_event(
             &buyer_keys,
-            TradeListingMessageType::DiscountDecline,
+            TradeListingMessageType::DiscountAccept,
             &listing_addr,
             "order-1",
             &buyer_pub,
@@ -4823,8 +4837,10 @@ mod tests {
         assert!(
             handle_discount_decision(
                 &seen_discount_decision,
-                TradeListingMessageType::DiscountDecline,
-                TradeDiscountDecision::Decline { reason: None },
+                TradeListingMessageType::DiscountAccept,
+                TradeDiscountDecision::Accept {
+                    value: sample_discount_value(),
+                },
                 &parsed,
                 Some("order-1"),
                 &client,
@@ -4837,7 +4853,7 @@ mod tests {
             handle_discount_decision(
                 &make_public_trade_event(
                     &seller_keys,
-                    TradeListingMessageType::DiscountDecline,
+                    TradeListingMessageType::DiscountAccept,
                     &listing_addr,
                     "order-1",
                     &buyer_pub,
@@ -4845,8 +4861,10 @@ mod tests {
                     Some(&state),
                 )
                 .await,
-                TradeListingMessageType::DiscountDecline,
-                TradeDiscountDecision::Decline { reason: None },
+                TradeListingMessageType::DiscountAccept,
+                TradeDiscountDecision::Accept {
+                    value: sample_discount_value(),
+                },
                 &parsed,
                 Some("order-1"),
                 &client,
@@ -5590,10 +5608,6 @@ mod tests {
                 KIND_TRADE_LISTING_DISCOUNT_ACCEPT_REQ,
             ),
             (
-                TradeListingMessageType::DiscountDecline,
-                KIND_TRADE_LISTING_DISCOUNT_DECLINE_REQ,
-            ),
-            (
                 TradeListingMessageType::Cancel,
                 KIND_TRADE_LISTING_CANCEL_REQ,
             ),
@@ -5646,7 +5660,6 @@ mod tests {
             TradeListingMessageType::DiscountRequest,
             TradeListingMessageType::DiscountOffer,
             TradeListingMessageType::DiscountAccept,
-            TradeListingMessageType::DiscountDecline,
             TradeListingMessageType::Cancel,
             TradeListingMessageType::FulfillmentUpdate,
             TradeListingMessageType::Receipt,
@@ -5704,10 +5717,6 @@ mod tests {
             ),
             (
                 TradeListingMessageType::DiscountAccept,
-                TradeOrderStatus::Completed,
-            ),
-            (
-                TradeListingMessageType::DiscountDecline,
                 TradeOrderStatus::Completed,
             ),
             (TradeListingMessageType::Cancel, TradeOrderStatus::Completed),

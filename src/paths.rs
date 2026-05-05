@@ -186,6 +186,7 @@ pub fn runtime_contract_for_process() -> Result<RhiRuntimeContractOutput> {
     runtime_contract_with_selection(&RadrootsPathResolver::current(), &selection)
 }
 
+#[cfg(test)]
 pub(crate) fn runtime_contract_with_resolver(
     resolver: &RadrootsPathResolver,
     profile: RadrootsPathProfile,
