@@ -4,7 +4,7 @@
 use std::{sync::Arc, time::Duration};
 
 use radroots_events::farm::RadrootsFarmRef;
-use radroots_events::kinds::{KIND_FARM, is_listing_kind, is_trade_kind};
+use radroots_events::kinds::{KIND_FARM, KIND_TRADE_ORDER_REQUEST, is_listing_kind, is_trade_kind};
 use radroots_events::trade::{
     RadrootsTradeAnswer as TradeAnswer, RadrootsTradeDiscountDecision as TradeDiscountDecision,
     RadrootsTradeDiscountOffer as TradeDiscountOffer,
@@ -18,7 +18,8 @@ use radroots_events::trade::{
     RadrootsTradeListingValidateResult as TradeListingValidateResult,
     RadrootsTradeListingValidationError as TradeListingValidationError,
     RadrootsTradeMessagePayload as TradeListingMessagePayload,
-    RadrootsTradeMessageType as TradeListingMessageType, RadrootsTradeOrder as TradeOrder,
+    RadrootsTradeMessageType as TradeListingMessageType,
+    RadrootsTradeOrderRequested as TradeOrderRequested,
     RadrootsTradeOrderResponse as TradeOrderResponse,
     RadrootsTradeOrderRevision as TradeOrderRevision,
     RadrootsTradeOrderRevisionResponse as TradeOrderRevisionResponse,
@@ -26,8 +27,9 @@ use radroots_events::trade::{
     RadrootsTradeReceipt as TradeReceipt,
 };
 use radroots_events_codec::trade::{
+    RadrootsActiveTradeEnvelopeParseError as ActiveTradeEnvelopeParseError,
     RadrootsTradeEnvelopeParseError as TradeListingEnvelopeParseError,
-    RadrootsTradeListingAddress as TradeListingAddress,
+    RadrootsTradeListingAddress as TradeListingAddress, active_trade_order_request_from_event,
     trade_envelope_event_build as trade_listing_envelope_event_build, trade_envelope_from_event,
 };
 use radroots_nostr::prelude::{
@@ -271,6 +273,26 @@ pub async fn handle_event(
         return Ok(());
     }
 
+    if kind == KIND_TRADE_ORDER_REQUEST {
+        let envelope = active_trade_order_request_from_event(&radroots_event_from_nostr(&event))
+            .map_err(map_active_trade_envelope_parse_error)?;
+        let listing_addr_parsed = TradeListingAddress::parse(&envelope.listing_addr)
+            .map_err(|_| TradeListingDvmError::InvalidListingAddr)?;
+        if !is_listing_kind(listing_addr_parsed.kind) {
+            return Err(TradeListingDvmError::InvalidListingAddr);
+        }
+        handle_order_request(
+            &event,
+            envelope.payload,
+            &listing_addr_parsed,
+            Some(envelope.order_id.as_str()),
+            &client,
+            &state,
+        )
+        .await?;
+        return Ok(());
+    }
+
     let envelope_hint: TradeListingEnvelope<serde_json::Value> =
         serde_json::from_str(&event.content)
             .map_err(|error| TradeListingDvmError::InvalidPayload(error.to_string()))?;
@@ -308,16 +330,11 @@ pub async fn handle_event(
             handle_listing_validate_request(&event, payload, &listing_addr, &client, &state)
                 .await?;
         }
-        TradeListingMessagePayload::OrderRequest(payload) => {
-            handle_order_request(
-                &event,
-                payload,
-                &listing_addr_parsed,
-                order_id,
-                &client,
-                &state,
-            )
-            .await?;
+        TradeListingMessagePayload::TradeOrderRequested(_) => {
+            return Err(TradeListingDvmError::InvalidPayload(
+                "active order requests must be decoded through the active order-request path"
+                    .to_string(),
+            ));
         }
         TradeListingMessagePayload::OrderResponse(payload) => {
             handle_order_response(
@@ -471,6 +488,36 @@ fn map_trade_envelope_parse_error(error: TradeListingEnvelopeParseError) -> Trad
             TradeListingDvmError::TagMismatch("d")
         }
         TradeListingEnvelopeParseError::InvalidListingAddr(_) => {
+            TradeListingDvmError::InvalidListingAddr
+        }
+    }
+}
+
+fn map_active_trade_envelope_parse_error(
+    error: ActiveTradeEnvelopeParseError,
+) -> TradeListingDvmError {
+    match error {
+        ActiveTradeEnvelopeParseError::InvalidKind(_) => TradeListingDvmError::UnsupportedKind,
+        ActiveTradeEnvelopeParseError::InvalidJson
+        | ActiveTradeEnvelopeParseError::InvalidTag(_)
+        | ActiveTradeEnvelopeParseError::InvalidPayload(_)
+        | ActiveTradeEnvelopeParseError::PayloadBindingMismatch(_)
+        | ActiveTradeEnvelopeParseError::AuthorMismatch
+        | ActiveTradeEnvelopeParseError::CounterpartyTagMismatch => {
+            TradeListingDvmError::InvalidPayload(error.to_string())
+        }
+        ActiveTradeEnvelopeParseError::InvalidEnvelope(inner) => {
+            TradeListingDvmError::InvalidPayload(inner.to_string())
+        }
+        ActiveTradeEnvelopeParseError::MessageTypeKindMismatch { .. } => {
+            TradeListingDvmError::TagMismatch("kind")
+        }
+        ActiveTradeEnvelopeParseError::MissingTag(tag) => TradeListingDvmError::MissingTag(tag),
+        ActiveTradeEnvelopeParseError::ListingAddrTagMismatch => {
+            TradeListingDvmError::TagMismatch("a")
+        }
+        ActiveTradeEnvelopeParseError::OrderIdTagMismatch => TradeListingDvmError::TagMismatch("d"),
+        ActiveTradeEnvelopeParseError::InvalidListingAddr(_) => {
             TradeListingDvmError::InvalidListingAddr
         }
     }
@@ -695,7 +742,7 @@ async fn ensure_listing_snapshot(
 #[cfg_attr(all(not(test), coverage_nightly), coverage(off))]
 async fn handle_order_request(
     event: &RadrootsNostrEvent,
-    payload: TradeOrder,
+    payload: TradeOrderRequested,
     listing_addr: &TradeListingAddress,
     order_id: Option<&str>,
     client: &RadrootsNostrClient,
@@ -1436,7 +1483,10 @@ mod tests {
     use crate::features::trade_listing::state::{
         TradeListingState, TradeListingStateError, TradeOrderState,
     };
-    use radroots_core::{RadrootsCoreCurrency, RadrootsCoreDiscountValue, RadrootsCoreMoney};
+    use radroots_core::{
+        RadrootsCoreCurrency, RadrootsCoreDecimal, RadrootsCoreDiscountValue, RadrootsCoreMoney,
+        RadrootsCoreUnit,
+    };
     use radroots_events::RadrootsNostrEventPtr;
     use radroots_events::farm::RadrootsFarmRef;
     use radroots_events::kinds::{
@@ -1461,14 +1511,21 @@ mod tests {
         RadrootsTradeListingValidateRequest as TradeListingValidateRequest,
         RadrootsTradeListingValidateResult as TradeListingValidateResult,
         RadrootsTradeMessagePayload as TradeListingMessagePayload,
-        RadrootsTradeMessageType as TradeListingMessageType, RadrootsTradeOrder as TradeOrder,
+        RadrootsTradeMessageType as TradeListingMessageType,
+        RadrootsTradeOrderEconomicItem as TradeOrderEconomicItem,
+        RadrootsTradeOrderEconomics as TradeOrderEconomics,
+        RadrootsTradeOrderItem as TradeOrderItem,
+        RadrootsTradeOrderRequested as TradeOrderRequested,
         RadrootsTradeOrderResponse as TradeOrderResponse,
         RadrootsTradeOrderRevision as TradeOrderRevision,
         RadrootsTradeOrderRevisionResponse as TradeOrderRevisionResponse,
-        RadrootsTradeOrderStatus as TradeOrderStatus, RadrootsTradeQuestion as TradeQuestion,
+        RadrootsTradeOrderStatus as TradeOrderStatus,
+        RadrootsTradePricingBasis as TradePricingBasis, RadrootsTradeQuestion as TradeQuestion,
         RadrootsTradeReceipt as TradeReceipt,
     };
-    use radroots_events_codec::trade::RadrootsTradeListingAddress as TradeListingAddress;
+    use radroots_events_codec::trade::{
+        RadrootsTradeListingAddress as TradeListingAddress, active_trade_order_request_event_build,
+    };
     use radroots_nostr::error::RadrootsNostrError;
     use radroots_nostr::prelude::{
         RadrootsNostrClient, RadrootsNostrEvent, RadrootsNostrEventBuilder, RadrootsNostrFilter,
@@ -1574,14 +1631,48 @@ mod tests {
         buyer: &str,
         seller: &str,
         _status: TradeOrderStatus,
-    ) -> TradeOrder {
-        TradeOrder {
+    ) -> TradeOrderRequested {
+        TradeOrderRequested {
             order_id: order_id.to_string(),
             listing_addr: listing_addr.to_string(),
             buyer_pubkey: buyer.to_string(),
             seller_pubkey: seller.to_string(),
-            items: Vec::new(),
-            discounts: None,
+            items: vec![TradeOrderItem {
+                bin_id: "bin-1".to_string(),
+                bin_count: 1,
+            }],
+            economics: sample_order_economics(order_id, "bin-1", 1),
+        }
+    }
+
+    fn sample_order_economics(order_id: &str, bin_id: &str, bin_count: u32) -> TradeOrderEconomics {
+        let currency = RadrootsCoreCurrency::USD;
+        let quantity_amount = RadrootsCoreDecimal::from(1_u32);
+        let unit_price_amount = RadrootsCoreDecimal::from(6_u32);
+        let line_subtotal = RadrootsCoreMoney::new(
+            unit_price_amount * quantity_amount * RadrootsCoreDecimal::from(bin_count),
+            currency,
+        );
+        TradeOrderEconomics {
+            quote_id: format!("{order_id}-quote"),
+            quote_version: 1,
+            pricing_basis: TradePricingBasis::ListingEvent,
+            currency,
+            items: vec![TradeOrderEconomicItem {
+                bin_id: bin_id.to_string(),
+                bin_count,
+                quantity_amount,
+                quantity_unit: RadrootsCoreUnit::Each,
+                unit_price_amount,
+                unit_price_currency: currency,
+                line_subtotal: line_subtotal.clone(),
+            }],
+            discounts: Vec::new(),
+            adjustments: Vec::new(),
+            subtotal: line_subtotal.clone(),
+            discount_total: RadrootsCoreMoney::zero(currency),
+            adjustment_total: RadrootsCoreMoney::zero(currency),
+            total: line_subtotal,
         }
     }
 
@@ -1767,7 +1858,7 @@ mod tests {
                 })
             }
             TradeListingMessageType::OrderRequest => {
-                TradeListingMessagePayload::OrderRequest(make_order(
+                TradeListingMessagePayload::TradeOrderRequested(make_order(
                     order_id,
                     listing_addr,
                     buyer_pub,
@@ -1963,6 +2054,27 @@ mod tests {
         prev_event_id: Option<String>,
     ) -> RadrootsNostrEvent {
         let listing_event = listing_event_id.map(|id| RadrootsNostrEventPtr { id, relays: None });
+        if message_type == TradeListingMessageType::OrderRequest {
+            let TradeListingMessagePayload::TradeOrderRequested(payload) = payload else {
+                panic!("order request helper requires active order-request payload");
+            };
+            let listing_event = listing_event.unwrap_or_else(|| RadrootsNostrEventPtr {
+                id: TEST_LISTING_EVENT_ID.to_string(),
+                relays: None,
+            });
+            let envelope_event = active_trade_order_request_event_build(&listing_event, &payload)
+                .expect("build active order request event");
+            let builder = radroots_nostr::prelude::radroots_nostr_build_event(
+                envelope_event.kind,
+                envelope_event.content,
+                envelope_event.tags,
+            )
+            .expect("event builder");
+            return builder
+                .custom_created_at(next_test_timestamp())
+                .sign_with_keys(sender)
+                .expect("event");
+        }
         let envelope_event = super::trade_listing_envelope_event_build(
             recipient.to_string(),
             message_type,
@@ -2978,7 +3090,7 @@ mod tests {
                 state.clone(),
             )
             .await,
-            Err(TradeListingDvmError::TagMismatch("kind"))
+            Err(TradeListingDvmError::InvalidPayload(_))
         ));
 
         let a_mismatch_event = make_event(
@@ -3007,7 +3119,7 @@ mod tests {
                 state.clone(),
             )
             .await,
-            Err(TradeListingDvmError::TagMismatch("a"))
+            Err(TradeListingDvmError::InvalidPayload(_))
         ));
 
         let d_mismatch_tags = make_custom_tags(&rhi_pub, &listing_addr, Some("other-order"));
@@ -3037,7 +3149,7 @@ mod tests {
                 state.clone(),
             )
             .await,
-            Err(TradeListingDvmError::TagMismatch("d"))
+            Err(TradeListingDvmError::InvalidPayload(_))
         ));
 
         let bad_addr = format!(
@@ -3078,7 +3190,7 @@ mod tests {
                 state.clone(),
             )
             .await,
-            Err(TradeListingDvmError::InvalidListingAddr)
+            Err(TradeListingDvmError::InvalidPayload(_))
         ));
 
         let cases = vec![
@@ -3652,7 +3764,7 @@ mod tests {
             "order-2",
             &buyer_pub,
             &seller_pub,
-            TradeListingMessagePayload::OrderRequest(make_order(
+            TradeListingMessagePayload::TradeOrderRequested(make_order(
                 "order-2",
                 &listing_addr,
                 &buyer_pub,
@@ -3711,7 +3823,7 @@ mod tests {
             "order-3",
             &buyer_pub,
             &seller_pub,
-            TradeListingMessagePayload::OrderRequest(make_order(
+            TradeListingMessagePayload::TradeOrderRequested(make_order(
                 "order-3",
                 &listing_addr,
                 &buyer_pub,
@@ -5453,7 +5565,7 @@ mod tests {
         .await;
         assert!(matches!(
             missing_a_result,
-            Err(TradeListingDvmError::MissingTag("a"))
+            Err(TradeListingDvmError::InvalidPayload(_))
         ));
 
         let invalid_addr = "30402:badpubkey:id";
@@ -5485,7 +5597,7 @@ mod tests {
         .await;
         assert!(matches!(
             invalid_addr_result,
-            Err(TradeListingDvmError::InvalidListingAddr)
+            Err(TradeListingDvmError::InvalidPayload(_))
         ));
 
         let listing_validate_parse_error_event = make_event(
@@ -5647,7 +5759,14 @@ mod tests {
                 state.clone(),
             )
             .await;
-            assert!(matches!(result, Err(TradeListingDvmError::MissingTag("d"))));
+            if message_type == TradeListingMessageType::OrderRequest {
+                assert!(matches!(
+                    result,
+                    Err(TradeListingDvmError::InvalidPayload(_))
+                ));
+            } else {
+                assert!(matches!(result, Err(TradeListingDvmError::MissingTag("d"))));
+            }
         }
 
         let missing_order_cases: Vec<TradeListingMessageType> = vec![
