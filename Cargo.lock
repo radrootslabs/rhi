@@ -1704,6 +1704,31 @@ name = "radroots_secret_vault"
 version = "0.1.0-alpha.2"
 
 [[package]]
+name = "radroots_sp1_guest_trade"
+version = "0.1.0-alpha.2"
+dependencies = [
+ "radroots_events",
+ "radroots_trade",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "radroots_sp1_host_trade"
+version = "0.1.0-alpha.2"
+dependencies = [
+ "base64 0.22.1",
+ "radroots_sp1_guest_trade",
+ "radroots_trade",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "radroots_trade"
 version = "0.1.0-alpha.2"
 dependencies = [
@@ -1854,6 +1879,8 @@ dependencies = [
  "radroots_nostr",
  "radroots_runtime",
  "radroots_runtime_paths",
+ "radroots_sp1_guest_trade",
+ "radroots_sp1_host_trade",
  "radroots_trade",
  "serde",
  "serde_json",

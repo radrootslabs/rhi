@@ -18,6 +18,8 @@ radroots_identity = { path = "../lib/crates/identity" }
 radroots_nostr = { path = "../lib/crates/nostr" }
 radroots_runtime = { path = "../lib/crates/runtime" }
 radroots_runtime_paths = { path = "../lib/crates/runtime_paths" }
+radroots_sp1_guest_trade = { path = "../lib/crates/sp1_guest_trade" }
+radroots_sp1_host_trade = { path = "../lib/crates/sp1_host_trade" }
 radroots_trade = { path = "../lib/crates/trade" }
 
 [lints.rust]
@@ -31,6 +33,8 @@ radroots_identity = { workspace = true }
 radroots_nostr = { workspace = true, features = ["client", "codec", "events", "http"] }
 radroots_runtime = { workspace = true, features = ["cli"] }
 radroots_runtime_paths = { workspace = true }
+radroots_sp1_guest_trade = { workspace = true }
+radroots_sp1_host_trade = { workspace = true }
 radroots_trade = { workspace = true }
 
 anyhow = { version = "1" }

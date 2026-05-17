@@ -4,7 +4,10 @@
 use std::{sync::Arc, time::Duration};
 
 use radroots_events::farm::RadrootsFarmRef;
-use radroots_events::kinds::{KIND_FARM, KIND_TRADE_ORDER_REQUEST, is_listing_kind, is_trade_kind};
+use radroots_events::kinds::{
+    KIND_FARM, KIND_TRADE_ORDER_REQUEST, KIND_WORKER_TRADE_TRANSITION_PROOF_REQ, is_listing_kind,
+    is_trade_kind,
+};
 use radroots_events::trade::{
     RadrootsTradeAnswer as TradeAnswer, RadrootsTradeDiscountDecision as TradeDiscountDecision,
     RadrootsTradeDiscountOffer as TradeDiscountOffer,
@@ -47,6 +50,9 @@ use thiserror::Error;
 
 use crate::features::trade_listing::state::{
     TradeListingState, TradeListingStateError, TradeOrderState,
+};
+use crate::features::trade_validation_receipt::{
+    TradeValidationReceiptJobError, handle_trade_validation_receipt_job_request,
 };
 
 #[derive(Debug, Error)]
@@ -273,6 +279,12 @@ pub async fn handle_event(
         return Ok(());
     }
 
+    if kind == KIND_WORKER_TRADE_TRANSITION_PROOF_REQ {
+        return handle_trade_validation_receipt_job_request(&event, &keys, &client)
+            .await
+            .map_err(map_trade_validation_receipt_job_error);
+    }
+
     if kind == KIND_TRADE_ORDER_REQUEST {
         let envelope = active_trade_order_request_from_event(&radroots_event_from_nostr(&event))
             .map_err(map_active_trade_envelope_parse_error)?;
@@ -465,6 +477,17 @@ pub async fn handle_event(
     }
 
     Ok(())
+}
+
+fn map_trade_validation_receipt_job_error(
+    error: TradeValidationReceiptJobError,
+) -> TradeListingDvmError {
+    match error {
+        TradeValidationReceiptJobError::UnsupportedKind => TradeListingDvmError::UnsupportedKind,
+        TradeValidationReceiptJobError::MissingRecipient => TradeListingDvmError::MissingRecipient,
+        TradeValidationReceiptJobError::Nostr(error) => TradeListingDvmError::Nostr(error),
+        other => TradeListingDvmError::InvalidPayload(other.to_string()),
+    }
 }
 
 fn map_trade_envelope_parse_error(error: TradeListingEnvelopeParseError) -> TradeListingDvmError {
