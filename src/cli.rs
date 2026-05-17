@@ -1,5 +1,6 @@
 use clap::Parser;
 use radroots_runtime::RadrootsServiceCliArgs;
+use std::path::PathBuf;
 
 #[derive(Parser, Debug, Clone)]
 #[command(
@@ -8,6 +9,22 @@ use radroots_runtime::RadrootsServiceCliArgs;
     version = env!("CARGO_PKG_VERSION")
 )]
 pub struct Args {
+    #[command(subcommand)]
+    pub command: Option<Command>,
     #[command(flatten)]
     pub service: RadrootsServiceCliArgs,
+}
+
+#[derive(clap::Subcommand, Debug, Clone)]
+pub enum Command {
+    #[command(
+        name = "proof-smoke",
+        about = "Run a provider-neutral proof smoke request"
+    )]
+    ProofSmoke {
+        #[arg(long)]
+        input: Option<PathBuf>,
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
 }

@@ -6,6 +6,7 @@ pub mod config;
 pub mod features;
 pub mod identity_storage;
 pub mod paths;
+pub mod proof_smoke;
 pub mod rhi;
 
 pub use cli::Args as cli_args;
@@ -246,6 +247,7 @@ mod tests {
 
     fn args_for_identity(path: PathBuf) -> cli_args {
         cli_args {
+            command: None,
             service: radroots_runtime::RadrootsServiceCliArgs {
                 config: Some(PathBuf::from("config.toml")),
                 identity: Some(path),
@@ -379,6 +381,7 @@ mod tests {
         RUN_RHI_SKIP_SUBSCRIBER.store(false, Ordering::Relaxed);
 
         let args = cli_args {
+            command: None,
             service: radroots_runtime::RadrootsServiceCliArgs {
                 config: Some(PathBuf::from("config.toml")),
                 identity: Some(PathBuf::from("/tmp/rhi-lib-missing-identity.secret.json")),

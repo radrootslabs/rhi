@@ -5,6 +5,8 @@ use anyhow::Context;
 use anyhow::Result;
 #[cfg(not(test))]
 use clap::Parser;
+#[cfg(not(test))]
+use rhi::proof_smoke;
 use rhi::{cli_args, config, paths, run_rhi};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -204,6 +206,14 @@ fn log_runtime_startup_report(report: &RhiRuntimeStartupReport) {
 }
 
 async fn run() -> Result<()> {
+    #[cfg(not(test))]
+    {
+        let args = cli_args::try_parse().map_err(radroots_runtime::RuntimeCliError::from)?;
+        if let Some(command) = args.command {
+            return proof_smoke::run_cli_command(command).await;
+        }
+    }
+
     let (args, settings): (cli_args, config::Settings) = load_args_and_settings()?;
 
     #[cfg(not(test))]
@@ -311,6 +321,7 @@ mod tests {
     #[tokio::test]
     async fn run_rhi_returns_error_when_identity_is_missing() {
         let args = cli_args {
+            command: None,
             service: radroots_runtime::RadrootsServiceCliArgs {
                 config: Some(PathBuf::from("config.toml")),
                 identity: Some(PathBuf::from("/tmp/rhi-missing-identity.secret.json")),
@@ -336,6 +347,7 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let args = cli_args {
+            command: None,
             service: radroots_runtime::RadrootsServiceCliArgs {
                 config: Some(PathBuf::from("config.toml")),
                 identity: Some(PathBuf::from("/tmp/rhi-run-hook-missing.secret.json")),
@@ -395,6 +407,7 @@ mod tests {
                 identity: Some(PathBuf::from("/tmp/rhi/identity.secret.json")),
                 allow_generate_identity: false,
             },
+            command: None,
         };
         let mut settings = minimal_settings();
         settings.config.service.logs_dir = "/tmp/rhi/logs".to_string();
@@ -437,6 +450,7 @@ mod tests {
     #[test]
     fn runtime_startup_report_falls_back_to_canonical_contract_paths() {
         let args = cli_args {
+            command: None,
             service: radroots_runtime::RadrootsServiceCliArgs {
                 config: None,
                 identity: None,
