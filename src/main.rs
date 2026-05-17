@@ -233,6 +233,13 @@ mod tests {
     use std::path::PathBuf;
     use std::process::ExitCode;
 
+    static RUN_HOOK_TEST_LOCK: std::sync::OnceLock<std::sync::Mutex<()>> =
+        std::sync::OnceLock::new();
+
+    fn run_hook_test_lock() -> &'static std::sync::Mutex<()> {
+        RUN_HOOK_TEST_LOCK.get_or_init(|| std::sync::Mutex::new(()))
+    }
+
     fn minimal_settings() -> config::Settings {
         config::Settings {
             metadata: serde_json::from_str(r#"{"name":"rhi-test"}"#).expect("metadata"),
@@ -325,6 +332,9 @@ mod tests {
 
     #[tokio::test]
     async fn run_uses_injected_config_loader_result() {
+        let _guard = run_hook_test_lock()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let args = cli_args {
             service: radroots_runtime::RadrootsServiceCliArgs {
                 config: Some(PathBuf::from("config.toml")),
@@ -343,6 +353,9 @@ mod tests {
 
     #[tokio::test]
     async fn run_returns_error_when_loader_hook_is_absent() {
+        let _guard = run_hook_test_lock()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         *run_load_hook()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
