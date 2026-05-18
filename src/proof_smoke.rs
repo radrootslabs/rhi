@@ -446,4 +446,34 @@ mod tests {
             Some("local_execute backend is unavailable in this build")
         );
     }
+
+    #[cfg(feature = "sp1_proving")]
+    #[tokio::test]
+    async fn local_execute_returns_sp1_public_values_without_proof_generation() {
+        let deterministic = handle_request_bytes(&request(
+            RhiProofSmokeOperation::ProofSmoke,
+            RhiProofSmokeBackend::DeterministicNone,
+        ))
+        .await;
+        let response = handle_request_bytes(&request(
+            RhiProofSmokeOperation::ProofSmoke,
+            RhiProofSmokeBackend::LocalExecute,
+        ))
+        .await;
+        assert!(response.ok);
+        assert_eq!(response.operation, RhiProofSmokeOperation::ProofSmoke);
+        assert_eq!(response.backend, RhiProofSmokeBackend::LocalExecute);
+        assert!(response.capabilities.contains(&"local_execute".to_string()));
+        assert!(!response.proof_generated);
+        assert_eq!(
+            response.public_values_hash,
+            deterministic.public_values_hash
+        );
+        assert_eq!(response.event_set_root, deterministic.event_set_root);
+        assert_eq!(
+            response.reducer_output_root,
+            deterministic.reducer_output_root
+        );
+        assert!(response.error.is_none());
+    }
 }
