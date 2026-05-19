@@ -18,10 +18,12 @@ use radroots_nostr::prelude::{
     radroots_nostr_fetch_event_by_id, radroots_nostr_send_event,
 };
 use radroots_sp1_guest_trade::{
-    RadrootsSp1TradeInventoryBinWitness, RadrootsSp1TradeInventoryCommitmentWitness,
-    RadrootsSp1TradeOrderAcceptanceWitness, RadrootsSp1TradeOrderDecisionEventWitness,
-    RadrootsSp1TradeOrderDecisionWitness, RadrootsSp1TradeOrderItemWitness,
-    RadrootsSp1TradeOrderRequestWitness,
+    RADROOTS_SP1_TRADE_ORDER_ACCEPTANCE_PROOF_TARGET, RADROOTS_SP1_TRADE_WITNESS_VERSION,
+    RadrootsSp1TradeCanonicalEventEvidence, RadrootsSp1TradeEventEvidenceRole,
+    RadrootsSp1TradeEventWorkflowPosition, RadrootsSp1TradeInventoryBinWitness,
+    RadrootsSp1TradeInventoryCommitmentWitness, RadrootsSp1TradeOrderAcceptanceWitness,
+    RadrootsSp1TradeOrderDecisionEventWitness, RadrootsSp1TradeOrderDecisionWitness,
+    RadrootsSp1TradeOrderItemWitness, RadrootsSp1TradeOrderRequestWitness,
 };
 use radroots_sp1_host_trade::{
     RadrootsSp1TradeHostError, RadrootsSp1TradeProofMode, generate_order_acceptance_proof,
@@ -32,6 +34,7 @@ use radroots_trade::validation_receipt::{
     validation_receipt_event_build, verify_validation_receipt_event,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -115,6 +118,8 @@ pub enum TradeValidationReceiptJobError {
     InvalidJobRequest,
     #[error("invalid listing event")]
     InvalidListingEvent,
+    #[error("invalid signed event evidence")]
+    InvalidSignedEvent,
     #[error("job request does not match fetched event set")]
     EventSetMismatch,
     #[error("invalid active trade event: {0}")]
@@ -158,6 +163,9 @@ pub async fn handle_trade_validation_receipt_job_request(
     let listing_event = fetch_event_by_id_io(client, &request.listing_event_id).await?;
     let order_request_event = fetch_event_by_id_io(client, &request.request_event_id).await?;
     let order_decision_event = fetch_event_by_id_io(client, &request.decision_event_id).await?;
+    validate_fetched_event(&listing_event, &request.listing_event_id)?;
+    validate_fetched_event(&order_request_event, &request.request_event_id)?;
+    validate_fetched_event(&order_decision_event, &request.decision_event_id)?;
 
     let listing_kind = event_kind_u32(&listing_event)
         .map_err(|_| TradeValidationReceiptJobError::InvalidListingEvent)?;
@@ -198,9 +206,16 @@ pub async fn handle_trade_validation_receipt_job_request(
     }
 
     let witness = RadrootsSp1TradeOrderAcceptanceWitness {
+        witness_version: RADROOTS_SP1_TRADE_WITNESS_VERSION,
+        proof_target: RADROOTS_SP1_TRADE_ORDER_ACCEPTANCE_PROOF_TARGET.to_string(),
         listing_event_id: request.listing_event_id.clone(),
         request_event_id: request.request_event_id.clone(),
         decision_event_id: request.decision_event_id.clone(),
+        event_evidence: canonical_event_evidence_from_events(
+            &listing_event,
+            &order_request_event,
+            &order_decision_event,
+        )?,
         request: order_request_witness_from_payload(request_envelope.payload),
         decision: order_decision_witness_from_payload(decision_envelope.payload),
         inventory_bins: request.inventory_bins.clone(),
@@ -270,6 +285,94 @@ pub async fn handle_trade_validation_receipt_job_request(
     .await?;
 
     Ok(())
+}
+
+fn canonical_event_evidence_from_events(
+    listing_event: &RadrootsNostrEvent,
+    order_request_event: &RadrootsNostrEvent,
+    order_decision_event: &RadrootsNostrEvent,
+) -> Result<Vec<RadrootsSp1TradeCanonicalEventEvidence>, TradeValidationReceiptJobError> {
+    Ok(vec![
+        canonical_event_evidence(
+            listing_event,
+            RadrootsSp1TradeEventEvidenceRole::Seller,
+            RadrootsSp1TradeEventWorkflowPosition::Listing,
+            "001:listing",
+        )?,
+        canonical_event_evidence(
+            order_request_event,
+            RadrootsSp1TradeEventEvidenceRole::Buyer,
+            RadrootsSp1TradeEventWorkflowPosition::OrderRequest,
+            "002:order_request",
+        )?,
+        canonical_event_evidence(
+            order_decision_event,
+            RadrootsSp1TradeEventEvidenceRole::Seller,
+            RadrootsSp1TradeEventWorkflowPosition::OrderDecision,
+            "003:order_decision",
+        )?,
+    ])
+}
+
+fn canonical_event_evidence(
+    event: &RadrootsNostrEvent,
+    role: RadrootsSp1TradeEventEvidenceRole,
+    workflow_position: RadrootsSp1TradeEventWorkflowPosition,
+    ordering_key: &'static str,
+) -> Result<RadrootsSp1TradeCanonicalEventEvidence, TradeValidationReceiptJobError> {
+    event
+        .verify()
+        .map_err(|_| TradeValidationReceiptJobError::InvalidSignedEvent)?;
+    let canonical_event_json = serde_json::to_string(event)?;
+    let tags_json = serde_json::to_vec(&event.tags)?;
+    Ok(RadrootsSp1TradeCanonicalEventEvidence {
+        event_id: event.id.to_hex(),
+        signer_pubkey: event.pubkey.to_hex(),
+        kind: event_kind_u32(event)?,
+        canonical_event_hash: hash_bytes(
+            "radroots:canonical-event:v1",
+            canonical_event_json.as_bytes(),
+        ),
+        signature_hash: hash_bytes(
+            "radroots:event-signature:v1",
+            event.sig.to_string().as_bytes(),
+        ),
+        preverified_signature: true,
+        role,
+        workflow_position,
+        content_hash: hash_bytes("radroots:event-content:v1", event.content.as_bytes()),
+        tags_hash: hash_bytes("radroots:event-tags:v1", &tags_json),
+        ordering_key: ordering_key.to_string(),
+    })
+}
+
+fn validate_fetched_event(
+    event: &RadrootsNostrEvent,
+    expected_event_id: &str,
+) -> Result<(), TradeValidationReceiptJobError> {
+    if event.id.to_hex() != expected_event_id {
+        return Err(TradeValidationReceiptJobError::EventSetMismatch);
+    }
+    event
+        .verify()
+        .map_err(|_| TradeValidationReceiptJobError::InvalidSignedEvent)
+}
+
+fn hash_bytes(domain: &'static str, bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(domain.as_bytes());
+    hasher.update(bytes);
+    format!("0x{}", hex_lower(hasher.finalize().as_slice()))
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
 }
 
 fn order_request_witness_from_payload(
@@ -938,6 +1041,56 @@ mod tests {
         assert!(matches!(
             error,
             TradeValidationReceiptJobError::ProverBackendRequiresNone
+        ));
+        assert!(
+            trade_validation_receipt_test_hooks()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .published_events
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn proof_job_rejects_unverified_signed_event_evidence_before_publication() {
+        let _guard = test_guard();
+        let worker = RadrootsNostrKeys::generate();
+        let requester = RadrootsNostrKeys::generate();
+        let buyer = RadrootsNostrKeys::generate();
+        let seller = RadrootsNostrKeys::generate();
+        let listing_event = listing_event(&seller);
+        let (mut request_event, decision_event) =
+            signed_order_events(&buyer, &seller, &listing_event);
+        let job = job_request(
+            &requester,
+            &worker,
+            &listing_event,
+            &request_event,
+            &decision_event,
+            TradeValidationReceiptProverBackend::DeterministicNone,
+            RadrootsSp1TradeProofMode::None,
+            None,
+        );
+        request_event.content.push(' ');
+
+        {
+            let mut hooks = trade_validation_receipt_test_hooks()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            hooks.fetch_event_by_id_results.push_back(Ok(listing_event));
+            hooks.fetch_event_by_id_results.push_back(Ok(request_event));
+            hooks
+                .fetch_event_by_id_results
+                .push_back(Ok(decision_event));
+        }
+
+        let error =
+            handle_trade_validation_receipt_job_request(&job, &worker, &client_for(&worker))
+                .await
+                .expect_err("signed evidence rejected");
+        assert!(matches!(
+            error,
+            TradeValidationReceiptJobError::InvalidSignedEvent
         ));
         assert!(
             trade_validation_receipt_test_hooks()
