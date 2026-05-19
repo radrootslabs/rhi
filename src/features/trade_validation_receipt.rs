@@ -261,9 +261,11 @@ pub async fn handle_trade_validation_receipt_job_request(
         RadrootsValidationReceiptExpectedBinding {
             event_set_root: Some(&receipt.event_set_root),
             order_id: Some(&witness.request.order_id),
+            program_hash: receipt.proof.program_hash.as_deref(),
             proof_system: Some(receipt.proof.system),
             public_values_hash: Some(&receipt.public_values_hash),
             reducer_output_root: Some(&receipt.new_state_root),
+            verifying_key_hash: receipt.proof.verifying_key_hash.as_deref(),
         },
     )?;
     let receipt_event_id = publish_event_parts_io(
