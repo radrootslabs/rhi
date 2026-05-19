@@ -188,9 +188,9 @@ fn deterministic_smoke(
     verify_order_acceptance_proof_artifact(&bundle.execution, &bundle.proof)
         .map_err(|error| RhiProofSmokeError::Deterministic(error.to_string()))?;
     Ok(RhiProofSmokeOutput {
-        public_values_hash: bundle.execution.public_values_hash,
-        event_set_root: bundle.execution.public_values.event_set_root,
-        reducer_output_root: bundle.execution.public_values.new_state_root,
+        public_values_hash: canonical_hex_64(&bundle.execution.public_values_hash)?,
+        event_set_root: canonical_hex_64(&bundle.execution.public_values.event_set_root)?,
+        reducer_output_root: canonical_hex_64(&bundle.execution.public_values.new_state_root)?,
         warnings: Vec::new(),
     })
 }
@@ -204,9 +204,9 @@ async fn local_execute_smoke(
         .map_err(|error| RhiProofSmokeError::Sp1Execute(error.to_string()))?
         .execution;
     Ok(RhiProofSmokeOutput {
-        public_values_hash: execution.public_values_hash,
-        event_set_root: execution.public_values.event_set_root,
-        reducer_output_root: execution.public_values.new_state_root,
+        public_values_hash: canonical_hex_64(&execution.public_values_hash)?,
+        event_set_root: canonical_hex_64(&execution.public_values.event_set_root)?,
+        reducer_output_root: canonical_hex_64(&execution.public_values.new_state_root)?,
         warnings: Vec::new(),
     })
 }
@@ -247,6 +247,16 @@ fn response_for_success(
         warnings,
         error: None,
     }
+}
+
+fn canonical_hex_64(value: &str) -> Result<String, RhiProofSmokeError> {
+    let candidate = value.strip_prefix("0x").unwrap_or(value);
+    if candidate.len() == 64 && candidate.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Ok(candidate.to_ascii_lowercase());
+    }
+    Err(RhiProofSmokeError::Deterministic(
+        "public value is not canonical 32-byte hex".to_string(),
+    ))
 }
 
 fn response_for_error(
@@ -395,6 +405,16 @@ mod tests {
         assert!(response.public_values_hash.is_some());
         assert!(response.event_set_root.is_some());
         assert!(response.reducer_output_root.is_some());
+        for value in [
+            response.public_values_hash.as_deref(),
+            response.event_set_root.as_deref(),
+            response.reducer_output_root.as_deref(),
+        ] {
+            let value = value.expect("public value");
+            assert_eq!(value.len(), 64);
+            assert!(!value.starts_with("0x"));
+            assert!(value.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        }
         assert!(!response.proof_generated);
     }
 
