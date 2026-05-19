@@ -18,7 +18,8 @@ use radroots_nostr::prelude::{
     radroots_nostr_fetch_event_by_id, radroots_nostr_send_event,
 };
 use radroots_sp1_guest_trade::{
-    RADROOTS_SP1_TRADE_ORDER_ACCEPTANCE_PROOF_TARGET, RADROOTS_SP1_TRADE_WITNESS_VERSION,
+    RADROOTS_SP1_TRADE_ORDER_ACCEPTANCE_PROOF_TARGET, RADROOTS_SP1_TRADE_PROTOCOL_VERSION,
+    RADROOTS_SP1_TRADE_REDUCER_PROGRAM_HASH, RADROOTS_SP1_TRADE_WITNESS_VERSION,
     RadrootsSp1TradeCanonicalEventEvidence, RadrootsSp1TradeEventEvidenceRole,
     RadrootsSp1TradeEventWorkflowPosition, RadrootsSp1TradeInventoryBinWitness,
     RadrootsSp1TradeInventoryCommitmentWitness, RadrootsSp1TradeOrderAcceptanceWitness,
@@ -40,6 +41,8 @@ use thiserror::Error;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TradeValidationReceiptJobRequest {
+    pub witness_version: u32,
+    pub proof_target: String,
     pub listing_event_id: String,
     pub request_event_id: String,
     pub decision_event_id: String,
@@ -50,6 +53,7 @@ pub struct TradeValidationReceiptJobRequest {
     pub proof_mode: RadrootsSp1TradeProofMode,
     pub reducer_program_hash: String,
     pub radroots_protocol_version: String,
+    pub sp1_program_hash: Option<String>,
     pub sp1_verifying_key_hash: Option<String>,
 }
 
@@ -116,6 +120,18 @@ pub enum TradeValidationReceiptJobError {
     MissingRecipient,
     #[error("invalid job request")]
     InvalidJobRequest,
+    #[error("unsupported proof target")]
+    UnsupportedProofTarget,
+    #[error("unsupported witness version")]
+    UnsupportedWitnessVersion,
+    #[error("expected reducer program hash does not match canonical reducer")]
+    ExpectedReducerProgramHashMismatch,
+    #[error("expected protocol version does not match canonical protocol")]
+    ExpectedProtocolVersionMismatch,
+    #[error("unsupported proof mode")]
+    UnsupportedProofMode,
+    #[error("SP1 identity constraints require an SP1 proof mode")]
+    Sp1IdentityConstraintsRequireSp1Proof,
     #[error("invalid listing event")]
     InvalidListingEvent,
     #[error("invalid signed event evidence")]
@@ -223,7 +239,7 @@ pub async fn handle_trade_validation_receipt_job_request(
         previous_state_root: request.previous_state_root.clone(),
         reducer_program_hash: request.reducer_program_hash.clone(),
         radroots_protocol_version: request.radroots_protocol_version.clone(),
-        sp1_program_hash: None,
+        sp1_program_hash: request.sp1_program_hash.clone(),
         sp1_verifying_key_hash: request.sp1_verifying_key_hash.clone(),
     };
     let proof_backend = request.prover_backend;
@@ -522,13 +538,91 @@ fn validate_job_request_shape(
     if request.listing_event_id.trim().is_empty()
         || request.request_event_id.trim().is_empty()
         || request.decision_event_id.trim().is_empty()
+        || request.proof_target.trim().is_empty()
         || request.reducer_program_hash.trim().is_empty()
         || request.radroots_protocol_version.trim().is_empty()
         || request.inventory_bins.is_empty()
     {
         return Err(TradeValidationReceiptJobError::InvalidJobRequest);
     }
+    if request.witness_version != RADROOTS_SP1_TRADE_WITNESS_VERSION {
+        return Err(TradeValidationReceiptJobError::UnsupportedWitnessVersion);
+    }
+    if request.proof_target != RADROOTS_SP1_TRADE_ORDER_ACCEPTANCE_PROOF_TARGET {
+        return Err(TradeValidationReceiptJobError::UnsupportedProofTarget);
+    }
+    if request.reducer_program_hash != RADROOTS_SP1_TRADE_REDUCER_PROGRAM_HASH {
+        return Err(TradeValidationReceiptJobError::ExpectedReducerProgramHashMismatch);
+    }
+    if request.radroots_protocol_version != RADROOTS_SP1_TRADE_PROTOCOL_VERSION {
+        return Err(TradeValidationReceiptJobError::ExpectedProtocolVersionMismatch);
+    }
+    validate_optional_hash32(&request.sp1_program_hash)?;
+    validate_optional_hash32(&request.sp1_verifying_key_hash)?;
+    validate_proof_config(request)?;
     Ok(())
+}
+
+fn validate_proof_config(
+    request: &TradeValidationReceiptJobRequest,
+) -> Result<(), TradeValidationReceiptJobError> {
+    match request.prover_backend {
+        TradeValidationReceiptProverBackend::Disabled => {
+            return Err(TradeValidationReceiptJobError::ProverBackendDisabled);
+        }
+        TradeValidationReceiptProverBackend::DeterministicNone
+        | TradeValidationReceiptProverBackend::LocalExecute => {
+            if request.proof_mode != RadrootsSp1TradeProofMode::None {
+                return Err(TradeValidationReceiptJobError::ProverBackendRequiresNone);
+            }
+            if request.sp1_program_hash.is_some() || request.sp1_verifying_key_hash.is_some() {
+                return Err(TradeValidationReceiptJobError::Sp1IdentityConstraintsRequireSp1Proof);
+            }
+            if request.prover_backend == TradeValidationReceiptProverBackend::LocalExecute
+                && !cfg!(feature = "sp1_proving")
+            {
+                return Err(TradeValidationReceiptJobError::ProverBackendUnavailable(
+                    request.prover_backend.as_str(),
+                ));
+            }
+        }
+        TradeValidationReceiptProverBackend::LocalCpuProve => {
+            if request.proof_mode == RadrootsSp1TradeProofMode::None {
+                return Err(TradeValidationReceiptJobError::ProverBackendRequiresSp1Proof);
+            }
+            if request.proof_mode != RadrootsSp1TradeProofMode::Core {
+                return Err(TradeValidationReceiptJobError::UnsupportedProofMode);
+            }
+            if !cfg!(feature = "sp1_proving") {
+                return Err(TradeValidationReceiptJobError::ProverBackendUnavailable(
+                    request.prover_backend.as_str(),
+                ));
+            }
+        }
+        TradeValidationReceiptProverBackend::LocalCudaProve
+        | TradeValidationReceiptProverBackend::RemoteHttpProve => {
+            return Err(TradeValidationReceiptJobError::ProverBackendUnavailable(
+                request.prover_backend.as_str(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_optional_hash32(value: &Option<String>) -> Result<(), TradeValidationReceiptJobError> {
+    if let Some(value) = value {
+        let hash = value.as_str();
+        if hash.len() != 66 || !hash.starts_with("0x") || !is_lower_hex(&hash[2..]) {
+            return Err(TradeValidationReceiptJobError::InvalidJobRequest);
+        }
+    }
+    Ok(())
+}
+
+fn is_lower_hex(value: &str) -> bool {
+    value
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn event_kind_u32(event: &RadrootsNostrEvent) -> Result<u32, TradeValidationReceiptJobError> {
@@ -879,6 +973,10 @@ mod tests {
         sp1_verifying_key_hash: Option<String>,
     ) -> RadrootsNostrEvent {
         let request = TradeValidationReceiptJobRequest {
+            witness_version: radroots_sp1_guest_trade::RADROOTS_SP1_TRADE_WITNESS_VERSION,
+            proof_target:
+                radroots_sp1_guest_trade::RADROOTS_SP1_TRADE_ORDER_ACCEPTANCE_PROOF_TARGET
+                    .to_string(),
             listing_event_id: listing_event.id.to_hex(),
             request_event_id: request_event.id.to_hex(),
             decision_event_id: decision_event.id.to_hex(),
@@ -893,6 +991,7 @@ mod tests {
             proof_mode,
             reducer_program_hash: RADROOTS_SP1_TRADE_REDUCER_PROGRAM_HASH.to_string(),
             radroots_protocol_version: RADROOTS_SP1_TRADE_PROTOCOL_VERSION.to_string(),
+            sp1_program_hash: None,
             sp1_verifying_key_hash,
         };
         signed_event(
@@ -1042,6 +1141,14 @@ mod tests {
             error,
             TradeValidationReceiptJobError::ProverBackendRequiresNone
         ));
+        assert_eq!(
+            trade_validation_receipt_test_hooks()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .fetch_event_by_id_results
+                .len(),
+            3
+        );
         assert!(
             trade_validation_receipt_test_hooks()
                 .lock()
@@ -1101,6 +1208,62 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn proof_job_rejects_identity_mismatch_before_relay_fetch() {
+        let _guard = test_guard();
+        let worker = RadrootsNostrKeys::generate();
+        let requester = RadrootsNostrKeys::generate();
+        let buyer = RadrootsNostrKeys::generate();
+        let seller = RadrootsNostrKeys::generate();
+        let listing_event = listing_event(&seller);
+        let (request_event, decision_event) = signed_order_events(&buyer, &seller, &listing_event);
+        let job = job_request(
+            &requester,
+            &worker,
+            &listing_event,
+            &request_event,
+            &decision_event,
+            TradeValidationReceiptProverBackend::DeterministicNone,
+            RadrootsSp1TradeProofMode::None,
+            None,
+        );
+        let mut request: TradeValidationReceiptJobRequest =
+            serde_json::from_str(&job.content).expect("job request json");
+        request.reducer_program_hash =
+            "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd".to_string();
+        let job = signed_event(
+            &requester,
+            KIND_WORKER_TRADE_TRANSITION_PROOF_REQ,
+            serde_json::to_string(&request).expect("job json"),
+            vec![vec!["p".to_string(), worker.public_key().to_string()]],
+        );
+
+        {
+            let mut hooks = trade_validation_receipt_test_hooks()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            hooks.fetch_event_by_id_results.push_back(Ok(listing_event));
+            hooks.fetch_event_by_id_results.push_back(Ok(request_event));
+            hooks
+                .fetch_event_by_id_results
+                .push_back(Ok(decision_event));
+        }
+
+        let error =
+            handle_trade_validation_receipt_job_request(&job, &worker, &client_for(&worker))
+                .await
+                .expect_err("identity mismatch rejected");
+        assert!(matches!(
+            error,
+            TradeValidationReceiptJobError::ExpectedReducerProgramHashMismatch
+        ));
+        let hooks = trade_validation_receipt_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert_eq!(hooks.fetch_event_by_id_results.len(), 3);
+        assert!(hooks.published_events.is_empty());
+    }
+
     #[cfg(not(feature = "sp1_proving"))]
     #[tokio::test]
     async fn proof_job_rejects_unavailable_prover_backend_before_publication() {
@@ -1141,6 +1304,14 @@ mod tests {
             error,
             TradeValidationReceiptJobError::ProverBackendUnavailable("local_execute")
         ));
+        assert_eq!(
+            trade_validation_receipt_test_hooks()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .fetch_event_by_id_results
+                .len(),
+            3
+        );
         assert!(
             trade_validation_receipt_test_hooks()
                 .lock()
