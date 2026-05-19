@@ -208,6 +208,7 @@ pub async fn handle_trade_validation_receipt_job_request(
         previous_state_root: request.previous_state_root.clone(),
         reducer_program_hash: request.reducer_program_hash.clone(),
         radroots_protocol_version: request.radroots_protocol_version.clone(),
+        sp1_program_hash: None,
         sp1_verifying_key_hash: request.sp1_verifying_key_hash.clone(),
     };
     let proof_backend = request.prover_backend;

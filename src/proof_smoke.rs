@@ -331,6 +331,7 @@ fn order_acceptance_tiny_witness() -> RadrootsSp1TradeOrderAcceptanceWitness {
         previous_state_root: None,
         reducer_program_hash: RADROOTS_SP1_TRADE_REDUCER_PROGRAM_HASH.to_string(),
         radroots_protocol_version: RADROOTS_SP1_TRADE_PROTOCOL_VERSION.to_string(),
+        sp1_program_hash: None,
         sp1_verifying_key_hash: None,
     }
 }
