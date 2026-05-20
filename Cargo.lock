@@ -3418,6 +3418,7 @@ dependencies = [
 name = "radroots_trade"
 version = "0.1.0-alpha.2"
 dependencies = [
+ "base64 0.22.1",
  "hex",
  "radroots_core",
  "radroots_events",

@@ -264,6 +264,8 @@ mod tests {
                     nip89_extra_tags: Vec::new(),
                 },
                 subscriber: config::SubscriberConfig::default(),
+                trade_validation_receipt:
+                    rhi::features::trade_validation_receipt::TradeValidationReceiptProverPolicy::default(),
             },
         }
     }

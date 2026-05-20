@@ -6,6 +6,7 @@ use radroots_nostr::prelude::{RadrootsNostrClient, RadrootsNostrKeys};
 use radroots_runtime::{Backoff, BackoffConfig};
 
 use crate::features::trade_listing::state::TradeListingRuntime;
+use crate::features::trade_validation_receipt::TradeValidationReceiptProverPolicy;
 
 #[cfg(not(test))]
 fn connection_wait_timeout() -> Duration {
@@ -32,6 +33,7 @@ async fn run_subscriber_once(
     client: RadrootsNostrClient,
     keys: RadrootsNostrKeys,
     runtime: TradeListingRuntime,
+    proof_policy: TradeValidationReceiptProverPolicy,
     stop_rx: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), anyhow::Error> {
     #[cfg(test)]
@@ -43,7 +45,14 @@ async fn run_subscriber_once(
         return result;
     }
 
-    crate::features::trade_listing::subscriber::subscriber(client, keys, runtime, stop_rx).await
+    crate::features::trade_listing::subscriber::subscriber(
+        client,
+        keys,
+        runtime,
+        proof_policy,
+        stop_rx,
+    )
+    .await
 }
 
 async fn wait_for_connection_or_stop(
@@ -63,6 +72,7 @@ pub struct Rhi {
     pub(crate) _started: Instant,
     pub client: RadrootsNostrClient,
     pub(crate) trade_listing_runtime: TradeListingRuntime,
+    pub(crate) trade_validation_receipt_policy: TradeValidationReceiptProverPolicy,
 }
 
 impl Rhi {
@@ -74,11 +84,24 @@ impl Rhi {
         keys: RadrootsNostrKeys,
         trade_listing_runtime: TradeListingRuntime,
     ) -> Self {
+        Self::with_trade_listing_runtime_and_policy(
+            keys,
+            trade_listing_runtime,
+            TradeValidationReceiptProverPolicy::default(),
+        )
+    }
+
+    pub fn with_trade_listing_runtime_and_policy(
+        keys: RadrootsNostrKeys,
+        trade_listing_runtime: TradeListingRuntime,
+        trade_validation_receipt_policy: TradeValidationReceiptProverPolicy,
+    ) -> Self {
         let client = RadrootsNostrClient::new(keys);
         Self {
             _started: Instant::now(),
             client,
             trade_listing_runtime,
+            trade_validation_receipt_policy,
         }
     }
 }
@@ -120,6 +143,23 @@ pub async fn start_subscriber(
     runtime: TradeListingRuntime,
     backoff_cfg: BackoffConfig,
 ) -> RhiHandle {
+    start_subscriber_with_policy(
+        client,
+        keys,
+        runtime,
+        TradeValidationReceiptProverPolicy::default(),
+        backoff_cfg,
+    )
+    .await
+}
+
+pub async fn start_subscriber_with_policy(
+    client: RadrootsNostrClient,
+    keys: RadrootsNostrKeys,
+    runtime: TradeListingRuntime,
+    proof_policy: TradeValidationReceiptProverPolicy,
+    backoff_cfg: BackoffConfig,
+) -> RhiHandle {
     let (stop_tx, mut stop_rx) = tokio::sync::watch::channel(false);
 
     let join = tokio::spawn(async move {
@@ -138,6 +178,7 @@ pub async fn start_subscriber(
                 client.clone(),
                 keys.clone(),
                 runtime.clone(),
+                proof_policy.clone(),
                 stop_rx.clone(),
             )
             .await;

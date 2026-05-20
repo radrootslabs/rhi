@@ -4,6 +4,7 @@ use radroots_runtime::{BackoffConfig, RadrootsNostrServiceConfig};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+use crate::features::trade_validation_receipt::TradeValidationReceiptProverPolicy;
 use crate::paths::{
     RhiRuntimePaths, default_subscriber_state_path_for_process, resolve_runtime_paths_with_resolver,
 };
@@ -47,6 +48,8 @@ pub struct Configuration {
     pub service: RadrootsNostrServiceConfig,
     #[serde(default)]
     pub subscriber: SubscriberConfig,
+    #[serde(default)]
+    pub trade_validation_receipt: TradeValidationReceiptProverPolicy,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -130,6 +133,8 @@ struct RawConfiguration {
     pub service: RawServiceConfig,
     #[serde(default)]
     pub subscriber: RawSubscriberConfig,
+    #[serde(default)]
+    pub trade_validation_receipt: TradeValidationReceiptProverPolicy,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -145,6 +150,7 @@ impl RawSettings {
             config: Configuration {
                 service: self.config.service.into_service_config(paths),
                 subscriber: self.config.subscriber.into_subscriber_config(paths),
+                trade_validation_receipt: self.config.trade_validation_receipt,
             },
         }
     }
@@ -183,6 +189,7 @@ pub fn load_settings_from_path(path: &Path) -> Result<Settings> {
 #[cfg(test)]
 mod tests {
     use super::load_settings_from_path_with_resolver;
+    use crate::features::trade_validation_receipt::TradeValidationReceiptProverBackend;
     use crate::paths::{
         default_subscriber_state_path_for_process, resolve_runtime_paths_with_resolver,
         runtime_contract_with_resolver,
@@ -191,6 +198,7 @@ mod tests {
         RadrootsHostEnvironment, RadrootsPathOverrides, RadrootsPathProfile, RadrootsPathResolver,
         RadrootsPlatform, RadrootsRuntimeNamespace,
     };
+    use radroots_sp1_host_trade::RadrootsSp1TradeProofMode;
     use std::path::PathBuf;
 
     fn linux_resolver() -> RadrootsPathResolver {
@@ -349,6 +357,52 @@ replay_overlap_secs = 45
         );
         assert_eq!(settings.config.subscriber.state.replay_window_secs, 123);
         assert_eq!(settings.config.subscriber.state.replay_overlap_secs, 45);
+        assert_eq!(
+            settings.config.trade_validation_receipt.backend,
+            TradeValidationReceiptProverBackend::Disabled
+        );
+        assert_eq!(
+            settings.config.trade_validation_receipt.proof_mode,
+            RadrootsSp1TradeProofMode::None
+        );
+    }
+
+    #[test]
+    fn load_settings_parses_trade_validation_receipt_policy() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config_path = temp.path().join("config.toml");
+        std::fs::write(
+            &config_path,
+            r#"
+[metadata]
+name = "rhi-test"
+
+[config]
+relays = ["wss://relay.example.com"]
+
+[config.trade_validation_receipt]
+backend = "deterministic_none"
+proof_mode = "none"
+"#,
+        )
+        .expect("write config");
+
+        let settings = load_settings_from_path_with_resolver(
+            &config_path,
+            &linux_resolver(),
+            RadrootsPathProfile::InteractiveUser,
+            None,
+        )
+        .expect("load settings");
+
+        assert_eq!(
+            settings.config.trade_validation_receipt.backend,
+            TradeValidationReceiptProverBackend::DeterministicNone
+        );
+        assert_eq!(
+            settings.config.trade_validation_receipt.proof_mode,
+            RadrootsSp1TradeProofMode::None
+        );
     }
 
     #[test]

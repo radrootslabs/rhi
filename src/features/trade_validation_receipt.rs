@@ -27,8 +27,9 @@ use radroots_sp1_guest_trade::{
     RadrootsSp1TradeOrderItemWitness, RadrootsSp1TradeOrderRequestWitness,
 };
 use radroots_sp1_host_trade::{
-    RadrootsSp1TradeHostError, RadrootsSp1TradeProofMode, generate_order_acceptance_proof,
-    validation_receipt_for_order_acceptance_proof, verify_order_acceptance_proof_artifact,
+    RadrootsSp1TradeHostError, RadrootsSp1TradeProofBundle, RadrootsSp1TradeProofMode,
+    generate_order_acceptance_proof, validation_receipt_for_order_acceptance_proof,
+    verify_order_acceptance_proof_artifact,
 };
 use radroots_trade::validation_receipt::{
     RadrootsValidationReceiptError, RadrootsValidationReceiptExpectedBinding,
@@ -46,7 +47,6 @@ pub struct TradeValidationReceiptJobRequest {
     pub listing_event_id: String,
     pub request_event_id: String,
     pub decision_event_id: String,
-    pub prover_backend: TradeValidationReceiptProverBackend,
     pub inventory_bins: Vec<RadrootsSp1TradeInventoryBinWitness>,
     pub inventory_sequence: u128,
     pub previous_state_root: Option<String>,
@@ -83,12 +83,139 @@ impl TradeValidationReceiptProverBackend {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct TradeValidationReceiptProverPolicy {
+    pub backend: TradeValidationReceiptProverBackend,
+    pub proof_mode: RadrootsSp1TradeProofMode,
+    #[serde(default)]
+    pub expected_sp1_program_hash: Option<String>,
+    #[serde(default)]
+    pub expected_sp1_verifying_key_hash: Option<String>,
+}
+
+impl Default for TradeValidationReceiptProverPolicy {
+    fn default() -> Self {
+        Self::disabled()
+    }
+}
+
+impl TradeValidationReceiptProverPolicy {
+    pub fn disabled() -> Self {
+        Self {
+            backend: TradeValidationReceiptProverBackend::Disabled,
+            proof_mode: RadrootsSp1TradeProofMode::None,
+            expected_sp1_program_hash: None,
+            expected_sp1_verifying_key_hash: None,
+        }
+    }
+
+    pub fn deterministic_none() -> Self {
+        Self {
+            backend: TradeValidationReceiptProverBackend::DeterministicNone,
+            proof_mode: RadrootsSp1TradeProofMode::None,
+            expected_sp1_program_hash: None,
+            expected_sp1_verifying_key_hash: None,
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), TradeValidationReceiptJobError> {
+        validate_optional_hash32(&self.expected_sp1_program_hash)?;
+        validate_optional_hash32(&self.expected_sp1_verifying_key_hash)?;
+        match self.backend {
+            TradeValidationReceiptProverBackend::Disabled => {
+                if self.proof_mode != RadrootsSp1TradeProofMode::None {
+                    return Err(TradeValidationReceiptJobError::ProverBackendDisabled);
+                }
+                if self.expected_sp1_program_hash.is_some()
+                    || self.expected_sp1_verifying_key_hash.is_some()
+                {
+                    return Err(
+                        TradeValidationReceiptJobError::Sp1IdentityConstraintsRequireSp1Proof,
+                    );
+                }
+                Ok(())
+            }
+            TradeValidationReceiptProverBackend::DeterministicNone
+            | TradeValidationReceiptProverBackend::LocalExecute => {
+                if self.proof_mode != RadrootsSp1TradeProofMode::None {
+                    return Err(TradeValidationReceiptJobError::ProverBackendRequiresNone);
+                }
+                if self.expected_sp1_program_hash.is_some()
+                    || self.expected_sp1_verifying_key_hash.is_some()
+                {
+                    return Err(
+                        TradeValidationReceiptJobError::Sp1IdentityConstraintsRequireSp1Proof,
+                    );
+                }
+                if self.backend == TradeValidationReceiptProverBackend::LocalExecute
+                    && !cfg!(feature = "sp1_proving")
+                {
+                    return Err(TradeValidationReceiptJobError::ProverBackendUnavailable(
+                        self.backend.as_str(),
+                    ));
+                }
+                Ok(())
+            }
+            TradeValidationReceiptProverBackend::LocalCpuProve => {
+                if self.proof_mode == RadrootsSp1TradeProofMode::None {
+                    return Err(TradeValidationReceiptJobError::ProverBackendRequiresSp1Proof);
+                }
+                if self.proof_mode != RadrootsSp1TradeProofMode::Core {
+                    return Err(TradeValidationReceiptJobError::UnsupportedProofMode);
+                }
+                if self.expected_sp1_program_hash.is_none()
+                    || self.expected_sp1_verifying_key_hash.is_none()
+                {
+                    return Err(TradeValidationReceiptJobError::Sp1IdentityPolicyRequired);
+                }
+                if !cfg!(feature = "sp1_proving") {
+                    return Err(TradeValidationReceiptJobError::ProverBackendUnavailable(
+                        self.backend.as_str(),
+                    ));
+                }
+                Ok(())
+            }
+            TradeValidationReceiptProverBackend::LocalCudaProve
+            | TradeValidationReceiptProverBackend::RemoteHttpProve => Err(
+                TradeValidationReceiptJobError::ProverBackendUnavailable(self.backend.as_str()),
+            ),
+        }
+    }
+
+    pub fn validate_request(
+        &self,
+        request: &TradeValidationReceiptJobRequest,
+    ) -> Result<(), TradeValidationReceiptJobError> {
+        if request.proof_mode != self.proof_mode {
+            return Err(TradeValidationReceiptJobError::ProverBackendPolicyMismatch);
+        }
+        if self.proof_mode == RadrootsSp1TradeProofMode::None {
+            if request.sp1_program_hash.is_some() || request.sp1_verifying_key_hash.is_some() {
+                return Err(TradeValidationReceiptJobError::Sp1IdentityConstraintsRequireSp1Proof);
+            }
+            return Ok(());
+        }
+        if request.sp1_program_hash.as_deref() != self.expected_sp1_program_hash.as_deref() {
+            return Err(TradeValidationReceiptJobError::ExpectedSp1ProgramHashMismatch);
+        }
+        if request.sp1_verifying_key_hash.as_deref()
+            != self.expected_sp1_verifying_key_hash.as_deref()
+        {
+            return Err(TradeValidationReceiptJobError::ExpectedSp1VerifyingKeyHashMismatch);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TradeValidationReceiptJobResult {
+    pub cryptographic_proof_verified: bool,
     pub decision_event_id: String,
     pub event_set_root: String,
     pub listing_event_id: String,
     pub order_id: String,
     pub proof_generated: bool,
+    pub proof_mode: RadrootsSp1TradeProofMode,
     pub proof_system: String,
     pub public_values_hash: String,
     pub prover_backend: TradeValidationReceiptProverBackend,
@@ -96,6 +223,8 @@ pub struct TradeValidationReceiptJobResult {
     pub receipt_kind: u32,
     pub reducer_output_root: String,
     pub request_event_id: String,
+    pub sp1_execute_checked: bool,
+    pub sp1_execute_public_values_hash: Option<String>,
     pub status: TradeValidationReceiptJobStatus,
     pub worker_role: TradeValidationReceiptWorkerRole,
 }
@@ -146,8 +275,16 @@ pub enum TradeValidationReceiptJobError {
     ProverBackendRequiresNone,
     #[error("rhi prover backend requires an SP1 proof mode")]
     ProverBackendRequiresSp1Proof,
+    #[error("rhi prover backend does not match configured policy")]
+    ProverBackendPolicyMismatch,
     #[error("rhi prover backend {0} is unavailable in this build")]
     ProverBackendUnavailable(&'static str),
+    #[error("configured SP1 identity policy is required for this prover backend")]
+    Sp1IdentityPolicyRequired,
+    #[error("expected SP1 program hash does not match configured policy")]
+    ExpectedSp1ProgramHashMismatch,
+    #[error("expected SP1 verifying key hash does not match configured policy")]
+    ExpectedSp1VerifyingKeyHashMismatch,
     #[error("nostr error: {0}")]
     Nostr(#[from] radroots_nostr::error::RadrootsNostrError),
     #[error("serde error: {0}")]
@@ -162,6 +299,7 @@ pub async fn handle_trade_validation_receipt_job_request(
     event: &RadrootsNostrEvent,
     keys: &RadrootsNostrKeys,
     client: &RadrootsNostrClient,
+    prover_policy: &TradeValidationReceiptProverPolicy,
 ) -> Result<(), TradeValidationReceiptJobError> {
     let kind = event_kind_u32(event)?;
     if kind != KIND_WORKER_TRADE_TRANSITION_PROOF_REQ {
@@ -173,8 +311,13 @@ pub async fn handle_trade_validation_receipt_job_request(
         return Err(TradeValidationReceiptJobError::MissingRecipient);
     }
 
+    prover_policy.validate()?;
+    if prover_policy.backend == TradeValidationReceiptProverBackend::Disabled {
+        return Err(TradeValidationReceiptJobError::ProverBackendDisabled);
+    }
     let request: TradeValidationReceiptJobRequest = serde_json::from_str(&event.content)?;
     validate_job_request_shape(&request)?;
+    prover_policy.validate_request(&request)?;
 
     let listing_event = fetch_event_by_id_io(client, &request.listing_event_id).await?;
     let order_request_event = fetch_event_by_id_io(client, &request.request_event_id).await?;
@@ -242,11 +385,12 @@ pub async fn handle_trade_validation_receipt_job_request(
         sp1_program_hash: request.sp1_program_hash.clone(),
         sp1_verifying_key_hash: request.sp1_verifying_key_hash.clone(),
     };
-    let proof_backend = request.prover_backend;
-    let (bundle, proof_generated) =
-        proof_bundle_for_backend(&witness, request.proof_mode, proof_backend).await?;
-    verify_order_acceptance_proof_artifact(&bundle.execution, &bundle.proof)?;
-    let receipt = validation_receipt_for_order_acceptance_proof(&bundle)?;
+    let proof_outcome = proof_bundle_for_policy(&witness, prover_policy).await?;
+    verify_order_acceptance_proof_artifact(
+        &proof_outcome.bundle.execution,
+        &proof_outcome.bundle.proof,
+    )?;
+    let receipt = validation_receipt_for_order_acceptance_proof(&proof_outcome.bundle)?;
     let receipt_parts = validation_receipt_event_build(&witness.request.order_id, &receipt)?;
     let verified_receipt = verify_validation_receipt_event(
         &radroots_events::RadrootsNostrEvent {
@@ -261,11 +405,11 @@ pub async fn handle_trade_validation_receipt_job_request(
         RadrootsValidationReceiptExpectedBinding {
             event_set_root: Some(&receipt.event_set_root),
             order_id: Some(&witness.request.order_id),
-            program_hash: receipt.proof.program_hash.as_deref(),
+            program_hash: prover_policy.expected_sp1_program_hash.as_deref(),
             proof_system: Some(receipt.proof.system),
             public_values_hash: Some(&receipt.public_values_hash),
             reducer_output_root: Some(&receipt.new_state_root),
-            verifying_key_hash: receipt.proof.verifying_key_hash.as_deref(),
+            verifying_key_hash: prover_policy.expected_sp1_verifying_key_hash.as_deref(),
         },
     )?;
     let receipt_event_id = publish_event_parts_io(
@@ -277,18 +421,22 @@ pub async fn handle_trade_validation_receipt_job_request(
     .await?;
 
     let result = TradeValidationReceiptJobResult {
+        cryptographic_proof_verified: proof_outcome.cryptographic_proof_verified,
         decision_event_id: request.decision_event_id,
         event_set_root: verified_receipt.receipt.event_set_root,
         listing_event_id: request.listing_event_id,
         order_id: witness.request.order_id,
-        proof_generated,
+        proof_generated: proof_outcome.proof_generated,
+        proof_mode: prover_policy.proof_mode,
         proof_system: verified_receipt.receipt.proof.system.as_str().to_string(),
         public_values_hash: verified_receipt.receipt.public_values_hash,
-        prover_backend: proof_backend,
+        prover_backend: prover_policy.backend,
         receipt_event_id: receipt_event_id.clone(),
         receipt_kind: KIND_TRADE_VALIDATION_RECEIPT,
         reducer_output_root: verified_receipt.receipt.new_state_root,
         request_event_id: request.request_event_id,
+        sp1_execute_checked: proof_outcome.sp1_execute_checked,
+        sp1_execute_public_values_hash: proof_outcome.sp1_execute_public_values_hash,
         status: TradeValidationReceiptJobStatus::Succeeded,
         worker_role: TradeValidationReceiptWorkerRole::NonAuthoritativeProver,
     };
@@ -439,41 +587,43 @@ fn order_decision_witness_from_payload(
     }
 }
 
-async fn proof_bundle_for_backend(
+struct TradeValidationReceiptProofOutcome {
+    bundle: RadrootsSp1TradeProofBundle,
+    proof_generated: bool,
+    sp1_execute_checked: bool,
+    sp1_execute_public_values_hash: Option<String>,
+    cryptographic_proof_verified: bool,
+}
+
+async fn proof_bundle_for_policy(
     witness: &RadrootsSp1TradeOrderAcceptanceWitness,
-    proof_mode: RadrootsSp1TradeProofMode,
-    backend: TradeValidationReceiptProverBackend,
-) -> Result<
-    (radroots_sp1_host_trade::RadrootsSp1TradeProofBundle, bool),
-    TradeValidationReceiptJobError,
-> {
-    match backend {
+    policy: &TradeValidationReceiptProverPolicy,
+) -> Result<TradeValidationReceiptProofOutcome, TradeValidationReceiptJobError> {
+    match policy.backend {
         TradeValidationReceiptProverBackend::Disabled => {
             Err(TradeValidationReceiptJobError::ProverBackendDisabled)
         }
         TradeValidationReceiptProverBackend::DeterministicNone => {
-            if proof_mode != RadrootsSp1TradeProofMode::None {
-                return Err(TradeValidationReceiptJobError::ProverBackendRequiresNone);
-            }
-            Ok((generate_order_acceptance_proof(witness, proof_mode)?, false))
+            let bundle = generate_order_acceptance_proof(witness, policy.proof_mode)?;
+            Ok(TradeValidationReceiptProofOutcome {
+                bundle,
+                proof_generated: false,
+                sp1_execute_checked: false,
+                sp1_execute_public_values_hash: None,
+                cryptographic_proof_verified: false,
+            })
         }
         TradeValidationReceiptProverBackend::LocalExecute => {
-            if proof_mode != RadrootsSp1TradeProofMode::None {
-                return Err(TradeValidationReceiptJobError::ProverBackendRequiresNone);
-            }
-            run_local_execute_backend(witness, proof_mode).await
+            run_local_execute_backend(witness, policy.proof_mode).await
         }
         TradeValidationReceiptProverBackend::LocalCpuProve => {
-            if proof_mode == RadrootsSp1TradeProofMode::None {
-                return Err(TradeValidationReceiptJobError::ProverBackendRequiresSp1Proof);
-            }
-            run_local_cpu_prove_backend(witness, proof_mode).await
+            run_local_cpu_prove_backend(witness, policy.proof_mode).await
         }
         TradeValidationReceiptProverBackend::LocalCudaProve => Err(
-            TradeValidationReceiptJobError::ProverBackendUnavailable(backend.as_str()),
+            TradeValidationReceiptJobError::ProverBackendUnavailable(policy.backend.as_str()),
         ),
         TradeValidationReceiptProverBackend::RemoteHttpProve => Err(
-            TradeValidationReceiptJobError::ProverBackendUnavailable(backend.as_str()),
+            TradeValidationReceiptJobError::ProverBackendUnavailable(policy.backend.as_str()),
         ),
     }
 }
@@ -482,22 +632,24 @@ async fn proof_bundle_for_backend(
 async fn run_local_execute_backend(
     witness: &RadrootsSp1TradeOrderAcceptanceWitness,
     proof_mode: RadrootsSp1TradeProofMode,
-) -> Result<
-    (radroots_sp1_host_trade::RadrootsSp1TradeProofBundle, bool),
-    TradeValidationReceiptJobError,
-> {
-    let _ = radroots_sp1_host_trade::execute_order_acceptance_sp1_public_values(witness).await?;
-    Ok((generate_order_acceptance_proof(witness, proof_mode)?, false))
+) -> Result<TradeValidationReceiptProofOutcome, TradeValidationReceiptJobError> {
+    let sp1_execution =
+        radroots_sp1_host_trade::execute_order_acceptance_sp1_public_values(witness).await?;
+    let bundle = generate_order_acceptance_proof(witness, proof_mode)?;
+    Ok(TradeValidationReceiptProofOutcome {
+        bundle,
+        proof_generated: false,
+        sp1_execute_checked: true,
+        sp1_execute_public_values_hash: Some(sp1_execution.execution.public_values_hash),
+        cryptographic_proof_verified: false,
+    })
 }
 
 #[cfg(not(feature = "sp1_proving"))]
 async fn run_local_execute_backend(
     _witness: &RadrootsSp1TradeOrderAcceptanceWitness,
     _proof_mode: RadrootsSp1TradeProofMode,
-) -> Result<
-    (radroots_sp1_host_trade::RadrootsSp1TradeProofBundle, bool),
-    TradeValidationReceiptJobError,
-> {
+) -> Result<TradeValidationReceiptProofOutcome, TradeValidationReceiptJobError> {
     Err(TradeValidationReceiptJobError::ProverBackendUnavailable(
         TradeValidationReceiptProverBackend::LocalExecute.as_str(),
     ))
@@ -507,10 +659,7 @@ async fn run_local_execute_backend(
 async fn run_local_cpu_prove_backend(
     witness: &RadrootsSp1TradeOrderAcceptanceWitness,
     proof_mode: RadrootsSp1TradeProofMode,
-) -> Result<
-    (radroots_sp1_host_trade::RadrootsSp1TradeProofBundle, bool),
-    TradeValidationReceiptJobError,
-> {
+) -> Result<TradeValidationReceiptProofOutcome, TradeValidationReceiptJobError> {
     let bundle =
         radroots_sp1_host_trade::generate_order_acceptance_sp1_proof(witness, proof_mode).await?;
     radroots_sp1_host_trade::verify_order_acceptance_sp1_proof_artifact(
@@ -518,17 +667,20 @@ async fn run_local_cpu_prove_backend(
         &bundle.proof,
     )
     .await?;
-    Ok((bundle, true))
+    Ok(TradeValidationReceiptProofOutcome {
+        sp1_execute_public_values_hash: Some(bundle.execution.public_values_hash.clone()),
+        bundle,
+        proof_generated: true,
+        sp1_execute_checked: true,
+        cryptographic_proof_verified: true,
+    })
 }
 
 #[cfg(not(feature = "sp1_proving"))]
 async fn run_local_cpu_prove_backend(
     _witness: &RadrootsSp1TradeOrderAcceptanceWitness,
     _proof_mode: RadrootsSp1TradeProofMode,
-) -> Result<
-    (radroots_sp1_host_trade::RadrootsSp1TradeProofBundle, bool),
-    TradeValidationReceiptJobError,
-> {
+) -> Result<TradeValidationReceiptProofOutcome, TradeValidationReceiptJobError> {
     Err(TradeValidationReceiptJobError::ProverBackendUnavailable(
         TradeValidationReceiptProverBackend::LocalCpuProve.as_str(),
     ))
@@ -561,53 +713,6 @@ fn validate_job_request_shape(
     }
     validate_optional_hash32(&request.sp1_program_hash)?;
     validate_optional_hash32(&request.sp1_verifying_key_hash)?;
-    validate_proof_config(request)?;
-    Ok(())
-}
-
-fn validate_proof_config(
-    request: &TradeValidationReceiptJobRequest,
-) -> Result<(), TradeValidationReceiptJobError> {
-    match request.prover_backend {
-        TradeValidationReceiptProverBackend::Disabled => {
-            return Err(TradeValidationReceiptJobError::ProverBackendDisabled);
-        }
-        TradeValidationReceiptProverBackend::DeterministicNone
-        | TradeValidationReceiptProverBackend::LocalExecute => {
-            if request.proof_mode != RadrootsSp1TradeProofMode::None {
-                return Err(TradeValidationReceiptJobError::ProverBackendRequiresNone);
-            }
-            if request.sp1_program_hash.is_some() || request.sp1_verifying_key_hash.is_some() {
-                return Err(TradeValidationReceiptJobError::Sp1IdentityConstraintsRequireSp1Proof);
-            }
-            if request.prover_backend == TradeValidationReceiptProverBackend::LocalExecute
-                && !cfg!(feature = "sp1_proving")
-            {
-                return Err(TradeValidationReceiptJobError::ProverBackendUnavailable(
-                    request.prover_backend.as_str(),
-                ));
-            }
-        }
-        TradeValidationReceiptProverBackend::LocalCpuProve => {
-            if request.proof_mode == RadrootsSp1TradeProofMode::None {
-                return Err(TradeValidationReceiptJobError::ProverBackendRequiresSp1Proof);
-            }
-            if request.proof_mode != RadrootsSp1TradeProofMode::Core {
-                return Err(TradeValidationReceiptJobError::UnsupportedProofMode);
-            }
-            if !cfg!(feature = "sp1_proving") {
-                return Err(TradeValidationReceiptJobError::ProverBackendUnavailable(
-                    request.prover_backend.as_str(),
-                ));
-            }
-        }
-        TradeValidationReceiptProverBackend::LocalCudaProve
-        | TradeValidationReceiptProverBackend::RemoteHttpProve => {
-            return Err(TradeValidationReceiptJobError::ProverBackendUnavailable(
-                request.prover_backend.as_str(),
-            ));
-        }
-    }
     Ok(())
 }
 
@@ -671,6 +776,22 @@ fn result_tags(
         vec![
             "prover_backend".to_string(),
             result.prover_backend.as_str().to_string(),
+        ],
+        vec![
+            "proof_mode".to_string(),
+            result.proof_mode.mode_label().unwrap_or("none").to_string(),
+        ],
+        vec![
+            "proof_generated".to_string(),
+            result.proof_generated.to_string(),
+        ],
+        vec![
+            "sp1_execute_checked".to_string(),
+            result.sp1_execute_checked.to_string(),
+        ],
+        vec![
+            "cryptographic_proof_verified".to_string(),
+            result.cryptographic_proof_verified.to_string(),
         ],
     ]
 }
@@ -781,8 +902,8 @@ mod tests {
     use super::{
         TradeValidationReceiptJobError, TradeValidationReceiptJobRequest,
         TradeValidationReceiptJobResult, TradeValidationReceiptProverBackend,
-        TradeValidationReceiptTestHooks, handle_trade_validation_receipt_job_request,
-        trade_validation_receipt_test_hooks,
+        TradeValidationReceiptProverPolicy, TradeValidationReceiptTestHooks,
+        handle_trade_validation_receipt_job_request, trade_validation_receipt_test_hooks,
     };
     use radroots_core::{
         RadrootsCoreCurrency, RadrootsCoreDecimal, RadrootsCoreMoney, RadrootsCoreUnit,
@@ -970,7 +1091,6 @@ mod tests {
         listing_event: &RadrootsNostrEvent,
         request_event: &RadrootsNostrEvent,
         decision_event: &RadrootsNostrEvent,
-        prover_backend: TradeValidationReceiptProverBackend,
         proof_mode: RadrootsSp1TradeProofMode,
         sp1_verifying_key_hash: Option<String>,
     ) -> RadrootsNostrEvent {
@@ -982,7 +1102,6 @@ mod tests {
             listing_event_id: listing_event.id.to_hex(),
             request_event_id: request_event.id.to_hex(),
             decision_event_id: decision_event.id.to_hex(),
-            prover_backend,
             inventory_bins: vec![RadrootsSp1TradeInventoryBinWitness {
                 bin_id: "bin-1".to_string(),
                 listing_capacity: 5,
@@ -1008,6 +1127,68 @@ mod tests {
         RadrootsNostrClient::new(keys.clone())
     }
 
+    fn deterministic_policy() -> TradeValidationReceiptProverPolicy {
+        TradeValidationReceiptProverPolicy::deterministic_none()
+    }
+
+    fn hash32(ch: char) -> String {
+        format!("0x{}", ch.to_string().repeat(64))
+    }
+
+    #[test]
+    fn prover_policy_requires_configured_sp1_identity_for_local_cpu() {
+        let missing_identity = TradeValidationReceiptProverPolicy {
+            backend: TradeValidationReceiptProverBackend::LocalCpuProve,
+            proof_mode: RadrootsSp1TradeProofMode::Core,
+            expected_sp1_program_hash: None,
+            expected_sp1_verifying_key_hash: Some(hash32('b')),
+        };
+        assert!(matches!(
+            missing_identity.validate(),
+            Err(TradeValidationReceiptJobError::Sp1IdentityPolicyRequired)
+        ));
+
+        let policy = TradeValidationReceiptProverPolicy {
+            backend: TradeValidationReceiptProverBackend::LocalCpuProve,
+            proof_mode: RadrootsSp1TradeProofMode::Core,
+            expected_sp1_program_hash: Some(hash32('a')),
+            expected_sp1_verifying_key_hash: Some(hash32('b')),
+        };
+        let request = TradeValidationReceiptJobRequest {
+            witness_version: radroots_sp1_guest_trade::RADROOTS_SP1_TRADE_WITNESS_VERSION,
+            proof_target:
+                radroots_sp1_guest_trade::RADROOTS_SP1_TRADE_ORDER_ACCEPTANCE_PROOF_TARGET
+                    .to_string(),
+            listing_event_id: "listing-event".to_string(),
+            request_event_id: "request-event".to_string(),
+            decision_event_id: "decision-event".to_string(),
+            inventory_bins: vec![RadrootsSp1TradeInventoryBinWitness {
+                bin_id: "bin-1".to_string(),
+                listing_capacity: 5,
+                previous_reserved: 1,
+            }],
+            inventory_sequence: 7,
+            previous_state_root: None,
+            proof_mode: RadrootsSp1TradeProofMode::Core,
+            reducer_program_hash: RADROOTS_SP1_TRADE_REDUCER_PROGRAM_HASH.to_string(),
+            radroots_protocol_version: RADROOTS_SP1_TRADE_PROTOCOL_VERSION.to_string(),
+            sp1_program_hash: Some(hash32('c')),
+            sp1_verifying_key_hash: Some(hash32('b')),
+        };
+        assert!(matches!(
+            policy.validate_request(&request),
+            Err(TradeValidationReceiptJobError::ExpectedSp1ProgramHashMismatch)
+        ));
+
+        let mut request = request;
+        request.sp1_program_hash = None;
+        request.sp1_verifying_key_hash = None;
+        assert!(matches!(
+            policy.validate_request(&request),
+            Err(TradeValidationReceiptJobError::ExpectedSp1ProgramHashMismatch)
+        ));
+    }
+
     #[tokio::test]
     async fn proof_job_publishes_verified_receipt_and_result_after_proof_verification() {
         let _guard = test_guard();
@@ -1023,7 +1204,6 @@ mod tests {
             &listing_event,
             &request_event,
             &decision_event,
-            TradeValidationReceiptProverBackend::DeterministicNone,
             RadrootsSp1TradeProofMode::None,
             None,
         );
@@ -1049,9 +1229,14 @@ mod tests {
                 .push_back(Ok(publish_result_id(2)));
         }
 
-        handle_trade_validation_receipt_job_request(&job, &worker, &client_for(&worker))
-            .await
-            .expect("proof job");
+        handle_trade_validation_receipt_job_request(
+            &job,
+            &worker,
+            &client_for(&worker),
+            &deterministic_policy(),
+        )
+        .await
+        .expect("proof job");
 
         let published = trade_validation_receipt_test_hooks()
             .lock()
@@ -1088,6 +1273,10 @@ mod tests {
             TradeValidationReceiptProverBackend::DeterministicNone
         );
         assert!(!result.proof_generated);
+        assert_eq!(result.proof_mode, RadrootsSp1TradeProofMode::None);
+        assert!(!result.sp1_execute_checked);
+        assert!(result.sp1_execute_public_values_hash.is_none());
+        assert!(!result.cryptographic_proof_verified);
         assert_eq!(
             result.public_values_hash,
             verified.receipt.public_values_hash
@@ -1101,6 +1290,10 @@ mod tests {
         assert!(published[1].tags.iter().any(|tag| {
             tag.get(0).map(String::as_str) == Some("prover_backend")
                 && tag.get(1).map(String::as_str) == Some("deterministic_none")
+        }));
+        assert!(published[1].tags.iter().any(|tag| {
+            tag.get(0).map(String::as_str) == Some("proof_mode")
+                && tag.get(1).map(String::as_str) == Some("none")
         }));
     }
 
@@ -1119,7 +1312,6 @@ mod tests {
             &listing_event,
             &request_event,
             &decision_event,
-            TradeValidationReceiptProverBackend::DeterministicNone,
             RadrootsSp1TradeProofMode::Compressed,
             None,
         );
@@ -1135,13 +1327,17 @@ mod tests {
                 .push_back(Ok(decision_event));
         }
 
-        let error =
-            handle_trade_validation_receipt_job_request(&job, &worker, &client_for(&worker))
-                .await
-                .expect_err("backend rejects sp1 proof claim");
+        let error = handle_trade_validation_receipt_job_request(
+            &job,
+            &worker,
+            &client_for(&worker),
+            &deterministic_policy(),
+        )
+        .await
+        .expect_err("backend rejects sp1 proof claim");
         assert!(matches!(
             error,
-            TradeValidationReceiptJobError::ProverBackendRequiresNone
+            TradeValidationReceiptJobError::ProverBackendPolicyMismatch
         ));
         assert_eq!(
             trade_validation_receipt_test_hooks()
@@ -1161,6 +1357,110 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn proof_job_rejects_request_prover_backend_override_before_relay_fetch() {
+        let _guard = test_guard();
+        let worker = RadrootsNostrKeys::generate();
+        let requester = RadrootsNostrKeys::generate();
+        let buyer = RadrootsNostrKeys::generate();
+        let seller = RadrootsNostrKeys::generate();
+        let listing_event = listing_event(&seller);
+        let (request_event, decision_event) = signed_order_events(&buyer, &seller, &listing_event);
+        let job = job_request(
+            &requester,
+            &worker,
+            &listing_event,
+            &request_event,
+            &decision_event,
+            RadrootsSp1TradeProofMode::None,
+            None,
+        );
+        let mut request_json: serde_json::Value =
+            serde_json::from_str(&job.content).expect("request json");
+        request_json["prover_backend"] = serde_json::Value::String("local_cpu_prove".to_string());
+        let job = signed_event(
+            &requester,
+            KIND_WORKER_TRADE_TRANSITION_PROOF_REQ,
+            serde_json::to_string(&request_json).expect("request json"),
+            vec![vec!["p".to_string(), worker.public_key().to_string()]],
+        );
+
+        {
+            let mut hooks = trade_validation_receipt_test_hooks()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            hooks.fetch_event_by_id_results.push_back(Ok(listing_event));
+            hooks.fetch_event_by_id_results.push_back(Ok(request_event));
+            hooks
+                .fetch_event_by_id_results
+                .push_back(Ok(decision_event));
+        }
+
+        let error = handle_trade_validation_receipt_job_request(
+            &job,
+            &worker,
+            &client_for(&worker),
+            &deterministic_policy(),
+        )
+        .await
+        .expect_err("request backend override rejected");
+        assert!(matches!(error, TradeValidationReceiptJobError::Serde(_)));
+        let hooks = trade_validation_receipt_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert_eq!(hooks.fetch_event_by_id_results.len(), 3);
+        assert!(hooks.published_events.is_empty());
+    }
+
+    #[tokio::test]
+    async fn proof_job_rejects_disabled_policy_before_relay_fetch() {
+        let _guard = test_guard();
+        let worker = RadrootsNostrKeys::generate();
+        let requester = RadrootsNostrKeys::generate();
+        let buyer = RadrootsNostrKeys::generate();
+        let seller = RadrootsNostrKeys::generate();
+        let listing_event = listing_event(&seller);
+        let (request_event, decision_event) = signed_order_events(&buyer, &seller, &listing_event);
+        let job = job_request(
+            &requester,
+            &worker,
+            &listing_event,
+            &request_event,
+            &decision_event,
+            RadrootsSp1TradeProofMode::None,
+            None,
+        );
+
+        {
+            let mut hooks = trade_validation_receipt_test_hooks()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            hooks.fetch_event_by_id_results.push_back(Ok(listing_event));
+            hooks.fetch_event_by_id_results.push_back(Ok(request_event));
+            hooks
+                .fetch_event_by_id_results
+                .push_back(Ok(decision_event));
+        }
+
+        let error = handle_trade_validation_receipt_job_request(
+            &job,
+            &worker,
+            &client_for(&worker),
+            &TradeValidationReceiptProverPolicy::default(),
+        )
+        .await
+        .expect_err("disabled policy rejected");
+        assert!(matches!(
+            error,
+            TradeValidationReceiptJobError::ProverBackendDisabled
+        ));
+        let hooks = trade_validation_receipt_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert_eq!(hooks.fetch_event_by_id_results.len(), 3);
+        assert!(hooks.published_events.is_empty());
+    }
+
+    #[tokio::test]
     async fn proof_job_rejects_unverified_signed_event_evidence_before_publication() {
         let _guard = test_guard();
         let worker = RadrootsNostrKeys::generate();
@@ -1176,7 +1476,6 @@ mod tests {
             &listing_event,
             &request_event,
             &decision_event,
-            TradeValidationReceiptProverBackend::DeterministicNone,
             RadrootsSp1TradeProofMode::None,
             None,
         );
@@ -1193,10 +1492,14 @@ mod tests {
                 .push_back(Ok(decision_event));
         }
 
-        let error =
-            handle_trade_validation_receipt_job_request(&job, &worker, &client_for(&worker))
-                .await
-                .expect_err("signed evidence rejected");
+        let error = handle_trade_validation_receipt_job_request(
+            &job,
+            &worker,
+            &client_for(&worker),
+            &deterministic_policy(),
+        )
+        .await
+        .expect_err("signed evidence rejected");
         assert!(matches!(
             error,
             TradeValidationReceiptJobError::InvalidSignedEvent
@@ -1225,7 +1528,6 @@ mod tests {
             &listing_event,
             &request_event,
             &decision_event,
-            TradeValidationReceiptProverBackend::DeterministicNone,
             RadrootsSp1TradeProofMode::None,
             None,
         );
@@ -1251,10 +1553,14 @@ mod tests {
                 .push_back(Ok(decision_event));
         }
 
-        let error =
-            handle_trade_validation_receipt_job_request(&job, &worker, &client_for(&worker))
-                .await
-                .expect_err("identity mismatch rejected");
+        let error = handle_trade_validation_receipt_job_request(
+            &job,
+            &worker,
+            &client_for(&worker),
+            &deterministic_policy(),
+        )
+        .await
+        .expect_err("identity mismatch rejected");
         assert!(matches!(
             error,
             TradeValidationReceiptJobError::ExpectedReducerProgramHashMismatch
@@ -1282,7 +1588,6 @@ mod tests {
             &listing_event,
             &request_event,
             &decision_event,
-            TradeValidationReceiptProverBackend::LocalExecute,
             RadrootsSp1TradeProofMode::None,
             None,
         );
@@ -1298,10 +1603,20 @@ mod tests {
                 .push_back(Ok(decision_event));
         }
 
-        let error =
-            handle_trade_validation_receipt_job_request(&job, &worker, &client_for(&worker))
-                .await
-                .expect_err("backend unavailable");
+        let local_execute_policy = TradeValidationReceiptProverPolicy {
+            backend: TradeValidationReceiptProverBackend::LocalExecute,
+            proof_mode: RadrootsSp1TradeProofMode::None,
+            expected_sp1_program_hash: None,
+            expected_sp1_verifying_key_hash: None,
+        };
+        let error = handle_trade_validation_receipt_job_request(
+            &job,
+            &worker,
+            &client_for(&worker),
+            &local_execute_policy,
+        )
+        .await
+        .expect_err("backend unavailable");
         assert!(matches!(
             error,
             TradeValidationReceiptJobError::ProverBackendUnavailable("local_execute")
@@ -1339,10 +1654,14 @@ mod tests {
         .sign_with_keys(&requester)
         .expect("job");
 
-        let error =
-            handle_trade_validation_receipt_job_request(&job, &worker, &client_for(&worker))
-                .await
-                .expect_err("missing recipient");
+        let error = handle_trade_validation_receipt_job_request(
+            &job,
+            &worker,
+            &client_for(&worker),
+            &deterministic_policy(),
+        )
+        .await
+        .expect_err("missing recipient");
         assert!(matches!(
             error,
             TradeValidationReceiptJobError::MissingRecipient

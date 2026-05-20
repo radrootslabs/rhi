@@ -52,7 +52,8 @@ use crate::features::trade_listing::state::{
     TradeListingState, TradeListingStateError, TradeOrderState,
 };
 use crate::features::trade_validation_receipt::{
-    TradeValidationReceiptJobError, handle_trade_validation_receipt_job_request,
+    TradeValidationReceiptJobError, TradeValidationReceiptProverPolicy,
+    handle_trade_validation_receipt_job_request,
 };
 
 #[derive(Debug, Error)]
@@ -256,12 +257,13 @@ fn validate_listing_event_io(
     Ok(validated)
 }
 
-pub async fn handle_event(
+pub async fn handle_event_with_policy(
     event: RadrootsNostrEvent,
     _tags: Vec<RadrootsNostrTag>,
     keys: RadrootsNostrKeys,
     client: RadrootsNostrClient,
     state: Arc<tokio::sync::Mutex<TradeListingState>>,
+    proof_policy: &TradeValidationReceiptProverPolicy,
 ) -> Result<(), TradeListingDvmError> {
     let kind = match event.kind {
         RadrootsNostrKind::Custom(v) => u32::from(v),
@@ -280,7 +282,7 @@ pub async fn handle_event(
     }
 
     if kind == KIND_WORKER_TRADE_TRANSITION_PROOF_REQ {
-        return handle_trade_validation_receipt_job_request(&event, &keys, &client)
+        return handle_trade_validation_receipt_job_request(&event, &keys, &client, proof_policy)
             .await
             .map_err(map_trade_validation_receipt_job_error);
     }
@@ -477,6 +479,25 @@ pub async fn handle_event(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+pub async fn handle_event(
+    event: RadrootsNostrEvent,
+    tags: Vec<RadrootsNostrTag>,
+    keys: RadrootsNostrKeys,
+    client: RadrootsNostrClient,
+    state: Arc<tokio::sync::Mutex<TradeListingState>>,
+) -> Result<(), TradeListingDvmError> {
+    handle_event_with_policy(
+        event,
+        tags,
+        keys,
+        client,
+        state,
+        &TradeValidationReceiptProverPolicy::default(),
+    )
+    .await
 }
 
 fn map_trade_validation_receipt_job_error(

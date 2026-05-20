@@ -18,9 +18,10 @@ use tokio::time::sleep;
 use tracing::{info, warn};
 
 use crate::features::trade_listing::{
-    handlers::dvm::{TradeListingDvmError, handle_error, handle_event},
+    handlers::dvm::{TradeListingDvmError, handle_error, handle_event_with_policy},
     state::{SharedTradeListingState, TradeListingRuntime},
 };
+use crate::features::trade_validation_receipt::TradeValidationReceiptProverPolicy;
 
 #[cfg(test)]
 #[derive(Default)]
@@ -158,10 +159,13 @@ async fn handle_event_io(
     keys: RadrootsNostrKeys,
     client: RadrootsNostrClient,
     state: SharedTradeListingState,
+    proof_policy: TradeValidationReceiptProverPolicy,
 ) -> Result<(), TradeListingDvmError> {
     let result = match take_handle_event_hook() {
         Some(result) => result,
-        None => handle_event(event, resolved_tags, keys, client, state).await,
+        None => {
+            handle_event_with_policy(event, resolved_tags, keys, client, state, &proof_policy).await
+        }
     };
     result?;
     Ok(())
@@ -193,6 +197,7 @@ async fn process_event_notification(
     keys: RadrootsNostrKeys,
     client: RadrootsNostrClient,
     runtime: TradeListingRuntime,
+    proof_policy: TradeValidationReceiptProverPolicy,
 ) -> Result<()> {
     let created_at = u32::try_from(event.created_at.as_secs()).unwrap_or(u32::MAX);
     if should_delay_before_event_handle() {
@@ -218,6 +223,7 @@ async fn process_event_notification(
         keys,
         client.clone(),
         state.clone(),
+        proof_policy,
     )
     .await
     {
@@ -246,14 +252,16 @@ async fn dispatch_event_processing(
     keys: RadrootsNostrKeys,
     client: RadrootsNostrClient,
     runtime: TradeListingRuntime,
+    proof_policy: TradeValidationReceiptProverPolicy,
 ) -> Result<()> {
-    process_event_notification(event, keys, client, runtime).await
+    process_event_notification(event, keys, client, runtime, proof_policy).await
 }
 
 pub async fn subscriber(
     client: RadrootsNostrClient,
     keys: RadrootsNostrKeys,
     runtime: TradeListingRuntime,
+    proof_policy: TradeValidationReceiptProverPolicy,
     mut stop_rx: watch::Receiver<bool>,
 ) -> Result<()> {
     let subscribed_kinds = [KIND_LISTING, KIND_LISTING_DRAFT]
@@ -306,7 +314,8 @@ pub async fn subscriber(
                     let keys = keys.clone();
                     let client = client.clone();
                     let runtime = runtime.clone();
-                    dispatch_event_processing(event, keys, client, runtime).await?;
+                    let proof_policy = proof_policy.clone();
+                    dispatch_event_processing(event, keys, client, runtime, proof_policy).await?;
                 }
             }
         }
@@ -328,6 +337,7 @@ mod tests {
     };
     use crate::features::trade_listing::handlers::dvm::TradeListingDvmError;
     use crate::features::trade_listing::state::TradeListingRuntime;
+    use crate::features::trade_validation_receipt::TradeValidationReceiptProverPolicy;
     use radroots_nostr::error::RadrootsNostrTagsResolveError;
     use radroots_nostr::prelude::{
         RadrootsNostrClient, RadrootsNostrEventBuilder, RadrootsNostrKeys, RadrootsNostrKind,
@@ -368,6 +378,10 @@ mod tests {
         TradeListingRuntime::new()
     }
 
+    fn proof_policy() -> TradeValidationReceiptProverPolicy {
+        TradeValidationReceiptProverPolicy::default()
+    }
+
     #[test]
     fn notification_recv_result_mapping_covers_ok_and_err() {
         let keys = RadrootsNostrKeys::generate();
@@ -403,7 +417,8 @@ mod tests {
                 Vec::new(),
                 keys.clone(),
                 client.clone(),
-                state.clone()
+                state.clone(),
+                proof_policy()
             )
             .await,
             Err(TradeListingDvmError::UnsupportedKind)
@@ -419,7 +434,8 @@ mod tests {
                 Vec::new(),
                 keys.clone(),
                 client.clone(),
-                state
+                state,
+                proof_policy()
             )
             .await
             .is_ok()
@@ -444,7 +460,11 @@ mod tests {
         let keys = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(keys.clone());
         let (_tx, rx) = watch::channel(true);
-        assert!(subscriber(client, keys, shared_runtime(), rx).await.is_ok());
+        assert!(
+            subscriber(client, keys, shared_runtime(), proof_policy(), rx)
+                .await
+                .is_ok()
+        );
     }
 
     #[tokio::test]
@@ -461,15 +481,21 @@ mod tests {
 
         let (_tx_first, rx_first) = watch::channel(true);
         assert!(
-            subscriber(client.clone(), keys.clone(), runtime.clone(), rx_first)
-                .await
-                .is_ok()
+            subscriber(
+                client.clone(),
+                keys.clone(),
+                runtime.clone(),
+                proof_policy(),
+                rx_first
+            )
+            .await
+            .is_ok()
         );
         assert!(state.lock().await.is_listing_validated("addr"));
 
         let (_tx_second, rx_second) = watch::channel(true);
         assert!(
-            subscriber(client, keys, runtime.clone(), rx_second)
+            subscriber(client, keys, runtime.clone(), proof_policy(), rx_second)
                 .await
                 .is_ok()
         );
@@ -482,7 +508,7 @@ mod tests {
         let keys = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(keys.clone());
         let (_tx, rx) = watch::channel(false);
-        let err = subscriber(client, keys, shared_runtime(), rx)
+        let err = subscriber(client, keys, shared_runtime(), proof_policy(), rx)
             .await
             .expect_err("expected relay error");
         let msg = format!("{err:#}");
@@ -496,7 +522,13 @@ mod tests {
         let client = RadrootsNostrClient::new(keys.clone());
         let _ = client.add_relay("wss://relay.example.com").await;
         let (tx, rx) = watch::channel(false);
-        let join = tokio::spawn(subscriber(client, keys, shared_runtime(), rx));
+        let join = tokio::spawn(subscriber(
+            client,
+            keys,
+            shared_runtime(),
+            proof_policy(),
+            rx,
+        ));
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         let _ = tx.send(true);
         let _ = join.await;
@@ -514,7 +546,7 @@ mod tests {
             .notifications
             .push_back(Err(()));
         let (_tx, rx) = watch::channel(false);
-        let err = subscriber(client, keys, shared_runtime(), rx)
+        let err = subscriber(client, keys, shared_runtime(), proof_policy(), rx)
             .await
             .expect_err("closed notifications");
         let msg = format!("{err:#}");
@@ -535,7 +567,13 @@ mod tests {
             .push_back(Ok(scripted_shutdown_notification()));
 
         let (tx, rx) = watch::channel(false);
-        let join = tokio::spawn(subscriber(client, keys, shared_runtime(), rx));
+        let join = tokio::spawn(subscriber(
+            client,
+            keys,
+            shared_runtime(),
+            proof_policy(),
+            rx,
+        ));
         tokio::time::sleep(std::time::Duration::from_millis(30)).await;
         let _ = tx.send(true);
         let result = join.await.expect("subscriber join");
@@ -561,7 +599,13 @@ mod tests {
                 "resolve-failed".to_string(),
             )));
         let (tx, rx) = watch::channel(false);
-        let join = tokio::spawn(subscriber(client, keys, shared_runtime(), rx));
+        let join = tokio::spawn(subscriber(
+            client,
+            keys,
+            shared_runtime(),
+            proof_policy(),
+            rx,
+        ));
         tokio::time::sleep(std::time::Duration::from_millis(30)).await;
         let _ = tx.send(true);
         let _ = join.await;
@@ -597,7 +641,13 @@ mod tests {
         drop(hooks);
 
         let (tx, rx) = watch::channel(false);
-        let join = tokio::spawn(subscriber(client, keys, shared_runtime(), rx));
+        let join = tokio::spawn(subscriber(
+            client,
+            keys,
+            shared_runtime(),
+            proof_policy(),
+            rx,
+        ));
         tokio::time::sleep(std::time::Duration::from_millis(40)).await;
         let _ = tx.send(true);
         let _ = join.await;
@@ -628,7 +678,7 @@ mod tests {
         drop(hooks);
 
         let (_tx, rx) = watch::channel(false);
-        let err = subscriber(client, keys, shared_runtime(), rx)
+        let err = subscriber(client, keys, shared_runtime(), proof_policy(), rx)
             .await
             .expect_err("notifications closed");
         let msg = format!("{err:#}");
@@ -656,7 +706,7 @@ mod tests {
         hooks.handle_error_results.push_back(Ok(()));
         drop(hooks);
 
-        process_event_notification(event, keys, client, runtime.clone())
+        process_event_notification(event, keys, client, runtime.clone(), proof_policy())
             .await
             .expect("notification");
 
@@ -688,7 +738,7 @@ mod tests {
             .push_back(Err(TradeListingDvmError::InvalidOrder));
         drop(hooks);
 
-        process_event_notification(event, keys, client, runtime)
+        process_event_notification(event, keys, client, runtime, proof_policy())
             .await
             .expect("processing");
     }
@@ -718,10 +768,16 @@ mod tests {
         hooks.handle_error_results.push_back(Ok(()));
         drop(hooks);
 
-        process_event_notification(event_ok, keys.clone(), client.clone(), runtime.clone())
-            .await
-            .expect("ok path");
-        process_event_notification(event_err, keys, client, runtime)
+        process_event_notification(
+            event_ok,
+            keys.clone(),
+            client.clone(),
+            runtime.clone(),
+            proof_policy(),
+        )
+        .await
+        .expect("ok path");
+        process_event_notification(event_err, keys, client, runtime, proof_policy())
             .await
             .expect("error path");
     }

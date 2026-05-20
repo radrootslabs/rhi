@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use crate::features::trade_listing::state::{TradeListingRuntime, TradeListingRuntimeConfig};
 use crate::identity_storage::load_service_identity;
-use crate::rhi::{Rhi, start_subscriber};
+use crate::rhi::{Rhi, start_subscriber_with_policy};
 use radroots_identity::RadrootsIdentity;
 use radroots_nostr::prelude::{
     RadrootsNostrApplicationHandlerSpec, radroots_nostr_bootstrap_service_presence,
@@ -122,7 +122,11 @@ pub async fn run_rhi(settings: &config::Settings, args: &cli_args) -> Result<()>
     })
     .await?;
 
-    let rhi = Rhi::with_trade_listing_runtime(keys.clone(), trade_listing_runtime);
+    let rhi = Rhi::with_trade_listing_runtime_and_policy(
+        keys.clone(),
+        trade_listing_runtime,
+        settings.config.trade_validation_receipt.clone(),
+    );
     let client = rhi.client.clone();
     let service_cfg = settings.config.service.clone();
     let relays = service_cfg.relays.clone();
@@ -158,10 +162,11 @@ pub async fn run_rhi(settings: &config::Settings, args: &cli_args) -> Result<()>
         return Ok(());
     }
 
-    let handle = start_subscriber(
+    let handle = start_subscriber_with_policy(
         client.clone(),
         keys.clone(),
         rhi.trade_listing_runtime.clone(),
+        rhi.trade_validation_receipt_policy.clone(),
         settings.config.subscriber.backoff.clone(),
     )
     .await;
@@ -241,6 +246,8 @@ mod tests {
                         ..Default::default()
                     },
                 },
+                trade_validation_receipt:
+                    crate::features::trade_validation_receipt::TradeValidationReceiptProverPolicy::default(),
             },
         }
     }
