@@ -404,6 +404,7 @@ pub async fn handle_trade_validation_receipt_job_request(
         },
         RadrootsValidationReceiptExpectedBinding {
             event_set_root: Some(&receipt.event_set_root),
+            listing_event_id: Some(&request.listing_event_id),
             order_id: Some(&witness.request.order_id),
             program_hash: prover_policy.expected_sp1_program_hash.as_deref(),
             proof_system: Some(receipt.proof.system),
