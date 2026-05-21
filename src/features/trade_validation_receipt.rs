@@ -194,6 +194,9 @@ impl TradeValidationReceiptProverPolicy {
                 if self.proof_mode == RadrootsSp1TradeProofMode::None {
                     return Err(TradeValidationReceiptJobError::ProverBackendRequiresSp1Proof);
                 }
+                if self.proof_mode != RadrootsSp1TradeProofMode::Core {
+                    return Err(TradeValidationReceiptJobError::UnsupportedProofMode);
+                }
                 if self.expected_sp1_program_hash.is_none()
                     || self.expected_sp1_verifying_key_hash.is_none()
                 {
@@ -1997,6 +2000,23 @@ mod tests {
             Err(TradeValidationReceiptJobError::RemoteHttpInvalidConfig(
                 "auth.endpoint_url_scheme"
             ))
+        ));
+    }
+
+    #[cfg(feature = "sp1_verify")]
+    #[test]
+    fn remote_http_policy_accepts_core_mode_when_configured() {
+        assert!(remote_http_policy().validate().is_ok());
+    }
+
+    #[test]
+    fn remote_http_policy_rejects_non_core_sp1_mode_before_remote_work() {
+        let mut policy = remote_http_policy();
+        policy.proof_mode = RadrootsSp1TradeProofMode::Compressed;
+
+        assert!(matches!(
+            policy.validate(),
+            Err(TradeValidationReceiptJobError::UnsupportedProofMode)
         ));
     }
 
