@@ -2377,6 +2377,40 @@ mod tests {
 
     #[cfg(feature = "sp1_proving")]
     #[tokio::test]
+    async fn remote_http_prove_rejects_oversized_content_length_before_publish() {
+        let endpoint = remote_http_local_response_url(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+        );
+        let mut policy = remote_http_policy();
+        {
+            let remote_http = policy.remote_http.as_mut().expect("remote config");
+            remote_http.endpoint_url = endpoint;
+            remote_http.max_response_bytes = 1;
+        }
+        let error = run_remote_http_job_with_policy(
+            policy,
+            Vec::new(),
+            Vec::new(),
+            vec![Err(TradeValidationReceiptJobError::InvalidJobRequest)],
+        )
+        .await
+        .expect_err("oversized content-length response");
+
+        assert!(matches!(
+            error,
+            TradeValidationReceiptJobError::RemoteHttpResponseTooLarge
+        ));
+        assert!(
+            trade_validation_receipt_test_hooks()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .published_events
+                .is_empty()
+        );
+    }
+
+    #[cfg(feature = "sp1_proving")]
+    #[tokio::test]
     async fn remote_http_prove_rejects_oversized_http_response_before_publish() {
         let endpoint = remote_http_local_response_url(
             "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n2\r\n{}\r\n0\r\n\r\n",
