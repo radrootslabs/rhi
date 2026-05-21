@@ -24,7 +24,7 @@ radroots_trade = { path = "../lib/crates/trade" }
 
 [features]
 default = []
-sp1_proving = ["radroots_sp1_host_trade/expensive_proofs"]
+sp1_proving = ["radroots_sp1_host_trade/sp1_proving"]
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
