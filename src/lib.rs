@@ -7,6 +7,7 @@ pub mod features;
 pub mod identity_storage;
 pub mod paths;
 pub mod proof_smoke;
+pub mod remote_prove;
 pub mod rhi;
 
 pub use cli::Args as cli_args;

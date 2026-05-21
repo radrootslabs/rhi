@@ -6,8 +6,10 @@ use anyhow::Result;
 #[cfg(not(test))]
 use clap::Parser;
 #[cfg(not(test))]
-use rhi::proof_smoke;
+use rhi::cli::Command;
 use rhi::{cli_args, config, paths, run_rhi};
+#[cfg(not(test))]
+use rhi::{proof_smoke, remote_prove};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use tracing::info;
@@ -210,7 +212,10 @@ async fn run() -> Result<()> {
     {
         let args = cli_args::try_parse().map_err(radroots_runtime::RuntimeCliError::from)?;
         if let Some(command) = args.command {
-            return proof_smoke::run_cli_command(command).await;
+            return match command {
+                Command::ProofSmoke { .. } => proof_smoke::run_cli_command(command).await,
+                Command::RemoteProve { .. } => remote_prove::run_cli_command(command).await,
+            };
         }
     }
 

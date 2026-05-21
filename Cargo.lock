@@ -3404,6 +3404,7 @@ version = "0.1.0-alpha.2"
 dependencies = [
  "base64 0.22.1",
  "bincode",
+ "futures",
  "radroots_sp1_guest_trade",
  "radroots_trade",
  "serde",
@@ -4741,6 +4742,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "sp1-cuda"
+version = "6.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b00f787fa4b5cbd29e9baddee1e590c5e689333f2b01e5f704293b7f6f17570c"
+dependencies = [
+ "bincode",
+ "bytes",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sp1-core-executor",
+ "sp1-core-machine",
+ "sp1-hypercube",
+ "sp1-primitives",
+ "sp1-prover",
+ "sp1-prover-types",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "sp1-curves"
 version = "6.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5105,6 +5128,7 @@ dependencies = [
  "sp1-core-executor",
  "sp1-core-executor-runner",
  "sp1-core-machine",
+ "sp1-cuda",
  "sp1-hypercube",
  "sp1-primitives",
  "sp1-prover",

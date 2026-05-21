@@ -37,11 +37,11 @@ use radroots_trade::validation_receipt::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-#[cfg(feature = "sp1_proving")]
+#[cfg(feature = "sp1_verify")]
 use std::time::Duration;
 use thiserror::Error;
 
-#[cfg(feature = "sp1_proving")]
+#[cfg(feature = "sp1_verify")]
 use radroots_sp1_host_trade::{
     RADROOTS_SP1_TRADE_REMOTE_PROVER_SCHEMA_VERSION, RADROOTS_SP1_TRADE_SP1_VERSION_LINE,
     RadrootsSp1TradeRemoteProverRequest, RadrootsSp1TradeRemoteProverResponse,
@@ -205,7 +205,7 @@ impl TradeValidationReceiptProverPolicy {
                     .ok_or(TradeValidationReceiptJobError::RemoteHttpConfigRequired)?;
                 remote_http.validate()?;
                 remote_http_auth_token(remote_http)?;
-                if !cfg!(feature = "sp1_proving") {
+                if !cfg!(feature = "sp1_verify") {
                     return Err(TradeValidationReceiptJobError::ProverBackendUnavailable(
                         self.backend.as_str(),
                     ));
@@ -835,7 +835,7 @@ async fn run_local_cpu_prove_backend(
     })
 }
 
-#[cfg(feature = "sp1_proving")]
+#[cfg(feature = "sp1_verify")]
 async fn run_remote_http_prove_backend(
     witness: &RadrootsSp1TradeOrderAcceptanceWitness,
     policy: &TradeValidationReceiptProverPolicy,
@@ -862,6 +862,7 @@ async fn run_remote_http_prove_backend(
         witness: witness.clone(),
         expected_sp1_program_hash: expected_sp1_program_hash.to_owned(),
         expected_sp1_verifying_key_hash: expected_sp1_verifying_key_hash.to_owned(),
+        expected_public_values_hash: execution.public_values_hash.clone(),
         expected_reducer_program_hash: RADROOTS_SP1_TRADE_REDUCER_PROGRAM_HASH.to_string(),
         expected_protocol_version: RADROOTS_SP1_TRADE_PROTOCOL_VERSION.to_string(),
         expected_witness_version: RADROOTS_SP1_TRADE_WITNESS_VERSION,
@@ -888,7 +889,7 @@ async fn run_remote_http_prove_backend(
     })
 }
 
-#[cfg(not(feature = "sp1_proving"))]
+#[cfg(not(feature = "sp1_verify"))]
 async fn run_remote_http_prove_backend(
     _witness: &RadrootsSp1TradeOrderAcceptanceWitness,
     _policy: &TradeValidationReceiptProverPolicy,
@@ -898,7 +899,7 @@ async fn run_remote_http_prove_backend(
     ))
 }
 
-#[cfg(feature = "sp1_proving")]
+#[cfg(feature = "sp1_verify")]
 fn remote_http_request_id(
     witness: &RadrootsSp1TradeOrderAcceptanceWitness,
 ) -> Result<String, TradeValidationReceiptJobError> {
@@ -906,7 +907,7 @@ fn remote_http_request_id(
     Ok(hash_bytes("radroots:rhi-remote-proof-request:v1", &bytes))
 }
 
-#[cfg(feature = "sp1_proving")]
+#[cfg(feature = "sp1_verify")]
 async fn remote_http_completed_response(
     config: &TradeValidationReceiptRemoteHttpProverConfig,
     request: &RadrootsSp1TradeRemoteProverRequest,
@@ -945,7 +946,7 @@ async fn remote_http_completed_response(
     Err(TradeValidationReceiptJobError::RemoteHttpTimeout)
 }
 
-#[cfg(feature = "sp1_proving")]
+#[cfg(feature = "sp1_verify")]
 fn remote_http_validate_response_identity(
     response: &RadrootsSp1TradeRemoteProverResponse,
     request: &RadrootsSp1TradeRemoteProverRequest,
@@ -963,7 +964,7 @@ fn remote_http_validate_response_identity(
     Ok(())
 }
 
-#[cfg(feature = "sp1_proving")]
+#[cfg(feature = "sp1_verify")]
 fn remote_http_terminal_error(
     status: &'static str,
     response: RadrootsSp1TradeRemoteProverResponse,
@@ -979,7 +980,7 @@ fn remote_http_terminal_error(
     }
 }
 
-#[cfg(feature = "sp1_proving")]
+#[cfg(feature = "sp1_verify")]
 async fn remote_http_verified_artifact(
     execution: &radroots_sp1_guest_trade::RadrootsSp1TradePublicValuesExecution,
     policy: &TradeValidationReceiptProverPolicy,
@@ -1035,7 +1036,7 @@ async fn remote_http_verified_artifact(
     Ok(resolved.artifact)
 }
 
-#[cfg(feature = "sp1_proving")]
+#[cfg(feature = "sp1_verify")]
 async fn verify_remote_proof_artifact_io(
     execution: &radroots_sp1_guest_trade::RadrootsSp1TradePublicValuesExecution,
     resolved: &RadrootsSp1TradeResolvedProofArtifact,
@@ -1052,7 +1053,7 @@ async fn verify_remote_proof_artifact_io(
     Ok(())
 }
 
-#[cfg(feature = "sp1_proving")]
+#[cfg(feature = "sp1_verify")]
 async fn remote_http_post_json_io(
     config: &TradeValidationReceiptRemoteHttpProverConfig,
     url: &str,
@@ -1071,7 +1072,7 @@ async fn remote_http_post_json_io(
     remote_http_response_json(config, builder.send().await).await
 }
 
-#[cfg(feature = "sp1_proving")]
+#[cfg(feature = "sp1_verify")]
 async fn remote_http_get_json_io(
     config: &TradeValidationReceiptRemoteHttpProverConfig,
     url: &str,
@@ -1090,7 +1091,7 @@ async fn remote_http_get_json_io(
     remote_http_response_json(config, builder.send().await).await
 }
 
-#[cfg(feature = "sp1_proving")]
+#[cfg(feature = "sp1_verify")]
 fn remote_http_client(
     config: &TradeValidationReceiptRemoteHttpProverConfig,
 ) -> Result<reqwest::Client, TradeValidationReceiptJobError> {
@@ -1100,7 +1101,7 @@ fn remote_http_client(
         .map_err(|error| TradeValidationReceiptJobError::RemoteHttpTransport(error.to_string()))
 }
 
-#[cfg(feature = "sp1_proving")]
+#[cfg(feature = "sp1_verify")]
 async fn remote_http_response_json(
     config: &TradeValidationReceiptRemoteHttpProverConfig,
     response: Result<reqwest::Response, reqwest::Error>,
@@ -1133,7 +1134,7 @@ async fn remote_http_response_json(
         .map_err(TradeValidationReceiptJobError::Serde)
 }
 
-#[cfg(feature = "sp1_proving")]
+#[cfg(feature = "sp1_verify")]
 fn remote_http_status_url(
     config: &TradeValidationReceiptRemoteHttpProverConfig,
     response: &RadrootsSp1TradeRemoteProverResponse,
@@ -1176,7 +1177,7 @@ fn remote_http_status_url(
     ))
 }
 
-#[cfg(feature = "sp1_proving")]
+#[cfg(feature = "sp1_verify")]
 fn remote_http_same_origin(base: &reqwest::Url, candidate: &reqwest::Url) -> bool {
     base.scheme() == candidate.scheme()
         && base.host_str() == candidate.host_str()
@@ -1361,11 +1362,13 @@ struct TradeValidationReceiptTestHooks {
         std::collections::VecDeque<Result<RadrootsNostrEvent, TradeValidationReceiptJobError>>,
     publish_event_results:
         std::collections::VecDeque<Result<String, TradeValidationReceiptJobError>>,
-    #[cfg(feature = "sp1_proving")]
+    #[cfg(feature = "sp1_verify")]
     remote_http_results: std::collections::VecDeque<
         Result<RadrootsSp1TradeRemoteProverResponse, TradeValidationReceiptJobError>,
     >,
-    #[cfg(feature = "sp1_proving")]
+    #[cfg(feature = "sp1_verify")]
+    remote_http_requests: Vec<RadrootsSp1TradeRemoteProverRequest>,
+    #[cfg(feature = "sp1_verify")]
     remote_proof_verification_results:
         std::collections::VecDeque<Result<(), TradeValidationReceiptJobError>>,
     published_events: Vec<PublishedEventParts>,
@@ -1410,16 +1413,21 @@ fn pop_publish_event_hook(
     hooks.publish_event_results.pop_front()
 }
 
-#[cfg(all(test, feature = "sp1_proving"))]
+#[cfg(all(test, feature = "sp1_verify"))]
 fn pop_remote_http_response_hook(
     request: &RadrootsSp1TradeRemoteProverRequest,
 ) -> Option<Result<RadrootsSp1TradeRemoteProverResponse, TradeValidationReceiptJobError>> {
+    trade_validation_receipt_test_hooks()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remote_http_requests
+        .push(request.clone());
     pop_remote_http_response_hook_without_request().map(|result| {
         result.and_then(|response| remote_http_test_response_for_request(request, response))
     })
 }
 
-#[cfg(all(test, feature = "sp1_proving"))]
+#[cfg(all(test, feature = "sp1_verify"))]
 fn pop_remote_http_response_hook_without_request()
 -> Option<Result<RadrootsSp1TradeRemoteProverResponse, TradeValidationReceiptJobError>> {
     trade_validation_receipt_test_hooks()
@@ -1429,7 +1437,7 @@ fn pop_remote_http_response_hook_without_request()
         .pop_front()
 }
 
-#[cfg(all(test, feature = "sp1_proving"))]
+#[cfg(all(test, feature = "sp1_verify"))]
 fn remote_http_test_response_for_request(
     request: &RadrootsSp1TradeRemoteProverRequest,
     mut response: RadrootsSp1TradeRemoteProverResponse,
@@ -1470,7 +1478,7 @@ fn remote_http_test_response_for_request(
     Ok(response)
 }
 
-#[cfg(all(test, feature = "sp1_proving"))]
+#[cfg(all(test, feature = "sp1_verify"))]
 fn pop_remote_proof_verification_hook() -> Option<Result<(), TradeValidationReceiptJobError>> {
     trade_validation_receipt_test_hooks()
         .lock()
@@ -1515,13 +1523,13 @@ mod tests {
         RADROOTS_SP1_TRADE_PROTOCOL_VERSION, RADROOTS_SP1_TRADE_REDUCER_PROGRAM_HASH,
         RadrootsSp1TradeInventoryBinWitness,
     };
-    #[cfg(feature = "sp1_proving")]
+    #[cfg(feature = "sp1_verify")]
     use radroots_sp1_host_trade::RadrootsSp1TradeHostError;
     use radroots_sp1_host_trade::RadrootsSp1TradeProofMode;
-    #[cfg(feature = "sp1_proving")]
+    #[cfg(feature = "sp1_verify")]
     use radroots_sp1_host_trade::{
-        RADROOTS_SP1_TRADE_REMOTE_PROVER_SCHEMA_VERSION, RadrootsSp1TradeRemoteProverResponse,
-        RadrootsSp1TradeRemoteProverStatus,
+        RADROOTS_SP1_TRADE_REMOTE_PROVER_SCHEMA_VERSION, RadrootsSp1TradeRemoteProverRequest,
+        RadrootsSp1TradeRemoteProverResponse, RadrootsSp1TradeRemoteProverStatus,
     };
     use radroots_trade::validation_receipt::{
         RadrootsValidationReceiptExpectedBinding, RadrootsValidationReceiptProofSystem,
@@ -1748,7 +1756,7 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "sp1_proving")]
+    #[cfg(feature = "sp1_verify")]
     fn remote_response(
         status: RadrootsSp1TradeRemoteProverStatus,
     ) -> RadrootsSp1TradeRemoteProverResponse {
@@ -1771,7 +1779,7 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "sp1_proving")]
+    #[cfg(feature = "sp1_verify")]
     fn remote_http_local_response_url(response: &'static str) -> String {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("test listener");
         let addr = listener.local_addr().expect("test listener address");
@@ -1784,7 +1792,7 @@ mod tests {
         format!("http://{addr}/prove")
     }
 
-    #[cfg(feature = "sp1_proving")]
+    #[cfg(feature = "sp1_verify")]
     async fn run_remote_http_job(
         remote_http_results: Vec<
             Result<RadrootsSp1TradeRemoteProverResponse, TradeValidationReceiptJobError>,
@@ -1801,7 +1809,7 @@ mod tests {
         .await
     }
 
-    #[cfg(feature = "sp1_proving")]
+    #[cfg(feature = "sp1_verify")]
     async fn run_remote_http_job_with_policy(
         policy: TradeValidationReceiptProverPolicy,
         remote_http_results: Vec<
@@ -1810,6 +1818,31 @@ mod tests {
         remote_proof_verification_results: Vec<Result<(), TradeValidationReceiptJobError>>,
         publish_results: Vec<Result<String, TradeValidationReceiptJobError>>,
     ) -> Result<Vec<super::PublishedEventParts>, TradeValidationReceiptJobError> {
+        run_remote_http_job_with_policy_and_requests(
+            policy,
+            remote_http_results,
+            remote_proof_verification_results,
+            publish_results,
+        )
+        .await
+        .map(|(published, _)| published)
+    }
+
+    #[cfg(feature = "sp1_verify")]
+    async fn run_remote_http_job_with_policy_and_requests(
+        policy: TradeValidationReceiptProverPolicy,
+        remote_http_results: Vec<
+            Result<RadrootsSp1TradeRemoteProverResponse, TradeValidationReceiptJobError>,
+        >,
+        remote_proof_verification_results: Vec<Result<(), TradeValidationReceiptJobError>>,
+        publish_results: Vec<Result<String, TradeValidationReceiptJobError>>,
+    ) -> Result<
+        (
+            Vec<super::PublishedEventParts>,
+            Vec<RadrootsSp1TradeRemoteProverRequest>,
+        ),
+        TradeValidationReceiptJobError,
+    > {
         let _guard = test_guard();
         let worker = RadrootsNostrKeys::generate();
         let requester = RadrootsNostrKeys::generate();
@@ -1847,11 +1880,13 @@ mod tests {
         handle_trade_validation_receipt_job_request(&job, &worker, &client_for(&worker), &policy)
             .await?;
 
-        Ok(trade_validation_receipt_test_hooks()
+        let hooks = trade_validation_receipt_test_hooks()
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .published_events
-            .clone())
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        Ok((
+            hooks.published_events.clone(),
+            hooks.remote_http_requests.clone(),
+        ))
     }
 
     #[test]
@@ -1965,10 +2000,11 @@ mod tests {
         ));
     }
 
-    #[cfg(feature = "sp1_proving")]
+    #[cfg(feature = "sp1_verify")]
     #[tokio::test]
     async fn remote_http_prove_publishes_only_after_remote_artifact_verification() {
-        let published = run_remote_http_job(
+        let (published, requests) = run_remote_http_job_with_policy_and_requests(
+            remote_http_policy(),
             vec![Ok(remote_response(
                 RadrootsSp1TradeRemoteProverStatus::Completed,
             ))],
@@ -1995,10 +2031,15 @@ mod tests {
             result.sp1_execute_public_values_hash.as_deref(),
             Some(result.public_values_hash.as_str())
         );
+        assert_eq!(requests.len(), 1);
+        assert_eq!(
+            requests[0].expected_public_values_hash,
+            result.public_values_hash
+        );
         assert!(result.cryptographic_proof_verified);
     }
 
-    #[cfg(feature = "sp1_proving")]
+    #[cfg(feature = "sp1_verify")]
     #[tokio::test]
     async fn remote_http_prove_polls_running_until_completed() {
         let mut policy = remote_http_policy();
@@ -2036,7 +2077,7 @@ mod tests {
         assert!(result.cryptographic_proof_verified);
     }
 
-    #[cfg(feature = "sp1_proving")]
+    #[cfg(feature = "sp1_verify")]
     #[tokio::test]
     async fn remote_http_prove_accepts_same_origin_status_url() {
         let mut policy = remote_http_policy();
@@ -2064,7 +2105,7 @@ mod tests {
         assert_eq!(published.len(), 2);
     }
 
-    #[cfg(feature = "sp1_proving")]
+    #[cfg(feature = "sp1_verify")]
     #[tokio::test]
     async fn remote_http_prove_rejects_cross_origin_status_url() {
         let mut accepted = remote_response(RadrootsSp1TradeRemoteProverStatus::Accepted);
@@ -2090,7 +2131,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "sp1_proving")]
+    #[cfg(feature = "sp1_verify")]
     #[tokio::test]
     async fn remote_http_prove_rejects_absolute_or_scheme_relative_status_path() {
         let mut absolute = remote_response(RadrootsSp1TradeRemoteProverStatus::Accepted);
@@ -2131,7 +2172,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "sp1_proving")]
+    #[cfg(feature = "sp1_verify")]
     #[tokio::test]
     async fn remote_http_prove_rejects_polling_request_id_mismatch_before_next_poll() {
         let mut accepted = remote_response(RadrootsSp1TradeRemoteProverStatus::Accepted);
@@ -2163,7 +2204,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "sp1_proving")]
+    #[cfg(feature = "sp1_verify")]
     #[tokio::test]
     async fn remote_http_prove_does_not_publish_when_verification_fails() {
         let error = run_remote_http_job(
@@ -2193,7 +2234,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "sp1_proving")]
+    #[cfg(feature = "sp1_verify")]
     #[tokio::test]
     async fn remote_http_prove_does_not_publish_when_reference_digest_mismatches() {
         let mut response = remote_response(RadrootsSp1TradeRemoteProverStatus::Completed);
@@ -2221,7 +2262,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "sp1_proving")]
+    #[cfg(feature = "sp1_verify")]
     #[tokio::test]
     async fn remote_http_prove_does_not_publish_when_sp1_identity_mismatches() {
         let mut response = remote_response(RadrootsSp1TradeRemoteProverStatus::Completed);
@@ -2247,7 +2288,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "sp1_proving")]
+    #[cfg(feature = "sp1_verify")]
     #[tokio::test]
     async fn remote_http_prove_does_not_publish_when_public_values_mismatch() {
         let mut response = remote_response(RadrootsSp1TradeRemoteProverStatus::Completed);
@@ -2273,7 +2314,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "sp1_proving")]
+    #[cfg(feature = "sp1_verify")]
     #[tokio::test]
     async fn remote_http_prove_does_not_publish_terminal_failed_or_rejected() {
         let mut failed = remote_response(RadrootsSp1TradeRemoteProverStatus::Failed);
@@ -2327,7 +2368,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "sp1_proving")]
+    #[cfg(feature = "sp1_verify")]
     #[tokio::test]
     async fn remote_http_prove_does_not_publish_timeout_or_oversized_response() {
         let mut accepted = remote_response(RadrootsSp1TradeRemoteProverStatus::Accepted);
@@ -2375,7 +2416,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "sp1_proving")]
+    #[cfg(feature = "sp1_verify")]
     #[tokio::test]
     async fn remote_http_prove_rejects_oversized_content_length_before_publish() {
         let endpoint = remote_http_local_response_url(
@@ -2409,7 +2450,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "sp1_proving")]
+    #[cfg(feature = "sp1_verify")]
     #[tokio::test]
     async fn remote_http_prove_rejects_oversized_http_response_before_publish() {
         let endpoint = remote_http_local_response_url(

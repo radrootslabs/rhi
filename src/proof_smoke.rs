@@ -86,7 +86,9 @@ pub enum RhiProofSmokeError {
 }
 
 pub async fn run_cli_command(command: Command) -> anyhow::Result<()> {
-    let Command::ProofSmoke { input, output } = command;
+    let Command::ProofSmoke { input, output } = command else {
+        return Err(anyhow::anyhow!("proof-smoke command expected"));
+    };
     let request_bytes = read_input(input.as_deref())?;
     let response = handle_request_bytes(&request_bytes).await;
     let response_bytes = serde_json::to_vec_pretty(&response)?;
@@ -288,7 +290,7 @@ fn capabilities() -> Vec<String> {
     values
 }
 
-fn order_acceptance_tiny_witness() -> RadrootsSp1TradeOrderAcceptanceWitness {
+pub(crate) fn order_acceptance_tiny_witness() -> RadrootsSp1TradeOrderAcceptanceWitness {
     RadrootsSp1TradeOrderAcceptanceWitness {
         witness_version: RADROOTS_SP1_TRADE_WITNESS_VERSION,
         proof_target: RADROOTS_SP1_TRADE_ORDER_ACCEPTANCE_PROOF_TARGET.to_string(),

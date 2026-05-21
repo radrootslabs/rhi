@@ -27,4 +27,16 @@ pub enum Command {
         #[arg(long)]
         output: Option<PathBuf>,
     },
+    #[command(
+        name = "remote-prove",
+        about = "Run a provider-neutral remote proof request"
+    )]
+    RemoteProve {
+        #[arg(long)]
+        input: Option<PathBuf>,
+        #[arg(long)]
+        output: Option<PathBuf>,
+        #[arg(long, default_value = "cpu", value_parser = ["cpu", "cuda"])]
+        proof_engine: String,
+    },
 }
