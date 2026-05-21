@@ -29,7 +29,7 @@ use radroots_sp1_guest_trade::{
 use radroots_sp1_host_trade::{
     RadrootsSp1TradeHostError, RadrootsSp1TradeProofBundle, RadrootsSp1TradeProofMode,
     generate_order_acceptance_proof, validation_receipt_for_order_acceptance_proof,
-    verify_order_acceptance_proof_artifact,
+    verify_order_acceptance_proof_artifact_structure,
 };
 use radroots_trade::validation_receipt::{
     RadrootsValidationReceiptError, RadrootsValidationReceiptExpectedBinding,
@@ -37,7 +37,16 @@ use radroots_trade::validation_receipt::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+#[cfg(feature = "sp1_proving")]
+use std::time::Duration;
 use thiserror::Error;
+
+#[cfg(feature = "sp1_proving")]
+use radroots_sp1_host_trade::{
+    RADROOTS_SP1_TRADE_REMOTE_PROVER_SCHEMA_VERSION, RADROOTS_SP1_TRADE_SP1_VERSION_LINE,
+    RadrootsSp1TradeRemoteProverRequest, RadrootsSp1TradeRemoteProverResponse,
+    RadrootsSp1TradeRemoteProverStatus, RadrootsSp1TradeResolvedProofArtifact,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -90,6 +99,8 @@ pub struct TradeValidationReceiptProverPolicy {
     pub expected_sp1_program_hash: Option<String>,
     #[serde(default)]
     pub expected_sp1_verifying_key_hash: Option<String>,
+    #[serde(default)]
+    pub remote_http: Option<TradeValidationReceiptRemoteHttpProverConfig>,
 }
 
 impl Default for TradeValidationReceiptProverPolicy {
@@ -105,6 +116,7 @@ impl TradeValidationReceiptProverPolicy {
             proof_mode: RadrootsSp1TradeProofMode::None,
             expected_sp1_program_hash: None,
             expected_sp1_verifying_key_hash: None,
+            remote_http: None,
         }
     }
 
@@ -114,6 +126,7 @@ impl TradeValidationReceiptProverPolicy {
             proof_mode: RadrootsSp1TradeProofMode::None,
             expected_sp1_program_hash: None,
             expected_sp1_verifying_key_hash: None,
+            remote_http: None,
         }
     }
 
@@ -174,10 +187,31 @@ impl TradeValidationReceiptProverPolicy {
                 }
                 Ok(())
             }
-            TradeValidationReceiptProverBackend::LocalCudaProve
-            | TradeValidationReceiptProverBackend::RemoteHttpProve => Err(
+            TradeValidationReceiptProverBackend::LocalCudaProve => Err(
                 TradeValidationReceiptJobError::ProverBackendUnavailable(self.backend.as_str()),
             ),
+            TradeValidationReceiptProverBackend::RemoteHttpProve => {
+                if self.proof_mode == RadrootsSp1TradeProofMode::None {
+                    return Err(TradeValidationReceiptJobError::ProverBackendRequiresSp1Proof);
+                }
+                if self.expected_sp1_program_hash.is_none()
+                    || self.expected_sp1_verifying_key_hash.is_none()
+                {
+                    return Err(TradeValidationReceiptJobError::Sp1IdentityPolicyRequired);
+                }
+                let remote_http = self
+                    .remote_http
+                    .as_ref()
+                    .ok_or(TradeValidationReceiptJobError::RemoteHttpConfigRequired)?;
+                remote_http.validate()?;
+                remote_http_auth_token(remote_http)?;
+                if !cfg!(feature = "sp1_proving") {
+                    return Err(TradeValidationReceiptJobError::ProverBackendUnavailable(
+                        self.backend.as_str(),
+                    ));
+                }
+                Ok(())
+            }
         }
     }
 
@@ -203,6 +237,93 @@ impl TradeValidationReceiptProverPolicy {
             return Err(TradeValidationReceiptJobError::ExpectedSp1VerifyingKeyHashMismatch);
         }
         Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TradeValidationReceiptRemoteHttpProverConfig {
+    pub endpoint_url: String,
+    pub auth: TradeValidationReceiptRemoteHttpAuth,
+    pub request_timeout_ms: u64,
+    pub poll_interval_ms: u64,
+    pub max_poll_attempts: u32,
+    pub max_response_bytes: usize,
+}
+
+impl TradeValidationReceiptRemoteHttpProverConfig {
+    pub fn validate(&self) -> Result<(), TradeValidationReceiptJobError> {
+        if self.endpoint_url.trim().is_empty() {
+            return Err(TradeValidationReceiptJobError::RemoteHttpInvalidConfig(
+                "endpoint_url",
+            ));
+        }
+        let url = reqwest::Url::parse(self.endpoint_url.as_str())
+            .map_err(|_| TradeValidationReceiptJobError::RemoteHttpInvalidConfig("endpoint_url"))?;
+        if url.scheme() != "http" && url.scheme() != "https" {
+            return Err(TradeValidationReceiptJobError::RemoteHttpInvalidConfig(
+                "endpoint_url",
+            ));
+        }
+        if self.request_timeout_ms == 0 {
+            return Err(TradeValidationReceiptJobError::RemoteHttpInvalidConfig(
+                "request_timeout_ms",
+            ));
+        }
+        if self.poll_interval_ms == 0 {
+            return Err(TradeValidationReceiptJobError::RemoteHttpInvalidConfig(
+                "poll_interval_ms",
+            ));
+        }
+        if self.max_response_bytes == 0 {
+            return Err(TradeValidationReceiptJobError::RemoteHttpInvalidConfig(
+                "max_response_bytes",
+            ));
+        }
+        self.auth.validate()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum TradeValidationReceiptRemoteHttpAuth {
+    NoAuth,
+    BearerTokenEnv { env_var: String },
+}
+
+impl TradeValidationReceiptRemoteHttpAuth {
+    fn validate(&self) -> Result<(), TradeValidationReceiptJobError> {
+        match self {
+            Self::NoAuth => Ok(()),
+            Self::BearerTokenEnv { env_var } => {
+                if env_var.trim().is_empty() {
+                    return Err(TradeValidationReceiptJobError::RemoteHttpInvalidConfig(
+                        "auth.env_var",
+                    ));
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+fn remote_http_auth_token(
+    config: &TradeValidationReceiptRemoteHttpProverConfig,
+) -> Result<Option<String>, TradeValidationReceiptJobError> {
+    match &config.auth {
+        TradeValidationReceiptRemoteHttpAuth::NoAuth => Ok(None),
+        TradeValidationReceiptRemoteHttpAuth::BearerTokenEnv { env_var } => {
+            let value = std::env::var(env_var).map_err(|_| {
+                TradeValidationReceiptJobError::RemoteHttpAuthTokenMissing(env_var.clone())
+            })?;
+            let token = value.trim();
+            if token.is_empty() {
+                return Err(TradeValidationReceiptJobError::RemoteHttpAuthTokenMissing(
+                    env_var.clone(),
+                ));
+            }
+            Ok(Some(token.to_owned()))
+        }
     }
 }
 
@@ -281,6 +402,28 @@ pub enum TradeValidationReceiptJobError {
     ProverBackendUnavailable(&'static str),
     #[error("configured SP1 identity policy is required for this prover backend")]
     Sp1IdentityPolicyRequired,
+    #[error("remote_http prover config is required")]
+    RemoteHttpConfigRequired,
+    #[error("remote_http prover config field {0} is invalid")]
+    RemoteHttpInvalidConfig(&'static str),
+    #[error("remote_http bearer token environment variable {0} is missing or empty")]
+    RemoteHttpAuthTokenMissing(String),
+    #[error("remote_http transport error: {0}")]
+    RemoteHttpTransport(String),
+    #[error("remote_http response exceeded configured byte limit")]
+    RemoteHttpResponseTooLarge,
+    #[error("remote_http response field {0} is invalid")]
+    RemoteHttpInvalidResponse(&'static str),
+    #[error("remote_http terminal {status}: {reason_code}: {message}")]
+    RemoteHttpTerminal {
+        status: &'static str,
+        reason_code: String,
+        message: String,
+    },
+    #[error("remote_http polling timed out")]
+    RemoteHttpTimeout,
+    #[error("remote_http response identity field {0} did not match")]
+    RemoteHttpIdentityMismatch(&'static str),
     #[error("expected SP1 program hash does not match configured policy")]
     ExpectedSp1ProgramHashMismatch,
     #[error("expected SP1 verifying key hash does not match configured policy")]
@@ -386,7 +529,7 @@ pub async fn handle_trade_validation_receipt_job_request(
         sp1_verifying_key_hash: request.sp1_verifying_key_hash.clone(),
     };
     let proof_outcome = proof_bundle_for_policy(&witness, prover_policy).await?;
-    verify_order_acceptance_proof_artifact(
+    verify_order_acceptance_proof_artifact_structure(
         &proof_outcome.bundle.execution,
         &proof_outcome.bundle.proof,
     )?;
@@ -623,9 +766,9 @@ async fn proof_bundle_for_policy(
         TradeValidationReceiptProverBackend::LocalCudaProve => Err(
             TradeValidationReceiptJobError::ProverBackendUnavailable(policy.backend.as_str()),
         ),
-        TradeValidationReceiptProverBackend::RemoteHttpProve => Err(
-            TradeValidationReceiptJobError::ProverBackendUnavailable(policy.backend.as_str()),
-        ),
+        TradeValidationReceiptProverBackend::RemoteHttpProve => {
+            run_remote_http_prove_backend(witness, policy).await
+        }
     }
 }
 
@@ -663,9 +806,9 @@ async fn run_local_cpu_prove_backend(
 ) -> Result<TradeValidationReceiptProofOutcome, TradeValidationReceiptJobError> {
     let bundle =
         radroots_sp1_host_trade::generate_order_acceptance_sp1_proof(witness, proof_mode).await?;
-    radroots_sp1_host_trade::verify_order_acceptance_sp1_proof_artifact(
+    radroots_sp1_host_trade::verify_order_acceptance_resolved_sp1_proof_artifact(
         &bundle.execution,
-        &bundle.proof,
+        &RadrootsSp1TradeResolvedProofArtifact::inline(bundle.proof.clone()),
     )
     .await?;
     Ok(TradeValidationReceiptProofOutcome {
@@ -675,6 +818,302 @@ async fn run_local_cpu_prove_backend(
         sp1_execute_checked: true,
         cryptographic_proof_verified: true,
     })
+}
+
+#[cfg(feature = "sp1_proving")]
+async fn run_remote_http_prove_backend(
+    witness: &RadrootsSp1TradeOrderAcceptanceWitness,
+    policy: &TradeValidationReceiptProverPolicy,
+) -> Result<TradeValidationReceiptProofOutcome, TradeValidationReceiptJobError> {
+    let remote_http = policy
+        .remote_http
+        .as_ref()
+        .ok_or(TradeValidationReceiptJobError::RemoteHttpConfigRequired)?;
+    let expected_sp1_program_hash = policy
+        .expected_sp1_program_hash
+        .as_deref()
+        .ok_or(TradeValidationReceiptJobError::Sp1IdentityPolicyRequired)?;
+    let expected_sp1_verifying_key_hash = policy
+        .expected_sp1_verifying_key_hash
+        .as_deref()
+        .ok_or(TradeValidationReceiptJobError::Sp1IdentityPolicyRequired)?;
+    let execution = radroots_sp1_host_trade::execute_order_acceptance_public_values(witness)?;
+    let request = RadrootsSp1TradeRemoteProverRequest {
+        schema_version: RADROOTS_SP1_TRADE_REMOTE_PROVER_SCHEMA_VERSION,
+        request_id: remote_http_request_id(witness)?,
+        proof_target: RADROOTS_SP1_TRADE_ORDER_ACCEPTANCE_PROOF_TARGET.to_string(),
+        proof_mode: policy.proof_mode,
+        sp1_version_line: RADROOTS_SP1_TRADE_SP1_VERSION_LINE.to_string(),
+        witness: witness.clone(),
+        expected_sp1_program_hash: expected_sp1_program_hash.to_owned(),
+        expected_sp1_verifying_key_hash: expected_sp1_verifying_key_hash.to_owned(),
+        expected_reducer_program_hash: RADROOTS_SP1_TRADE_REDUCER_PROGRAM_HASH.to_string(),
+        expected_protocol_version: RADROOTS_SP1_TRADE_PROTOCOL_VERSION.to_string(),
+        expected_witness_version: RADROOTS_SP1_TRADE_WITNESS_VERSION,
+    };
+    let response = remote_http_completed_response(remote_http, &request).await?;
+    let artifact = remote_http_verified_artifact(
+        &execution,
+        policy,
+        expected_sp1_program_hash,
+        expected_sp1_verifying_key_hash,
+        &request,
+        response,
+    )
+    .await?;
+    Ok(TradeValidationReceiptProofOutcome {
+        sp1_execute_public_values_hash: Some(execution.public_values_hash.clone()),
+        bundle: RadrootsSp1TradeProofBundle {
+            execution,
+            proof: artifact,
+        },
+        proof_generated: true,
+        sp1_execute_checked: true,
+        cryptographic_proof_verified: true,
+    })
+}
+
+#[cfg(not(feature = "sp1_proving"))]
+async fn run_remote_http_prove_backend(
+    _witness: &RadrootsSp1TradeOrderAcceptanceWitness,
+    _policy: &TradeValidationReceiptProverPolicy,
+) -> Result<TradeValidationReceiptProofOutcome, TradeValidationReceiptJobError> {
+    Err(TradeValidationReceiptJobError::ProverBackendUnavailable(
+        TradeValidationReceiptProverBackend::RemoteHttpProve.as_str(),
+    ))
+}
+
+#[cfg(feature = "sp1_proving")]
+fn remote_http_request_id(
+    witness: &RadrootsSp1TradeOrderAcceptanceWitness,
+) -> Result<String, TradeValidationReceiptJobError> {
+    let bytes = serde_json::to_vec(witness)?;
+    Ok(hash_bytes("radroots:rhi-remote-proof-request:v1", &bytes))
+}
+
+#[cfg(feature = "sp1_proving")]
+async fn remote_http_completed_response(
+    config: &TradeValidationReceiptRemoteHttpProverConfig,
+    request: &RadrootsSp1TradeRemoteProverRequest,
+) -> Result<RadrootsSp1TradeRemoteProverResponse, TradeValidationReceiptJobError> {
+    let mut response =
+        remote_http_post_json_io(config, config.endpoint_url.as_str(), request).await?;
+    match response.status {
+        RadrootsSp1TradeRemoteProverStatus::Completed => return Ok(response),
+        RadrootsSp1TradeRemoteProverStatus::Failed => {
+            return Err(remote_http_terminal_error("failed", response));
+        }
+        RadrootsSp1TradeRemoteProverStatus::Rejected => {
+            return Err(remote_http_terminal_error("rejected", response));
+        }
+        RadrootsSp1TradeRemoteProverStatus::Accepted
+        | RadrootsSp1TradeRemoteProverStatus::Running => {}
+    }
+    for _ in 0..config.max_poll_attempts {
+        let status_url = remote_http_status_url(config, &response)?;
+        tokio::time::sleep(Duration::from_millis(config.poll_interval_ms)).await;
+        response = remote_http_get_json_io(config, status_url.as_str(), request).await?;
+        match response.status {
+            RadrootsSp1TradeRemoteProverStatus::Completed => return Ok(response),
+            RadrootsSp1TradeRemoteProverStatus::Failed => {
+                return Err(remote_http_terminal_error("failed", response));
+            }
+            RadrootsSp1TradeRemoteProverStatus::Rejected => {
+                return Err(remote_http_terminal_error("rejected", response));
+            }
+            RadrootsSp1TradeRemoteProverStatus::Accepted
+            | RadrootsSp1TradeRemoteProverStatus::Running => {}
+        }
+    }
+    Err(TradeValidationReceiptJobError::RemoteHttpTimeout)
+}
+
+#[cfg(feature = "sp1_proving")]
+fn remote_http_terminal_error(
+    status: &'static str,
+    response: RadrootsSp1TradeRemoteProverResponse,
+) -> TradeValidationReceiptJobError {
+    TradeValidationReceiptJobError::RemoteHttpTerminal {
+        status,
+        reason_code: response
+            .reason_code
+            .unwrap_or_else(|| "remote_prover_terminal".to_string()),
+        message: response
+            .message
+            .unwrap_or_else(|| "remote prover reached a terminal non-success state".to_string()),
+    }
+}
+
+#[cfg(feature = "sp1_proving")]
+async fn remote_http_verified_artifact(
+    execution: &radroots_sp1_guest_trade::RadrootsSp1TradePublicValuesExecution,
+    policy: &TradeValidationReceiptProverPolicy,
+    expected_sp1_program_hash: &str,
+    expected_sp1_verifying_key_hash: &str,
+    request: &RadrootsSp1TradeRemoteProverRequest,
+    response: RadrootsSp1TradeRemoteProverResponse,
+) -> Result<radroots_sp1_host_trade::RadrootsSp1TradeProofArtifact, TradeValidationReceiptJobError>
+{
+    if response.schema_version != RADROOTS_SP1_TRADE_REMOTE_PROVER_SCHEMA_VERSION {
+        return Err(TradeValidationReceiptJobError::RemoteHttpInvalidResponse(
+            "schema_version",
+        ));
+    }
+    if response.request_id != request.request_id {
+        return Err(TradeValidationReceiptJobError::RemoteHttpIdentityMismatch(
+            "request_id",
+        ));
+    }
+    if response.proof_mode != Some(policy.proof_mode) {
+        return Err(TradeValidationReceiptJobError::RemoteHttpIdentityMismatch(
+            "proof_mode",
+        ));
+    }
+    if response.proof_system != Some(policy.proof_mode.proof_system()) {
+        return Err(TradeValidationReceiptJobError::RemoteHttpIdentityMismatch(
+            "proof_system",
+        ));
+    }
+    if response.public_values_hash.as_deref() != Some(execution.public_values_hash.as_str()) {
+        return Err(TradeValidationReceiptJobError::RemoteHttpIdentityMismatch(
+            "public_values_hash",
+        ));
+    }
+    if response.sp1_program_hash.as_deref() != Some(expected_sp1_program_hash) {
+        return Err(TradeValidationReceiptJobError::RemoteHttpIdentityMismatch(
+            "sp1_program_hash",
+        ));
+    }
+    if response.sp1_verifying_key_hash.as_deref() != Some(expected_sp1_verifying_key_hash) {
+        return Err(TradeValidationReceiptJobError::RemoteHttpIdentityMismatch(
+            "sp1_verifying_key_hash",
+        ));
+    }
+    let artifact = response.proof_artifact.ok_or(
+        TradeValidationReceiptJobError::RemoteHttpInvalidResponse("proof_artifact"),
+    )?;
+    let resolved = RadrootsSp1TradeResolvedProofArtifact {
+        artifact,
+        resolved_proof_envelope_base64: response.resolved_proof_envelope_base64,
+    };
+    verify_remote_proof_artifact_io(execution, &resolved).await?;
+    Ok(resolved.artifact)
+}
+
+#[cfg(feature = "sp1_proving")]
+async fn verify_remote_proof_artifact_io(
+    execution: &radroots_sp1_guest_trade::RadrootsSp1TradePublicValuesExecution,
+    resolved: &RadrootsSp1TradeResolvedProofArtifact,
+) -> Result<(), TradeValidationReceiptJobError> {
+    #[cfg(test)]
+    if let Some(result) = pop_remote_proof_verification_hook() {
+        return result;
+    }
+
+    radroots_sp1_host_trade::verify_order_acceptance_resolved_sp1_proof_artifact(
+        execution, resolved,
+    )
+    .await?;
+    Ok(())
+}
+
+#[cfg(feature = "sp1_proving")]
+async fn remote_http_post_json_io(
+    config: &TradeValidationReceiptRemoteHttpProverConfig,
+    url: &str,
+    request: &RadrootsSp1TradeRemoteProverRequest,
+) -> Result<RadrootsSp1TradeRemoteProverResponse, TradeValidationReceiptJobError> {
+    #[cfg(test)]
+    if let Some(result) = pop_remote_http_response_hook(request) {
+        return result;
+    }
+
+    let client = remote_http_client(config)?;
+    let mut builder = client.post(url).json(request);
+    if let Some(token) = remote_http_auth_token(config)? {
+        builder = builder.bearer_auth(token);
+    }
+    remote_http_response_json(config, builder.send().await).await
+}
+
+#[cfg(feature = "sp1_proving")]
+async fn remote_http_get_json_io(
+    config: &TradeValidationReceiptRemoteHttpProverConfig,
+    url: &str,
+    _request: &RadrootsSp1TradeRemoteProverRequest,
+) -> Result<RadrootsSp1TradeRemoteProverResponse, TradeValidationReceiptJobError> {
+    #[cfg(test)]
+    if let Some(result) = pop_remote_http_response_hook(_request) {
+        return result;
+    }
+
+    let client = remote_http_client(config)?;
+    let mut builder = client.get(url);
+    if let Some(token) = remote_http_auth_token(config)? {
+        builder = builder.bearer_auth(token);
+    }
+    remote_http_response_json(config, builder.send().await).await
+}
+
+#[cfg(feature = "sp1_proving")]
+fn remote_http_client(
+    config: &TradeValidationReceiptRemoteHttpProverConfig,
+) -> Result<reqwest::Client, TradeValidationReceiptJobError> {
+    reqwest::Client::builder()
+        .timeout(Duration::from_millis(config.request_timeout_ms))
+        .build()
+        .map_err(|error| TradeValidationReceiptJobError::RemoteHttpTransport(error.to_string()))
+}
+
+#[cfg(feature = "sp1_proving")]
+async fn remote_http_response_json(
+    config: &TradeValidationReceiptRemoteHttpProverConfig,
+    response: Result<reqwest::Response, reqwest::Error>,
+) -> Result<RadrootsSp1TradeRemoteProverResponse, TradeValidationReceiptJobError> {
+    let response = response
+        .map_err(|error| TradeValidationReceiptJobError::RemoteHttpTransport(error.to_string()))?;
+    if !response.status().is_success() {
+        return Err(TradeValidationReceiptJobError::RemoteHttpTransport(
+            format!("http status {}", response.status().as_u16()),
+        ));
+    }
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|error| TradeValidationReceiptJobError::RemoteHttpTransport(error.to_string()))?;
+    if bytes.len() > config.max_response_bytes {
+        return Err(TradeValidationReceiptJobError::RemoteHttpResponseTooLarge);
+    }
+    serde_json::from_slice::<RadrootsSp1TradeRemoteProverResponse>(&bytes)
+        .map_err(TradeValidationReceiptJobError::Serde)
+}
+
+#[cfg(feature = "sp1_proving")]
+fn remote_http_status_url(
+    config: &TradeValidationReceiptRemoteHttpProverConfig,
+    response: &RadrootsSp1TradeRemoteProverResponse,
+) -> Result<String, TradeValidationReceiptJobError> {
+    if let Some(url) = response.status_url.as_deref() {
+        let parsed = reqwest::Url::parse(url)
+            .map_err(|_| TradeValidationReceiptJobError::RemoteHttpInvalidResponse("status_url"))?;
+        if parsed.scheme() != "http" && parsed.scheme() != "https" {
+            return Err(TradeValidationReceiptJobError::RemoteHttpInvalidResponse(
+                "status_url",
+            ));
+        }
+        return Ok(parsed.to_string());
+    }
+    if let Some(path) = response.status_path.as_deref() {
+        let base = reqwest::Url::parse(config.endpoint_url.as_str())
+            .map_err(|_| TradeValidationReceiptJobError::RemoteHttpInvalidConfig("endpoint_url"))?;
+        return base
+            .join(path)
+            .map(|url| url.to_string())
+            .map_err(|_| TradeValidationReceiptJobError::RemoteHttpInvalidResponse("status_path"));
+    }
+    Err(TradeValidationReceiptJobError::RemoteHttpInvalidResponse(
+        "status_url",
+    ))
 }
 
 #[cfg(not(feature = "sp1_proving"))]
@@ -855,6 +1294,13 @@ struct TradeValidationReceiptTestHooks {
         std::collections::VecDeque<Result<RadrootsNostrEvent, TradeValidationReceiptJobError>>,
     publish_event_results:
         std::collections::VecDeque<Result<String, TradeValidationReceiptJobError>>,
+    #[cfg(feature = "sp1_proving")]
+    remote_http_results: std::collections::VecDeque<
+        Result<RadrootsSp1TradeRemoteProverResponse, TradeValidationReceiptJobError>,
+    >,
+    #[cfg(feature = "sp1_proving")]
+    remote_proof_verification_results:
+        std::collections::VecDeque<Result<(), TradeValidationReceiptJobError>>,
     published_events: Vec<PublishedEventParts>,
 }
 
@@ -897,13 +1343,83 @@ fn pop_publish_event_hook(
     hooks.publish_event_results.pop_front()
 }
 
+#[cfg(all(test, feature = "sp1_proving"))]
+fn pop_remote_http_response_hook(
+    request: &RadrootsSp1TradeRemoteProverRequest,
+) -> Option<Result<RadrootsSp1TradeRemoteProverResponse, TradeValidationReceiptJobError>> {
+    pop_remote_http_response_hook_without_request().map(|result| {
+        result.and_then(|response| remote_http_test_response_for_request(request, response))
+    })
+}
+
+#[cfg(all(test, feature = "sp1_proving"))]
+fn pop_remote_http_response_hook_without_request()
+-> Option<Result<RadrootsSp1TradeRemoteProverResponse, TradeValidationReceiptJobError>> {
+    trade_validation_receipt_test_hooks()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remote_http_results
+        .pop_front()
+}
+
+#[cfg(all(test, feature = "sp1_proving"))]
+fn remote_http_test_response_for_request(
+    request: &RadrootsSp1TradeRemoteProverRequest,
+    mut response: RadrootsSp1TradeRemoteProverResponse,
+) -> Result<RadrootsSp1TradeRemoteProverResponse, TradeValidationReceiptJobError> {
+    if response.request_id == "__request_id__" {
+        response.request_id = request.request_id.clone();
+    }
+    if response.status == RadrootsSp1TradeRemoteProverStatus::Completed
+        && response.proof_artifact.is_none()
+    {
+        let execution =
+            radroots_sp1_host_trade::execute_order_acceptance_public_values(&request.witness)?;
+        let artifact =
+            radroots_sp1_host_trade::referenced_order_acceptance_proof_artifact_for_execution(
+                &execution,
+                request.proof_mode,
+                format!("radroots-proof://sha256/{}", "1".repeat(64)),
+            )?;
+        if response.proof_system.is_none() {
+            response.proof_system = Some(request.proof_mode.proof_system());
+        }
+        if response.proof_mode.is_none() {
+            response.proof_mode = Some(request.proof_mode);
+        }
+        if response.public_values_hash.is_none() {
+            response.public_values_hash = Some(execution.public_values_hash);
+        }
+        if response.sp1_program_hash.is_none() {
+            response.sp1_program_hash = Some(request.expected_sp1_program_hash.clone());
+        }
+        if response.sp1_verifying_key_hash.is_none() {
+            response.sp1_verifying_key_hash = Some(request.expected_sp1_verifying_key_hash.clone());
+        }
+        if response.proof_artifact.is_none() {
+            response.proof_artifact = Some(artifact);
+        }
+    }
+    Ok(response)
+}
+
+#[cfg(all(test, feature = "sp1_proving"))]
+fn pop_remote_proof_verification_hook() -> Option<Result<(), TradeValidationReceiptJobError>> {
+    trade_validation_receipt_test_hooks()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remote_proof_verification_results
+        .pop_front()
+}
+
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::{
         TradeValidationReceiptJobError, TradeValidationReceiptJobRequest,
         TradeValidationReceiptJobResult, TradeValidationReceiptProverBackend,
-        TradeValidationReceiptProverPolicy, TradeValidationReceiptTestHooks,
+        TradeValidationReceiptProverPolicy, TradeValidationReceiptRemoteHttpAuth,
+        TradeValidationReceiptRemoteHttpProverConfig, TradeValidationReceiptTestHooks,
         handle_trade_validation_receipt_job_request, trade_validation_receipt_test_hooks,
     };
     use radroots_core::{
@@ -932,7 +1448,14 @@ mod tests {
         RADROOTS_SP1_TRADE_PROTOCOL_VERSION, RADROOTS_SP1_TRADE_REDUCER_PROGRAM_HASH,
         RadrootsSp1TradeInventoryBinWitness,
     };
+    #[cfg(feature = "sp1_proving")]
+    use radroots_sp1_host_trade::RadrootsSp1TradeHostError;
     use radroots_sp1_host_trade::RadrootsSp1TradeProofMode;
+    #[cfg(feature = "sp1_proving")]
+    use radroots_sp1_host_trade::{
+        RADROOTS_SP1_TRADE_REMOTE_PROVER_SCHEMA_VERSION, RadrootsSp1TradeRemoteProverResponse,
+        RadrootsSp1TradeRemoteProverStatus,
+    };
     use radroots_trade::validation_receipt::{
         RadrootsValidationReceiptExpectedBinding, RadrootsValidationReceiptProofSystem,
         verify_validation_receipt_event,
@@ -1093,6 +1616,7 @@ mod tests {
         request_event: &RadrootsNostrEvent,
         decision_event: &RadrootsNostrEvent,
         proof_mode: RadrootsSp1TradeProofMode,
+        sp1_program_hash: Option<String>,
         sp1_verifying_key_hash: Option<String>,
     ) -> RadrootsNostrEvent {
         let request = TradeValidationReceiptJobRequest {
@@ -1113,7 +1637,7 @@ mod tests {
             proof_mode,
             reducer_program_hash: RADROOTS_SP1_TRADE_REDUCER_PROGRAM_HASH.to_string(),
             radroots_protocol_version: RADROOTS_SP1_TRADE_PROTOCOL_VERSION.to_string(),
-            sp1_program_hash: None,
+            sp1_program_hash,
             sp1_verifying_key_hash,
         };
         signed_event(
@@ -1136,6 +1660,120 @@ mod tests {
         format!("0x{}", ch.to_string().repeat(64))
     }
 
+    fn remote_http_config() -> TradeValidationReceiptRemoteHttpProverConfig {
+        TradeValidationReceiptRemoteHttpProverConfig {
+            endpoint_url: "http://127.0.0.1:65535/prove".to_string(),
+            auth: TradeValidationReceiptRemoteHttpAuth::NoAuth,
+            request_timeout_ms: 1000,
+            poll_interval_ms: 1,
+            max_poll_attempts: 1,
+            max_response_bytes: 65_536,
+        }
+    }
+
+    fn remote_http_policy() -> TradeValidationReceiptProverPolicy {
+        TradeValidationReceiptProverPolicy {
+            backend: TradeValidationReceiptProverBackend::RemoteHttpProve,
+            proof_mode: RadrootsSp1TradeProofMode::Core,
+            expected_sp1_program_hash: Some(hash32('a')),
+            expected_sp1_verifying_key_hash: Some(hash32('b')),
+            remote_http: Some(remote_http_config()),
+        }
+    }
+
+    #[cfg(feature = "sp1_proving")]
+    fn remote_response(
+        status: RadrootsSp1TradeRemoteProverStatus,
+    ) -> RadrootsSp1TradeRemoteProverResponse {
+        RadrootsSp1TradeRemoteProverResponse {
+            schema_version: RADROOTS_SP1_TRADE_REMOTE_PROVER_SCHEMA_VERSION,
+            request_id: "__request_id__".to_string(),
+            status,
+            status_url: None,
+            status_path: None,
+            proof_system: None,
+            proof_mode: None,
+            public_values_hash: None,
+            sp1_program_hash: None,
+            sp1_verifying_key_hash: None,
+            proof_artifact: None,
+            resolved_proof_envelope_base64: None,
+            reason_code: None,
+            message: None,
+            detail: None,
+        }
+    }
+
+    #[cfg(feature = "sp1_proving")]
+    async fn run_remote_http_job(
+        remote_http_results: Vec<
+            Result<RadrootsSp1TradeRemoteProverResponse, TradeValidationReceiptJobError>,
+        >,
+        remote_proof_verification_results: Vec<Result<(), TradeValidationReceiptJobError>>,
+        publish_results: Vec<Result<String, TradeValidationReceiptJobError>>,
+    ) -> Result<Vec<super::PublishedEventParts>, TradeValidationReceiptJobError> {
+        run_remote_http_job_with_policy(
+            remote_http_policy(),
+            remote_http_results,
+            remote_proof_verification_results,
+            publish_results,
+        )
+        .await
+    }
+
+    #[cfg(feature = "sp1_proving")]
+    async fn run_remote_http_job_with_policy(
+        policy: TradeValidationReceiptProverPolicy,
+        remote_http_results: Vec<
+            Result<RadrootsSp1TradeRemoteProverResponse, TradeValidationReceiptJobError>,
+        >,
+        remote_proof_verification_results: Vec<Result<(), TradeValidationReceiptJobError>>,
+        publish_results: Vec<Result<String, TradeValidationReceiptJobError>>,
+    ) -> Result<Vec<super::PublishedEventParts>, TradeValidationReceiptJobError> {
+        let _guard = test_guard();
+        let worker = RadrootsNostrKeys::generate();
+        let requester = RadrootsNostrKeys::generate();
+        let buyer = RadrootsNostrKeys::generate();
+        let seller = RadrootsNostrKeys::generate();
+        let listing_event = listing_event(&seller);
+        let (request_event, decision_event) = signed_order_events(&buyer, &seller, &listing_event);
+        let job = job_request(
+            &requester,
+            &worker,
+            &listing_event,
+            &request_event,
+            &decision_event,
+            RadrootsSp1TradeProofMode::Core,
+            Some(hash32('a')),
+            Some(hash32('b')),
+        );
+
+        {
+            let mut hooks = trade_validation_receipt_test_hooks()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            hooks.fetch_event_by_id_results.push_back(Ok(listing_event));
+            hooks.fetch_event_by_id_results.push_back(Ok(request_event));
+            hooks
+                .fetch_event_by_id_results
+                .push_back(Ok(decision_event));
+            hooks.remote_http_results.extend(remote_http_results);
+            hooks
+                .remote_proof_verification_results
+                .extend(remote_proof_verification_results);
+            hooks.publish_event_results.extend(publish_results);
+        }
+
+        handle_trade_validation_receipt_job_request(&job, &worker, &client_for(&worker), &policy)
+            .await?;
+
+        Ok(trade_validation_receipt_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .published_events
+            .clone())
+    }
+
     #[test]
     fn prover_policy_requires_configured_sp1_identity_for_local_cpu() {
         let missing_identity = TradeValidationReceiptProverPolicy {
@@ -1143,6 +1781,7 @@ mod tests {
             proof_mode: RadrootsSp1TradeProofMode::Core,
             expected_sp1_program_hash: None,
             expected_sp1_verifying_key_hash: Some(hash32('b')),
+            remote_http: None,
         };
         assert!(matches!(
             missing_identity.validate(),
@@ -1154,6 +1793,7 @@ mod tests {
             proof_mode: RadrootsSp1TradeProofMode::Core,
             expected_sp1_program_hash: Some(hash32('a')),
             expected_sp1_verifying_key_hash: Some(hash32('b')),
+            remote_http: None,
         };
         let request = TradeValidationReceiptJobRequest {
             witness_version: radroots_sp1_guest_trade::RADROOTS_SP1_TRADE_WITNESS_VERSION,
@@ -1190,6 +1830,329 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn remote_http_policy_requires_explicit_config_and_identity_before_relay_fetch() {
+        let missing_config = TradeValidationReceiptProverPolicy {
+            backend: TradeValidationReceiptProverBackend::RemoteHttpProve,
+            proof_mode: RadrootsSp1TradeProofMode::Core,
+            expected_sp1_program_hash: Some(hash32('a')),
+            expected_sp1_verifying_key_hash: Some(hash32('b')),
+            remote_http: None,
+        };
+        assert!(matches!(
+            missing_config.validate(),
+            Err(TradeValidationReceiptJobError::RemoteHttpConfigRequired)
+        ));
+
+        let missing_identity = TradeValidationReceiptProverPolicy {
+            backend: TradeValidationReceiptProverBackend::RemoteHttpProve,
+            proof_mode: RadrootsSp1TradeProofMode::Core,
+            expected_sp1_program_hash: None,
+            expected_sp1_verifying_key_hash: Some(hash32('b')),
+            remote_http: Some(remote_http_config()),
+        };
+        assert!(matches!(
+            missing_identity.validate(),
+            Err(TradeValidationReceiptJobError::Sp1IdentityPolicyRequired)
+        ));
+
+        let mut invalid_config = remote_http_policy();
+        invalid_config
+            .remote_http
+            .as_mut()
+            .expect("remote config")
+            .endpoint_url = "file:///tmp/prove".to_string();
+        assert!(matches!(
+            invalid_config.validate(),
+            Err(TradeValidationReceiptJobError::RemoteHttpInvalidConfig(
+                "endpoint_url"
+            ))
+        ));
+    }
+
+    #[cfg(feature = "sp1_proving")]
+    #[tokio::test]
+    async fn remote_http_prove_publishes_only_after_remote_artifact_verification() {
+        let published = run_remote_http_job(
+            vec![Ok(remote_response(
+                RadrootsSp1TradeRemoteProverStatus::Completed,
+            ))],
+            vec![Ok(())],
+            vec![Ok(publish_result_id(1)), Ok(publish_result_id(2))],
+        )
+        .await
+        .expect("remote proof job");
+
+        assert_eq!(published.len(), 2);
+        assert_eq!(published[0].kind, KIND_TRADE_VALIDATION_RECEIPT);
+        assert_eq!(published[1].kind, KIND_WORKER_TRADE_TRANSITION_PROOF_RES);
+        let result: TradeValidationReceiptJobResult =
+            serde_json::from_str(&published[1].content).expect("result json");
+        assert_eq!(
+            result.prover_backend,
+            TradeValidationReceiptProverBackend::RemoteHttpProve
+        );
+        assert!(result.proof_generated);
+        assert_eq!(result.proof_mode, RadrootsSp1TradeProofMode::Core);
+        assert_eq!(result.proof_system, "sp1_core");
+        assert!(result.sp1_execute_checked);
+        assert_eq!(
+            result.sp1_execute_public_values_hash.as_deref(),
+            Some(result.public_values_hash.as_str())
+        );
+        assert!(result.cryptographic_proof_verified);
+    }
+
+    #[cfg(feature = "sp1_proving")]
+    #[tokio::test]
+    async fn remote_http_prove_polls_running_until_completed() {
+        let mut policy = remote_http_policy();
+        policy
+            .remote_http
+            .as_mut()
+            .expect("remote config")
+            .max_poll_attempts = 2;
+        let mut accepted = remote_response(RadrootsSp1TradeRemoteProverStatus::Accepted);
+        accepted.status_path = Some("/prove/status/request-1".to_string());
+        let mut running = remote_response(RadrootsSp1TradeRemoteProverStatus::Running);
+        running.status_path = Some("/prove/status/request-1".to_string());
+        let published = run_remote_http_job_with_policy(
+            policy,
+            vec![
+                Ok(accepted),
+                Ok(running),
+                Ok(remote_response(
+                    RadrootsSp1TradeRemoteProverStatus::Completed,
+                )),
+            ],
+            vec![Ok(())],
+            vec![Ok(publish_result_id(1)), Ok(publish_result_id(2))],
+        )
+        .await
+        .expect("polled remote proof job");
+
+        assert_eq!(published.len(), 2);
+        let result: TradeValidationReceiptJobResult =
+            serde_json::from_str(&published[1].content).expect("result json");
+        assert_eq!(
+            result.prover_backend,
+            TradeValidationReceiptProverBackend::RemoteHttpProve
+        );
+        assert!(result.cryptographic_proof_verified);
+    }
+
+    #[cfg(feature = "sp1_proving")]
+    #[tokio::test]
+    async fn remote_http_prove_does_not_publish_when_verification_fails() {
+        let error = run_remote_http_job(
+            vec![Ok(remote_response(
+                RadrootsSp1TradeRemoteProverStatus::Completed,
+            ))],
+            vec![Err(TradeValidationReceiptJobError::Proof(
+                RadrootsSp1TradeHostError::Sp1ProofVerificationFailed("test".to_string()),
+            ))],
+            vec![Err(TradeValidationReceiptJobError::InvalidJobRequest)],
+        )
+        .await
+        .expect_err("remote verification failure");
+
+        assert!(matches!(
+            error,
+            TradeValidationReceiptJobError::Proof(
+                RadrootsSp1TradeHostError::Sp1ProofVerificationFailed(_)
+            )
+        ));
+        assert!(
+            trade_validation_receipt_test_hooks()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .published_events
+                .is_empty()
+        );
+    }
+
+    #[cfg(feature = "sp1_proving")]
+    #[tokio::test]
+    async fn remote_http_prove_does_not_publish_when_reference_digest_mismatches() {
+        let mut response = remote_response(RadrootsSp1TradeRemoteProverStatus::Completed);
+        response.resolved_proof_envelope_base64 = Some("cHJvb2Y=".to_string());
+        let error = run_remote_http_job(
+            vec![Ok(response)],
+            Vec::new(),
+            vec![Err(TradeValidationReceiptJobError::InvalidJobRequest)],
+        )
+        .await
+        .expect_err("remote proof reference mismatch");
+
+        assert!(matches!(
+            error,
+            TradeValidationReceiptJobError::Proof(
+                RadrootsSp1TradeHostError::Sp1ProofReferenceDigestMismatch
+            )
+        ));
+        assert!(
+            trade_validation_receipt_test_hooks()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .published_events
+                .is_empty()
+        );
+    }
+
+    #[cfg(feature = "sp1_proving")]
+    #[tokio::test]
+    async fn remote_http_prove_does_not_publish_when_sp1_identity_mismatches() {
+        let mut response = remote_response(RadrootsSp1TradeRemoteProverStatus::Completed);
+        response.sp1_program_hash = Some(hash32('c'));
+        let error = run_remote_http_job(
+            vec![Ok(response)],
+            vec![Ok(())],
+            vec![Err(TradeValidationReceiptJobError::InvalidJobRequest)],
+        )
+        .await
+        .expect_err("remote sp1 identity mismatch");
+
+        assert!(matches!(
+            error,
+            TradeValidationReceiptJobError::RemoteHttpIdentityMismatch("sp1_program_hash")
+        ));
+        assert!(
+            trade_validation_receipt_test_hooks()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .published_events
+                .is_empty()
+        );
+    }
+
+    #[cfg(feature = "sp1_proving")]
+    #[tokio::test]
+    async fn remote_http_prove_does_not_publish_when_public_values_mismatch() {
+        let mut response = remote_response(RadrootsSp1TradeRemoteProverStatus::Completed);
+        response.public_values_hash = Some(hash32('d'));
+        let error = run_remote_http_job(
+            vec![Ok(response)],
+            vec![Ok(())],
+            vec![Err(TradeValidationReceiptJobError::InvalidJobRequest)],
+        )
+        .await
+        .expect_err("remote public values mismatch");
+
+        assert!(matches!(
+            error,
+            TradeValidationReceiptJobError::RemoteHttpIdentityMismatch("public_values_hash")
+        ));
+        assert!(
+            trade_validation_receipt_test_hooks()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .published_events
+                .is_empty()
+        );
+    }
+
+    #[cfg(feature = "sp1_proving")]
+    #[tokio::test]
+    async fn remote_http_prove_does_not_publish_terminal_failed_or_rejected() {
+        let mut failed = remote_response(RadrootsSp1TradeRemoteProverStatus::Failed);
+        failed.reason_code = Some("remote_failed".to_string());
+        failed.message = Some("remote prover failed".to_string());
+        let error = run_remote_http_job(
+            vec![Ok(failed)],
+            Vec::new(),
+            vec![Err(TradeValidationReceiptJobError::InvalidJobRequest)],
+        )
+        .await
+        .expect_err("remote failed");
+        assert!(matches!(
+            error,
+            TradeValidationReceiptJobError::RemoteHttpTerminal {
+                status: "failed",
+                ..
+            }
+        ));
+        assert!(
+            trade_validation_receipt_test_hooks()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .published_events
+                .is_empty()
+        );
+
+        let mut rejected = remote_response(RadrootsSp1TradeRemoteProverStatus::Rejected);
+        rejected.reason_code = Some("remote_rejected".to_string());
+        rejected.message = Some("remote prover rejected request".to_string());
+        let error = run_remote_http_job(
+            vec![Ok(rejected)],
+            Vec::new(),
+            vec![Err(TradeValidationReceiptJobError::InvalidJobRequest)],
+        )
+        .await
+        .expect_err("remote rejected");
+        assert!(matches!(
+            error,
+            TradeValidationReceiptJobError::RemoteHttpTerminal {
+                status: "rejected",
+                ..
+            }
+        ));
+        assert!(
+            trade_validation_receipt_test_hooks()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .published_events
+                .is_empty()
+        );
+    }
+
+    #[cfg(feature = "sp1_proving")]
+    #[tokio::test]
+    async fn remote_http_prove_does_not_publish_timeout_or_oversized_response() {
+        let mut accepted = remote_response(RadrootsSp1TradeRemoteProverStatus::Accepted);
+        accepted.status_path = Some("/prove/status/request-1".to_string());
+        let mut running = remote_response(RadrootsSp1TradeRemoteProverStatus::Running);
+        running.status_path = Some("/prove/status/request-1".to_string());
+        let error = run_remote_http_job(
+            vec![Ok(accepted), Ok(running)],
+            Vec::new(),
+            vec![Err(TradeValidationReceiptJobError::InvalidJobRequest)],
+        )
+        .await
+        .expect_err("remote timeout");
+        assert!(matches!(
+            error,
+            TradeValidationReceiptJobError::RemoteHttpTimeout
+        ));
+        assert!(
+            trade_validation_receipt_test_hooks()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .published_events
+                .is_empty()
+        );
+
+        let error = run_remote_http_job(
+            vec![Err(
+                TradeValidationReceiptJobError::RemoteHttpResponseTooLarge,
+            )],
+            Vec::new(),
+            vec![Err(TradeValidationReceiptJobError::InvalidJobRequest)],
+        )
+        .await
+        .expect_err("remote oversized response");
+        assert!(matches!(
+            error,
+            TradeValidationReceiptJobError::RemoteHttpResponseTooLarge
+        ));
+        assert!(
+            trade_validation_receipt_test_hooks()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .published_events
+                .is_empty()
+        );
+    }
+
     #[tokio::test]
     async fn proof_job_publishes_verified_receipt_and_result_after_proof_verification() {
         let _guard = test_guard();
@@ -1206,6 +2169,7 @@ mod tests {
             &request_event,
             &decision_event,
             RadrootsSp1TradeProofMode::None,
+            None,
             None,
         );
 
@@ -1315,6 +2279,7 @@ mod tests {
             &decision_event,
             RadrootsSp1TradeProofMode::Compressed,
             None,
+            None,
         );
 
         {
@@ -1374,6 +2339,7 @@ mod tests {
             &decision_event,
             RadrootsSp1TradeProofMode::None,
             None,
+            None,
         );
         let mut request_json: serde_json::Value =
             serde_json::from_str(&job.content).expect("request json");
@@ -1429,6 +2395,7 @@ mod tests {
             &decision_event,
             RadrootsSp1TradeProofMode::None,
             None,
+            None,
         );
 
         {
@@ -1478,6 +2445,7 @@ mod tests {
             &request_event,
             &decision_event,
             RadrootsSp1TradeProofMode::None,
+            None,
             None,
         );
         request_event.content.push(' ');
@@ -1530,6 +2498,7 @@ mod tests {
             &request_event,
             &decision_event,
             RadrootsSp1TradeProofMode::None,
+            None,
             None,
         );
         let mut request: TradeValidationReceiptJobRequest =
@@ -1591,6 +2560,7 @@ mod tests {
             &decision_event,
             RadrootsSp1TradeProofMode::None,
             None,
+            None,
         );
 
         {
@@ -1609,6 +2579,7 @@ mod tests {
             proof_mode: RadrootsSp1TradeProofMode::None,
             expected_sp1_program_hash: None,
             expected_sp1_verifying_key_hash: None,
+            remote_http: None,
         };
         let error = handle_trade_validation_receipt_job_request(
             &job,

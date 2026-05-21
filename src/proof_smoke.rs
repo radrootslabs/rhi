@@ -15,7 +15,7 @@ use radroots_sp1_guest_trade::{
 };
 use radroots_sp1_host_trade::{
     RadrootsSp1TradeProofMode, generate_order_acceptance_proof,
-    verify_order_acceptance_proof_artifact,
+    verify_order_acceptance_proof_artifact_structure,
 };
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -189,7 +189,7 @@ fn deterministic_smoke(
 ) -> Result<RhiProofSmokeOutput, RhiProofSmokeError> {
     let bundle = generate_order_acceptance_proof(witness, RadrootsSp1TradeProofMode::None)
         .map_err(|error| RhiProofSmokeError::Deterministic(error.to_string()))?;
-    verify_order_acceptance_proof_artifact(&bundle.execution, &bundle.proof)
+    verify_order_acceptance_proof_artifact_structure(&bundle.execution, &bundle.proof)
         .map_err(|error| RhiProofSmokeError::Deterministic(error.to_string()))?;
     Ok(RhiProofSmokeOutput {
         public_values_hash: canonical_hex_64(&bundle.execution.public_values_hash)?,

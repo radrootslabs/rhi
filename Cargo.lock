@@ -3646,6 +3646,7 @@ dependencies = [
  "radroots_sp1_guest_trade",
  "radroots_sp1_host_trade",
  "radroots_trade",
+ "reqwest",
  "serde",
  "serde_json",
  "sha2",
