@@ -64,6 +64,8 @@ pub struct RhiProofSmokeResponse {
     pub capabilities: Vec<String>,
     pub proof_generated: bool,
     pub public_values_hash: Option<String>,
+    pub sp1_program_hash: Option<String>,
+    pub sp1_verifying_key_hash: Option<String>,
     pub event_set_root: Option<String>,
     pub reducer_output_root: Option<String>,
     pub elapsed_ms: u128,
@@ -140,6 +142,8 @@ async fn response_for_request(
             None,
             None,
             None,
+            None,
+            None,
             Vec::new(),
         ),
         RhiProofSmokeOperation::ProofSmoke => {
@@ -149,6 +153,8 @@ async fn response_for_request(
                     request.backend,
                     started,
                     Some(output.public_values_hash),
+                    output.sp1_program_hash,
+                    output.sp1_verifying_key_hash,
                     Some(output.event_set_root),
                     Some(output.reducer_output_root),
                     output.warnings,
@@ -166,6 +172,8 @@ async fn response_for_request(
 
 struct RhiProofSmokeOutput {
     public_values_hash: String,
+    sp1_program_hash: Option<String>,
+    sp1_verifying_key_hash: Option<String>,
     event_set_root: String,
     reducer_output_root: String,
     warnings: Vec<String>,
@@ -195,6 +203,8 @@ fn deterministic_smoke(
         .map_err(|error| RhiProofSmokeError::Deterministic(error.to_string()))?;
     Ok(RhiProofSmokeOutput {
         public_values_hash: canonical_hex_64(&bundle.execution.public_values_hash)?,
+        sp1_program_hash: None,
+        sp1_verifying_key_hash: None,
         event_set_root: canonical_hex_64(&bundle.execution.public_values.event_set_root)?,
         reducer_output_root: canonical_hex_64(&bundle.execution.public_values.new_state_root)?,
         warnings: Vec::new(),
@@ -211,6 +221,18 @@ async fn local_execute_smoke(
         .execution;
     Ok(RhiProofSmokeOutput {
         public_values_hash: canonical_hex_64(&execution.public_values_hash)?,
+        sp1_program_hash: execution
+            .public_values
+            .sp1_program_hash
+            .as_deref()
+            .map(canonical_hex_64)
+            .transpose()?,
+        sp1_verifying_key_hash: execution
+            .public_values
+            .sp1_verifying_key_hash
+            .as_deref()
+            .map(canonical_hex_64)
+            .transpose()?,
         event_set_root: canonical_hex_64(&execution.public_values.event_set_root)?,
         reducer_output_root: canonical_hex_64(&execution.public_values.new_state_root)?,
         warnings: Vec::new(),
@@ -229,6 +251,8 @@ fn response_for_success(
     backend: RhiProofSmokeBackend,
     started: Instant,
     public_values_hash: Option<String>,
+    sp1_program_hash: Option<String>,
+    sp1_verifying_key_hash: Option<String>,
     event_set_root: Option<String>,
     reducer_output_root: Option<String>,
     warnings: Vec<String>,
@@ -247,6 +271,8 @@ fn response_for_success(
         capabilities: capabilities(),
         proof_generated: false,
         public_values_hash,
+        sp1_program_hash,
+        sp1_verifying_key_hash,
         event_set_root,
         reducer_output_root,
         elapsed_ms: started.elapsed().as_millis(),
@@ -271,8 +297,17 @@ fn response_for_error(
     started: Instant,
     error: String,
 ) -> RhiProofSmokeResponse {
-    let mut response =
-        response_for_success(operation, backend, started, None, None, None, Vec::new());
+    let mut response = response_for_success(
+        operation,
+        backend,
+        started,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Vec::new(),
+    );
     response.ok = false;
     response.error = Some(error);
     response
@@ -475,6 +510,8 @@ mod tests {
         assert!(response.ok);
         assert_eq!(response.operation, RhiProofSmokeOperation::ProofSmoke);
         assert!(response.public_values_hash.is_some());
+        assert!(response.sp1_program_hash.is_none());
+        assert!(response.sp1_verifying_key_hash.is_none());
         assert!(response.event_set_root.is_some());
         assert!(response.reducer_output_root.is_some());
         for value in [
@@ -557,10 +594,21 @@ mod tests {
         assert_eq!(response.backend, RhiProofSmokeBackend::LocalExecute);
         assert!(response.capabilities.contains(&"local_execute".to_string()));
         assert!(!response.proof_generated);
-        assert_eq!(
+        assert_ne!(
             response.public_values_hash,
             deterministic.public_values_hash
         );
+        assert!(response.sp1_program_hash.is_some());
+        assert!(response.sp1_verifying_key_hash.is_some());
+        for value in [
+            response.sp1_program_hash.as_deref(),
+            response.sp1_verifying_key_hash.as_deref(),
+        ] {
+            let value = value.expect("SP1 identity");
+            assert_eq!(value.len(), 64);
+            assert!(!value.starts_with("0x"));
+            assert!(value.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        }
         assert_eq!(response.event_set_root, deterministic.event_set_root);
         assert_eq!(
             response.reducer_output_root,
