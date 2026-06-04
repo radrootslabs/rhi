@@ -142,7 +142,7 @@
           };
           test = mkApp "test" {
             text = ''
-              cargo test
+              cargo test -- --test-threads=1
             '';
           };
         }

@@ -344,15 +344,12 @@ mod tests {
         RadrootsNostrRelayPoolNotification, RadrootsNostrRelayUrl, RadrootsNostrSubscriptionId,
         RadrootsNostrTag,
     };
-    use std::sync::{Mutex, MutexGuard};
-    use tokio::sync::watch;
+    use tokio::sync::{Mutex, MutexGuard, watch};
 
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
+    static TEST_LOCK: Mutex<()> = Mutex::const_new(());
 
-    fn test_guard() -> MutexGuard<'static, ()> {
-        let guard = TEST_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+    async fn test_guard() -> MutexGuard<'static, ()> {
+        let guard = TEST_LOCK.lock().await;
         *subscriber_test_hooks()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = SubscriberTestHooks::default();
@@ -394,7 +391,7 @@ mod tests {
 
     #[tokio::test]
     async fn subscriber_io_wrappers_cover_fallback_and_hook_paths() {
-        let _guard = test_guard();
+        let _guard = test_guard().await;
         let keys = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(keys.clone());
         let event = RadrootsNostrEventBuilder::new(RadrootsNostrKind::TextNote, "test")
@@ -456,7 +453,7 @@ mod tests {
 
     #[tokio::test]
     async fn subscriber_returns_ok_when_stop_is_pre_requested() {
-        let _guard = test_guard();
+        let _guard = test_guard().await;
         let keys = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(keys.clone());
         let (_tx, rx) = watch::channel(true);
@@ -469,7 +466,7 @@ mod tests {
 
     #[tokio::test]
     async fn subscriber_reuses_runtime_owned_state_across_runs() {
-        let _guard = test_guard();
+        let _guard = test_guard().await;
         let keys = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(keys.clone());
         let runtime = shared_runtime();
@@ -504,7 +501,7 @@ mod tests {
 
     #[tokio::test]
     async fn subscriber_returns_err_when_no_relays_are_configured() {
-        let _guard = test_guard();
+        let _guard = test_guard().await;
         let keys = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(keys.clone());
         let (_tx, rx) = watch::channel(false);
@@ -517,7 +514,7 @@ mod tests {
 
     #[tokio::test]
     async fn subscriber_can_stop_after_start_when_relay_is_present() {
-        let _guard = test_guard();
+        let _guard = test_guard().await;
         let keys = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(keys.clone());
         let _ = client.add_relay("wss://relay.example.com").await;
@@ -536,7 +533,7 @@ mod tests {
 
     #[tokio::test]
     async fn subscriber_covers_notification_closed_path() {
-        let _guard = test_guard();
+        let _guard = test_guard().await;
         let keys = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(keys.clone());
         let _ = client.add_relay("wss://relay.example.com").await;
@@ -555,7 +552,7 @@ mod tests {
 
     #[tokio::test]
     async fn subscriber_covers_non_event_notification_and_stop_ok_path() {
-        let _guard = test_guard();
+        let _guard = test_guard().await;
         let keys = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(keys.clone());
         let _ = client.add_relay("wss://relay.example.com").await;
@@ -582,7 +579,7 @@ mod tests {
 
     #[tokio::test]
     async fn subscriber_covers_event_processing_paths() {
-        let _guard = test_guard();
+        let _guard = test_guard().await;
         let keys = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(keys.clone());
         let _ = client.add_relay("wss://relay.example.com").await;
@@ -613,7 +610,7 @@ mod tests {
 
     #[tokio::test]
     async fn subscriber_covers_handle_event_and_error_paths() {
-        let _guard = test_guard();
+        let _guard = test_guard().await;
         let keys = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(keys.clone());
         let _ = client.add_relay("wss://relay.example.com").await;
@@ -655,7 +652,7 @@ mod tests {
 
     #[tokio::test]
     async fn subscriber_covers_delay_and_error_feedback_warn_path() {
-        let _guard = test_guard();
+        let _guard = test_guard().await;
         let keys = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(keys.clone());
         let _ = client.add_relay("wss://relay.example.com").await;
@@ -687,7 +684,7 @@ mod tests {
 
     #[tokio::test]
     async fn handled_domain_errors_advance_replay_anchor() {
-        let _guard = test_guard();
+        let _guard = test_guard().await;
         let keys = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(keys.clone());
         let runtime = shared_runtime();
@@ -718,7 +715,7 @@ mod tests {
 
     #[tokio::test]
     async fn subscriber_process_event_feedback_error_branches_are_covered() {
-        let _guard = test_guard();
+        let _guard = test_guard().await;
         let keys = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(keys.clone());
         let event = RadrootsNostrEventBuilder::new(RadrootsNostrKind::Custom(6000), "event")
@@ -745,7 +742,7 @@ mod tests {
 
     #[tokio::test]
     async fn subscriber_process_event_feedback_non_error_branches_are_covered() {
-        let _guard = test_guard();
+        let _guard = test_guard().await;
         let keys = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(keys.clone());
         let event_ok = RadrootsNostrEventBuilder::new(RadrootsNostrKind::Custom(6000), "ok")

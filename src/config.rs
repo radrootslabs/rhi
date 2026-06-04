@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use radroots_nostr::prelude::RadrootsNostrMetadata;
 use radroots_runtime::{BackoffConfig, RadrootsNostrServiceConfig};
 use serde::{Deserialize, Serialize};
@@ -17,27 +17,78 @@ fn default_replay_overlap_secs() -> u64 {
     5 * 60
 }
 
+fn default_logging_filter() -> String {
+    "info".to_owned()
+}
+
+fn default_logging_stdout() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoggingConfig {
+    pub output_dir: PathBuf,
+    pub filter: String,
+    pub stdout: bool,
+}
+
 #[derive(Debug, Deserialize, Clone, Default)]
+#[serde(default, deny_unknown_fields)]
+struct RawLoggingConfig {
+    pub output_dir: Option<PathBuf>,
+    pub filter: Option<String>,
+    pub stdout: Option<bool>,
+}
+
+impl RawLoggingConfig {
+    fn into_logging_config(self, paths: &RhiRuntimePaths) -> Result<LoggingConfig> {
+        let filter = self.filter.unwrap_or_else(default_logging_filter);
+        let filter = filter.trim();
+        if filter.is_empty() {
+            bail!("logging.filter must not be empty");
+        }
+
+        Ok(LoggingConfig {
+            output_dir: self.output_dir.unwrap_or_else(|| paths.logs_dir.clone()),
+            filter: filter.to_owned(),
+            stdout: self.stdout.unwrap_or_else(default_logging_stdout),
+        })
+    }
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+#[serde(default, deny_unknown_fields)]
+struct RawRelaysConfig {
+    pub urls: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+#[serde(default, deny_unknown_fields)]
+struct RawNostrConfig {
+    pub nip89: RawNip89Config,
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+#[serde(default, deny_unknown_fields)]
+struct RawNip89Config {
+    pub identifier: Option<String>,
+    pub extra_tags: Vec<Vec<String>>,
+}
+
+#[derive(Debug, Clone)]
 struct RawServiceConfig {
-    #[serde(default)]
-    pub logs_dir: Option<String>,
-    #[serde(default)]
-    pub relays: Vec<String>,
-    #[serde(default)]
-    pub nip89_identifier: Option<String>,
-    #[serde(default)]
-    pub nip89_extra_tags: Vec<Vec<String>>,
+    pub logging: LoggingConfig,
+    pub relays: RawRelaysConfig,
+    pub nostr: RawNostrConfig,
 }
 
 impl RawServiceConfig {
-    fn into_service_config(self, paths: &RhiRuntimePaths) -> RadrootsNostrServiceConfig {
+    fn into_service_config(self) -> RadrootsNostrServiceConfig {
         RadrootsNostrServiceConfig {
-            logs_dir: self
-                .logs_dir
-                .unwrap_or_else(|| paths.logs_dir.display().to_string()),
-            relays: self.relays,
-            nip89_identifier: self.nip89_identifier,
-            nip89_extra_tags: self.nip89_extra_tags,
+            logs_dir: self.logging.output_dir.display().to_string(),
+            relays: self.relays.urls,
+            nip89_identifier: self.nostr.nip89.identifier,
+            nip89_extra_tags: self.nostr.nip89.extra_tags,
         }
     }
 }
@@ -46,6 +97,7 @@ impl RawServiceConfig {
 pub struct Configuration {
     #[serde(flatten)]
     pub service: RadrootsNostrServiceConfig,
+    pub logging: LoggingConfig,
     #[serde(default)]
     pub subscriber: SubscriberConfig,
     #[serde(default)]
@@ -61,6 +113,7 @@ pub struct SubscriberConfig {
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
+#[serde(default, deny_unknown_fields)]
 struct RawSubscriberConfig {
     #[serde(default)]
     pub backoff: BackoffConfig,
@@ -85,6 +138,7 @@ pub struct SubscriberStateConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 struct RawSubscriberStateConfig {
     #[serde(default)]
     pub path: Option<PathBuf>,
@@ -128,31 +182,40 @@ impl Default for SubscriberStateConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-struct RawConfiguration {
-    #[serde(flatten)]
-    pub service: RawServiceConfig,
+#[serde(deny_unknown_fields)]
+struct RawSettings {
+    pub metadata: RadrootsNostrMetadata,
+    #[serde(default)]
+    pub logging: RawLoggingConfig,
+    #[serde(default)]
+    pub relays: RawRelaysConfig,
+    #[serde(default)]
+    pub nostr: RawNostrConfig,
     #[serde(default)]
     pub subscriber: RawSubscriberConfig,
     #[serde(default)]
     pub trade_validation_receipt: TradeValidationReceiptProverPolicy,
 }
 
-#[derive(Debug, Deserialize, Clone)]
-struct RawSettings {
-    pub metadata: RadrootsNostrMetadata,
-    pub config: RawConfiguration,
-}
-
 impl RawSettings {
-    fn into_settings(self, paths: &RhiRuntimePaths) -> Settings {
-        Settings {
+    fn into_settings(self, paths: &RhiRuntimePaths) -> Result<Settings> {
+        let logging = self.logging.into_logging_config(paths)?;
+        let service = RawServiceConfig {
+            logging: logging.clone(),
+            relays: self.relays,
+            nostr: self.nostr,
+        }
+        .into_service_config();
+
+        Ok(Settings {
             metadata: self.metadata,
             config: Configuration {
-                service: self.config.service.into_service_config(paths),
-                subscriber: self.config.subscriber.into_subscriber_config(paths),
-                trade_validation_receipt: self.config.trade_validation_receipt,
+                service,
+                logging,
+                subscriber: self.subscriber.into_subscriber_config(paths),
+                trade_validation_receipt: self.trade_validation_receipt,
             },
-        }
+        })
     }
 }
 
@@ -173,7 +236,7 @@ fn load_settings_from_path_with_resolver(
         .with_context(|| format!("read configuration from {}", path.display()))?;
     let settings: RawSettings =
         toml::from_str(&raw).with_context(|| format!("parse configuration {}", path.display()))?;
-    Ok(settings.into_settings(&paths))
+    settings.into_settings(&paths)
 }
 
 pub fn load_settings_from_path(path: &Path) -> Result<Settings> {
@@ -328,11 +391,13 @@ mod tests {
 [metadata]
 name = "rhi-test"
 
-[config]
-relays = ["wss://relay.example.com"]
-nip89_identifier = "rhi"
+[relays]
+urls = ["wss://relay.example.com"]
 
-[config.subscriber.state]
+[nostr.nip89]
+identifier = "rhi"
+
+[subscriber.state]
 replay_window_secs = 123
 replay_overlap_secs = 45
 "#,
@@ -350,6 +415,20 @@ replay_overlap_secs = 45
         assert_eq!(
             settings.config.service.logs_dir,
             "/home/treesap/.radroots/logs/workers/rhi"
+        );
+        assert_eq!(
+            settings.config.logging.output_dir,
+            PathBuf::from("/home/treesap/.radroots/logs/workers/rhi")
+        );
+        assert_eq!(settings.config.logging.filter, "info");
+        assert!(settings.config.logging.stdout);
+        assert_eq!(
+            settings.config.service.relays,
+            vec!["wss://relay.example.com"]
+        );
+        assert_eq!(
+            settings.config.service.nip89_identifier.as_deref(),
+            Some("rhi")
         );
         assert_eq!(
             settings.config.subscriber.state.path,
@@ -377,10 +456,28 @@ replay_overlap_secs = 45
 [metadata]
 name = "rhi-test"
 
-[config]
-relays = ["wss://relay.example.com"]
+[logging]
+output_dir = "logs/rhi"
+filter = "warn"
+stdout = false
 
-[config.trade_validation_receipt]
+[relays]
+urls = ["wss://relay.example.com"]
+
+[nostr.nip89]
+identifier = "rhi"
+extra_tags = [["t", "radroots"]]
+
+[subscriber.backoff]
+base_ms = 10
+max_ms = 100
+factor = 3
+jitter_ms = 5
+
+[subscriber.state]
+path = "state/trade-listing.json"
+
+[trade_validation_receipt]
 backend = "deterministic_none"
 proof_mode = "none"
 "#,
@@ -395,6 +492,33 @@ proof_mode = "none"
         )
         .expect("load settings");
 
+        assert_eq!(settings.config.service.logs_dir, "logs/rhi");
+        assert_eq!(
+            settings.config.logging.output_dir,
+            PathBuf::from("logs/rhi")
+        );
+        assert_eq!(settings.config.logging.filter, "warn");
+        assert!(!settings.config.logging.stdout);
+        assert_eq!(
+            settings.config.service.relays,
+            vec!["wss://relay.example.com"]
+        );
+        assert_eq!(
+            settings.config.service.nip89_identifier.as_deref(),
+            Some("rhi")
+        );
+        assert_eq!(
+            settings.config.service.nip89_extra_tags,
+            vec![vec!["t".to_owned(), "radroots".to_owned()]]
+        );
+        assert_eq!(settings.config.subscriber.backoff.base_ms, 10);
+        assert_eq!(settings.config.subscriber.backoff.max_ms, 100);
+        assert_eq!(settings.config.subscriber.backoff.factor, 3);
+        assert_eq!(settings.config.subscriber.backoff.jitter_ms, 5);
+        assert_eq!(
+            settings.config.subscriber.state.path,
+            PathBuf::from("state/trade-listing.json")
+        );
         assert_eq!(
             settings.config.trade_validation_receipt.backend,
             TradeValidationReceiptProverBackend::DeterministicNone
@@ -403,6 +527,71 @@ proof_mode = "none"
             settings.config.trade_validation_receipt.proof_mode,
             RadrootsSp1TradeProofMode::None
         );
+    }
+
+    #[test]
+    fn old_config_roots_are_rejected() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        for (name, body, needle) in [
+            (
+                "config-root",
+                r#"
+[metadata]
+name = "rhi-test"
+
+[config]
+relays = ["wss://relay.example.com"]
+"#,
+                "unknown field `config`",
+            ),
+            (
+                "config-subscriber-backoff",
+                r#"
+[metadata]
+name = "rhi-test"
+
+[config.subscriber.backoff]
+base_ms = 10
+"#,
+                "unknown field `config`",
+            ),
+            (
+                "config-subscriber-state",
+                r#"
+[metadata]
+name = "rhi-test"
+
+[config.subscriber.state]
+replay_window_secs = 10
+"#,
+                "unknown field `config`",
+            ),
+            (
+                "config-trade-validation-receipt",
+                r#"
+[metadata]
+name = "rhi-test"
+
+[config.trade_validation_receipt]
+backend = "deterministic_none"
+proof_mode = "none"
+"#,
+                "unknown field `config`",
+            ),
+        ] {
+            let config_path = temp.path().join(format!("{name}.toml"));
+            std::fs::write(&config_path, body).expect("write config");
+
+            let error = load_settings_from_path_with_resolver(
+                &config_path,
+                &linux_resolver(),
+                RadrootsPathProfile::InteractiveUser,
+                None,
+            )
+            .expect_err("old config root must fail");
+            let message = format!("{error:#}");
+            assert!(message.contains(needle), "{message}");
+        }
     }
 
     #[test]
@@ -433,8 +622,8 @@ proof_mode = "none"
         assert_eq!(
             contract.path_overrides.subordinate_path_override_keys,
             vec![
-                "config.service.logs_dir".to_owned(),
-                "config.subscriber.state.path".to_owned(),
+                "logging.output_dir".to_owned(),
+                "subscriber.state.path".to_owned(),
             ]
         );
         assert_eq!(

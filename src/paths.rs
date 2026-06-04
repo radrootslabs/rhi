@@ -17,8 +17,7 @@ const RHI_DEFAULT_SHARED_SECRET_BACKEND: &str = "encrypted_file";
 const RHI_ALLOWED_PROFILES: [&str; 3] = ["interactive_user", "service_host", "repo_local"];
 const RHI_ALLOWED_SHARED_SECRET_BACKENDS: [&str; 1] = ["encrypted_file"];
 const SUBORDINATE_PATH_OVERRIDE_SOURCE: &str = "config_artifact";
-const SUBORDINATE_PATH_OVERRIDE_KEYS: [&str; 2] =
-    ["config.service.logs_dir", "config.subscriber.state.path"];
+const SUBORDINATE_PATH_OVERRIDE_KEYS: [&str; 2] = ["logging.output_dir", "subscriber.state.path"];
 const MIGRATION_IMPORT_HINT: &str = "stop the worker, inspect this legacy path, then perform an explicit import or manual copy into the canonical destination; rhi will not move it on startup";
 
 #[derive(Debug, Clone, PartialEq, Eq)]

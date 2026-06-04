@@ -314,15 +314,21 @@ impl TradeValidationReceiptRemoteHttpAuth {
         match self {
             Self::NoAuth => Ok(()),
             Self::BearerTokenEnv { env_var } => {
-                if env_var.trim().is_empty() {
-                    return Err(TradeValidationReceiptJobError::RemoteHttpInvalidConfig(
-                        "auth.env_var",
-                    ));
-                }
+                validate_rhi_secret_env_var_name(env_var)?;
                 Ok(())
             }
         }
     }
+}
+
+fn validate_rhi_secret_env_var_name(env_var: &str) -> Result<&str, TradeValidationReceiptJobError> {
+    let env_var = env_var.trim();
+    if env_var.is_empty() || !env_var.starts_with("RHI_") {
+        return Err(TradeValidationReceiptJobError::RemoteHttpInvalidConfig(
+            "auth.env_var",
+        ));
+    }
+    Ok(env_var)
 }
 
 fn remote_http_auth_token(
@@ -331,13 +337,14 @@ fn remote_http_auth_token(
     match &config.auth {
         TradeValidationReceiptRemoteHttpAuth::NoAuth => Ok(None),
         TradeValidationReceiptRemoteHttpAuth::BearerTokenEnv { env_var } => {
+            let env_var = validate_rhi_secret_env_var_name(env_var)?;
             let value = std::env::var(env_var).map_err(|_| {
-                TradeValidationReceiptJobError::RemoteHttpAuthTokenMissing(env_var.clone())
+                TradeValidationReceiptJobError::RemoteHttpAuthTokenMissing(env_var.to_owned())
             })?;
             let token = value.trim();
             if token.is_empty() {
                 return Err(TradeValidationReceiptJobError::RemoteHttpAuthTokenMissing(
-                    env_var.clone(),
+                    env_var.to_owned(),
                 ));
             }
             Ok(Some(token.to_owned()))
@@ -1993,12 +2000,29 @@ mod tests {
             .as_mut()
             .expect("remote config")
             .auth = TradeValidationReceiptRemoteHttpAuth::BearerTokenEnv {
-            env_var: "RADROOTS_TEST_REMOTE_HTTP_TOKEN".to_string(),
+            env_var: "RHI_TEST_REMOTE_HTTP_TOKEN".to_string(),
         };
         assert!(matches!(
             bearer_over_http.validate(),
             Err(TradeValidationReceiptJobError::RemoteHttpInvalidConfig(
                 "auth.endpoint_url_scheme"
+            ))
+        ));
+    }
+
+    #[test]
+    fn remote_http_auth_env_var_must_use_rhi_prefix_before_process_env_read() {
+        let mut policy = remote_http_policy();
+        let remote_http = policy.remote_http.as_mut().expect("remote config");
+        remote_http.endpoint_url = "https://example.test/prove".to_string();
+        remote_http.auth = TradeValidationReceiptRemoteHttpAuth::BearerTokenEnv {
+            env_var: "RADROOTS_TEST_REMOTE_HTTP_TOKEN".to_string(),
+        };
+
+        assert!(matches!(
+            policy.validate(),
+            Err(TradeValidationReceiptJobError::RemoteHttpInvalidConfig(
+                "auth.env_var"
             ))
         ));
     }

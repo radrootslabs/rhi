@@ -1,47 +1,29 @@
 [metadata]
 name = "rhi"
-# display_name = ""
-# about = ""
-# picture = ""
-# banner = ""
-# banner = ""
-# nip05 = ""
-# lud06 = ""
-# lud16 = ""
 
-[config]
-# Service-host sample location:
-#   /etc/radroots/workers/rhi/config.toml
-# Launch with:
-#   RHI_PATHS_PROFILE=service_host
-#
-# Manual operator runs may instead place this file at:
-#   ~/.radroots/config/workers/rhi/config.toml
-# Repo-owned local runs should prefer the root .env.local control plane, which derives
-# RHI_PATHS_PROFILE=repo_local and RHI_PATHS_REPO_LOCAL_ROOT automatically
-# when path-like values are omitted, the active profile derives:
-#   interactive_user:
-#     logs_dir = ~/.radroots/logs/workers/rhi
-#     worker identity = ~/.radroots/secrets/workers/rhi/identity.secret.json
-#     subscriber state = ~/.radroots/data/workers/rhi/trade-listing/state.json
-#   service_host:
-#     logs_dir = /var/log/radroots/workers/rhi
-#     worker identity = /etc/radroots/secrets/workers/rhi/identity.secret.json
-#     subscriber state = /var/lib/radroots/workers/rhi/trade-listing/state.json
-# the canonical live worker identity is always an encrypted local envelope
-# only override logs_dir or config.subscriber.state.path intentionally
-relays = [
+[logging]
+filter = "info"
+stdout = true
+
+[relays]
+urls = [
   "ws://127.0.0.1:8080"
 ]
-nip89_identifier = "rhi"
-nip89_extra_tags = []
 
-[config.subscriber.backoff]
+[nostr.nip89]
+identifier = "rhi"
+extra_tags = []
+
+[subscriber.backoff]
 base_ms = 500
 max_ms = 30000
 factor = 2
 jitter_ms = 0
 
-[config.subscriber.state]
+[subscriber.state]
 replay_window_secs = 86400
 replay_overlap_secs = 300
+
+[trade_validation_receipt]
+backend = "disabled"
+proof_mode = "none"

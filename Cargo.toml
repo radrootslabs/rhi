@@ -15,6 +15,7 @@ radroots_core = { path = "../lib/crates/core" }
 radroots_events = { path = "../lib/crates/events" }
 radroots_events_codec = { path = "../lib/crates/events_codec" }
 radroots_identity = { path = "../lib/crates/identity" }
+radroots_log = { path = "../lib/crates/log" }
 radroots_nostr = { path = "../lib/crates/nostr" }
 radroots_runtime = { path = "../lib/crates/runtime" }
 radroots_runtime_paths = { path = "../lib/crates/runtime_paths" }
@@ -36,6 +37,7 @@ radroots_core = { workspace = true, features = ["std", "serde", "typeshare"]  }
 radroots_events = { workspace = true, features = ["serde"] }
 radroots_events_codec = { workspace = true, features = ["nostr"] }
 radroots_identity = { workspace = true }
+radroots_log = { workspace = true }
 radroots_nostr = { workspace = true, features = ["client", "codec", "events", "http"] }
 radroots_runtime = { workspace = true, features = ["cli"] }
 radroots_runtime_paths = { workspace = true }

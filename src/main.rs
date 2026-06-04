@@ -6,6 +6,8 @@ use anyhow::Result;
 #[cfg(not(test))]
 use clap::Parser;
 #[cfg(not(test))]
+use radroots_log::{LogFileLayout, LoggingOptions};
+#[cfg(not(test))]
 use rhi::cli::Command;
 use rhi::{cli_args, config, paths, run_rhi};
 #[cfg(not(test))]
@@ -91,12 +93,21 @@ fn load_args_and_settings() -> Result<(cli_args, config::Settings)> {
             .unwrap_or_else(paths::default_config_path_for_process)?;
         let settings =
             config::load_settings_from_path(&config_path).context("load configuration")?;
-        radroots_runtime::init_with_logs_dir(
-            std::path::Path::new(settings.config.service.logs_dir.as_str()),
-            None,
-        )?;
+        init_rhi_logging(&settings)?;
         Ok((args, settings))
     }
+}
+
+#[cfg(not(test))]
+fn init_rhi_logging(settings: &config::Settings) -> Result<()> {
+    radroots_log::init_logging(LoggingOptions {
+        dir: Some(settings.config.logging.output_dir.clone()),
+        file_name: "rhi.log".to_owned(),
+        stdout: settings.config.logging.stdout,
+        default_level: Some(settings.config.logging.filter.clone()),
+        file_layout: LogFileLayout::PrefixedDate,
+    })
+    .context("initialize logging")
 }
 
 fn runtime_startup_report(
@@ -122,9 +133,9 @@ fn runtime_startup_report(
             &contract.canonical_config_path,
         ),
         canonical_config_path: contract.canonical_config_path.clone(),
-        logs_dir: PathBuf::from(settings.config.service.logs_dir.as_str()),
+        logs_dir: settings.config.logging.output_dir.clone(),
         logs_dir_source: config_or_profile_path_source(
-            &PathBuf::from(settings.config.service.logs_dir.as_str()),
+            &settings.config.logging.output_dir,
             &contract.canonical_logs_dir,
         ),
         canonical_logs_dir: contract.canonical_logs_dir.clone(),
@@ -268,6 +279,11 @@ mod tests {
                     nip89_identifier: Some("rhi".to_string()),
                     nip89_extra_tags: Vec::new(),
                 },
+                logging: config::LoggingConfig {
+                    output_dir: std::env::temp_dir().join("rhi-test-logs"),
+                    filter: "info".to_string(),
+                    stdout: true,
+                },
                 subscriber: config::SubscriberConfig::default(),
                 trade_validation_receipt:
                     rhi::features::trade_validation_receipt::TradeValidationReceiptProverPolicy::default(),
@@ -290,8 +306,8 @@ mod tests {
                 repo_local_root_source: None,
                 subordinate_path_override_source: "config_artifact".to_string(),
                 subordinate_path_override_keys: vec![
-                    "config.service.logs_dir".to_string(),
-                    "config.subscriber.state.path".to_string(),
+                    "logging.output_dir".to_string(),
+                    "subscriber.state.path".to_string(),
                 ],
             },
             default_shared_secret_backend: "encrypted_file".to_string(),
@@ -418,6 +434,7 @@ mod tests {
         };
         let mut settings = minimal_settings();
         settings.config.service.logs_dir = "/tmp/rhi/logs".to_string();
+        settings.config.logging.output_dir = PathBuf::from("/tmp/rhi/logs");
         settings.config.subscriber.state.path = PathBuf::from("/tmp/rhi/state.json");
 
         let contract = sample_runtime_contract();
@@ -467,6 +484,7 @@ mod tests {
         let contract = sample_runtime_contract();
         let mut settings = minimal_settings();
         settings.config.service.logs_dir = contract.canonical_logs_dir.display().to_string();
+        settings.config.logging.output_dir = contract.canonical_logs_dir.clone();
         settings.config.subscriber.state.path = contract.canonical_subscriber_state_path.clone();
 
         let report =

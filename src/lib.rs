@@ -235,6 +235,11 @@ mod tests {
                     nip89_identifier: Some("rhi".to_string()),
                     nip89_extra_tags: Vec::new(),
                 },
+                logging: config::LoggingConfig {
+                    output_dir: std::env::temp_dir().join("rhi-test-logs"),
+                    filter: "info".to_string(),
+                    stdout: true,
+                },
                 subscriber: config::SubscriberConfig {
                     backoff: radroots_runtime::BackoffConfig {
                         base_ms: 1,
