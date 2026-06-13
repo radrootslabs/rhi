@@ -715,8 +715,8 @@ fn order_request_witness_from_payload(
     RadrootsSp1TradeOrderRequestWitness {
         order_id: payload.order_id.to_string(),
         listing_addr: payload.listing_addr.to_string(),
-        buyer_pubkey: payload.buyer_pubkey,
-        seller_pubkey: payload.seller_pubkey,
+        buyer_pubkey: payload.buyer_pubkey.to_string(),
+        seller_pubkey: payload.seller_pubkey.to_string(),
         items: payload
             .items
             .into_iter()
@@ -734,8 +734,8 @@ fn order_decision_witness_from_payload(
     RadrootsSp1TradeOrderDecisionEventWitness {
         order_id: payload.order_id.to_string(),
         listing_addr: payload.listing_addr.to_string(),
-        buyer_pubkey: payload.buyer_pubkey,
-        seller_pubkey: payload.seller_pubkey,
+        buyer_pubkey: payload.buyer_pubkey.to_string(),
+        seller_pubkey: payload.seller_pubkey.to_string(),
         decision: match payload.decision {
             RadrootsOrderDecisionOutcome::Accepted {
                 inventory_commitments,
@@ -1510,6 +1510,10 @@ mod tests {
         RadrootsCoreCurrency, RadrootsCoreDecimal, RadrootsCoreMoney, RadrootsCoreUnit,
     };
     use radroots_events::RadrootsNostrEventPtr;
+    use radroots_events::ids::{
+        RadrootsEventId, RadrootsInventoryBinId, RadrootsListingAddress, RadrootsOrderId,
+        RadrootsOrderQuoteId, RadrootsPublicKey,
+    };
     use radroots_events::kinds::{
         KIND_LISTING, KIND_TRADE_TRANSITION_PROOF_REQUEST, KIND_TRADE_TRANSITION_PROOF_RESULT,
         KIND_TRADE_VALIDATION_RECEIPT,
@@ -1567,6 +1571,30 @@ mod tests {
         )
     }
 
+    fn typed_listing_addr(listing_addr: &str) -> RadrootsListingAddress {
+        RadrootsListingAddress::parse(listing_addr).expect("listing address")
+    }
+
+    fn typed_order_id(order_id: &str) -> RadrootsOrderId {
+        RadrootsOrderId::parse(order_id).expect("order id")
+    }
+
+    fn typed_quote_id(order_id: &str) -> RadrootsOrderQuoteId {
+        RadrootsOrderQuoteId::parse(format!("{order_id}-quote")).expect("quote id")
+    }
+
+    fn typed_bin_id() -> RadrootsInventoryBinId {
+        RadrootsInventoryBinId::parse("bin-1").expect("bin id")
+    }
+
+    fn typed_pubkey(keys: &RadrootsNostrKeys) -> RadrootsPublicKey {
+        RadrootsPublicKey::parse(keys.public_key().to_hex()).expect("public key")
+    }
+
+    fn typed_event_id(event: &RadrootsNostrEvent) -> RadrootsEventId {
+        RadrootsEventId::parse(event.id.to_hex()).expect("event id")
+    }
+
     fn signed_event(
         keys: &RadrootsNostrKeys,
         kind: u32,
@@ -1595,12 +1623,12 @@ mod tests {
         seller: &RadrootsNostrKeys,
     ) -> RadrootsOrderRequest {
         RadrootsOrderRequest {
-            order_id: order_id.to_string(),
-            listing_addr: listing_addr.to_string(),
-            buyer_pubkey: buyer.public_key().to_hex(),
-            seller_pubkey: seller.public_key().to_hex(),
+            order_id: typed_order_id(order_id),
+            listing_addr: typed_listing_addr(listing_addr),
+            buyer_pubkey: typed_pubkey(buyer),
+            seller_pubkey: typed_pubkey(seller),
             items: vec![RadrootsOrderItem {
-                bin_id: "bin-1".to_string(),
+                bin_id: typed_bin_id(),
                 bin_count: 2,
             }],
             economics: economics(order_id, 2),
@@ -1614,13 +1642,13 @@ mod tests {
         seller: &RadrootsNostrKeys,
     ) -> RadrootsOrderDecision {
         RadrootsOrderDecision {
-            order_id: order_id.to_string(),
-            listing_addr: listing_addr.to_string(),
-            buyer_pubkey: buyer.public_key().to_hex(),
-            seller_pubkey: seller.public_key().to_hex(),
+            order_id: typed_order_id(order_id),
+            listing_addr: typed_listing_addr(listing_addr),
+            buyer_pubkey: typed_pubkey(buyer),
+            seller_pubkey: typed_pubkey(seller),
             decision: RadrootsOrderDecisionOutcome::Accepted {
                 inventory_commitments: vec![RadrootsOrderInventoryCommitment {
-                    bin_id: "bin-1".to_string(),
+                    bin_id: typed_bin_id(),
                     bin_count: 2,
                 }],
             },
@@ -1631,12 +1659,12 @@ mod tests {
         let subtotal = RadrootsCoreDecimal::from(5u32) * RadrootsCoreDecimal::from(bin_count);
         let money = RadrootsCoreMoney::new(subtotal, RadrootsCoreCurrency::USD);
         RadrootsOrderEconomics {
-            quote_id: format!("{order_id}-quote"),
+            quote_id: typed_quote_id(order_id),
             quote_version: 1,
             pricing_basis: RadrootsOrderPricingBasis::ListingEvent,
             currency: RadrootsCoreCurrency::USD,
             items: vec![RadrootsOrderEconomicItem {
-                bin_id: "bin-1".to_string(),
+                bin_id: typed_bin_id(),
                 bin_count,
                 quantity_amount: RadrootsCoreDecimal::from(1u32),
                 quantity_unit: RadrootsCoreUnit::Each,
@@ -1676,8 +1704,8 @@ mod tests {
             request_wire.tags,
         );
         let decision_wire = order_decision_event_build(
-            &request_event.id.to_hex(),
-            &request_event.id.to_hex(),
+            &typed_event_id(&request_event),
+            &typed_event_id(&request_event),
             &decision_payload(order_id, &listing_addr, buyer, seller),
         )
         .expect("decision wire");

@@ -516,8 +516,8 @@ async fn handle_order_request(
     state.insert_order(TradeOrderState {
         order_id: envelope.order_id,
         listing_addr: envelope.payload.listing_addr.to_string(),
-        buyer_pubkey: envelope.payload.buyer_pubkey,
-        seller_pubkey: envelope.payload.seller_pubkey,
+        buyer_pubkey: envelope.payload.buyer_pubkey.to_string(),
+        seller_pubkey: envelope.payload.seller_pubkey.to_string(),
         status: TradeOrderStatus::Requested,
         listing_snapshot_event_id: Some(listing_snapshot_event_id),
         root_event_id: Some(event_id.clone()),
@@ -951,6 +951,10 @@ mod tests {
     };
     use radroots_events::RadrootsNostrEventPtr;
     use radroots_events::farm::RadrootsFarmRef;
+    use radroots_events::ids::{
+        RadrootsInventoryBinId, RadrootsListingAddress, RadrootsOrderId, RadrootsOrderQuoteId,
+        RadrootsPublicKey,
+    };
     use radroots_events::kinds::{
         KIND_LISTING, KIND_ORDER_REQUEST, KIND_TRADE_LISTING_VALIDATION_REQUEST,
     };
@@ -983,21 +987,45 @@ mod tests {
         format!("{}:{}:{}", KIND_LISTING, seller.public_key(), listing_id())
     }
 
+    fn listing_event_id() -> &'static str {
+        "0000000000000000000000000000000000000000000000000000000000000001"
+    }
+
+    fn typed_listing_addr(seller: &RadrootsNostrKeys) -> RadrootsListingAddress {
+        RadrootsListingAddress::parse(listing_addr(seller)).expect("listing address")
+    }
+
+    fn typed_order_id(order_id: &str) -> RadrootsOrderId {
+        RadrootsOrderId::parse(order_id).expect("order id")
+    }
+
+    fn typed_quote_id(order_id: &str) -> RadrootsOrderQuoteId {
+        RadrootsOrderQuoteId::parse(format!("{order_id}-quote")).expect("quote id")
+    }
+
+    fn typed_bin_id() -> RadrootsInventoryBinId {
+        RadrootsInventoryBinId::parse("bin-1").expect("bin id")
+    }
+
+    fn typed_pubkey(keys: &RadrootsNostrKeys) -> RadrootsPublicKey {
+        RadrootsPublicKey::parse(keys.public_key().to_string()).expect("public key")
+    }
+
     fn listing_event_ptr() -> RadrootsNostrEventPtr {
         RadrootsNostrEventPtr {
-            id: "listing-event-1".to_string(),
+            id: listing_event_id().to_string(),
             relays: None,
         }
     }
 
     fn order_economics(order_id: &str) -> RadrootsOrderEconomics {
         RadrootsOrderEconomics {
-            quote_id: format!("{order_id}-quote"),
+            quote_id: typed_quote_id(order_id),
             quote_version: 1,
             pricing_basis: RadrootsOrderPricingBasis::ListingEvent,
             currency: RadrootsCoreCurrency::USD,
             items: vec![RadrootsOrderEconomicItem {
-                bin_id: "bin-1".to_string(),
+                bin_id: typed_bin_id(),
                 bin_count: 2,
                 quantity_amount: RadrootsCoreDecimal::from(1u32),
                 quantity_unit: RadrootsCoreUnit::Each,
@@ -1035,12 +1063,12 @@ mod tests {
         seller: &RadrootsNostrKeys,
     ) -> RadrootsOrderRequest {
         RadrootsOrderRequest {
-            order_id: order_id.to_string(),
-            listing_addr: listing_addr(seller),
-            buyer_pubkey: buyer.public_key().to_string(),
-            seller_pubkey: seller.public_key().to_string(),
+            order_id: typed_order_id(order_id),
+            listing_addr: typed_listing_addr(seller),
+            buyer_pubkey: typed_pubkey(buyer),
+            seller_pubkey: typed_pubkey(seller),
             items: vec![RadrootsOrderItem {
-                bin_id: "bin-1".to_string(),
+                bin_id: typed_bin_id(),
                 bin_count: 2,
             }],
             economics: order_economics(order_id),
@@ -1078,7 +1106,7 @@ mod tests {
         let state = Arc::new(Mutex::new(TradeListingState::default()));
         state.lock().await.upsert_listing_event(
             &listing_addr(&seller),
-            "listing-event-1",
+            listing_event_id(),
             KIND_LISTING,
         );
 
