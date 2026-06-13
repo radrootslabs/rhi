@@ -2,15 +2,15 @@
 #![cfg_attr(coverage_nightly, coverage(off))]
 
 use radroots_events::kinds::{
-    KIND_TRADE_VALIDATION_RECEIPT, KIND_WORKER_TRADE_TRANSITION_PROOF_REQ,
-    KIND_WORKER_TRADE_TRANSITION_PROOF_RES, is_listing_kind,
+    KIND_TRADE_TRANSITION_PROOF_REQUEST, KIND_TRADE_TRANSITION_PROOF_RESULT,
+    KIND_TRADE_VALIDATION_RECEIPT, is_listing_kind,
 };
-use radroots_events::trade::{
-    RadrootsTradeOrderDecision, RadrootsTradeOrderDecisionEvent, RadrootsTradeOrderRequested,
+use radroots_events::order::{
+    RadrootsOrderDecision, RadrootsOrderDecisionOutcome, RadrootsOrderRequest,
 };
-use radroots_events_codec::trade::{
-    active_trade_order_decision_from_event, active_trade_order_request_from_event,
-    parse_trade_listing_event_tag, parse_trade_prev_tag, parse_trade_root_tag,
+use radroots_events_codec::order::{
+    order_decision_from_event, order_request_from_event, parse_order_listing_event_tag,
+    parse_order_prev_tag, parse_order_root_tag,
 };
 use radroots_nostr::prelude::{
     RadrootsNostrClient, RadrootsNostrEvent, RadrootsNostrEventBuilder, RadrootsNostrKeys,
@@ -470,7 +470,7 @@ pub async fn handle_trade_validation_receipt_job_request(
     prover_policy: &TradeValidationReceiptProverPolicy,
 ) -> Result<(), TradeValidationReceiptJobError> {
     let kind = event_kind_u32(event)?;
-    if kind != KIND_WORKER_TRADE_TRANSITION_PROOF_REQ {
+    if kind != KIND_TRADE_TRANSITION_PROOF_REQUEST {
         return Err(TradeValidationReceiptJobError::UnsupportedKind);
     }
 
@@ -503,15 +503,14 @@ pub async fn handle_trade_validation_receipt_job_request(
     let request_rr = radroots_event_from_nostr(&order_request_event);
     let decision_rr = radroots_event_from_nostr(&order_decision_event);
 
-    let request_envelope = active_trade_order_request_from_event(&request_rr).map_err(|error| {
+    let request_envelope = order_request_from_event(&request_rr).map_err(|error| {
         TradeValidationReceiptJobError::InvalidActiveTradeEvent(error.to_string())
     })?;
-    let decision_envelope =
-        active_trade_order_decision_from_event(&decision_rr).map_err(|error| {
-            TradeValidationReceiptJobError::InvalidActiveTradeEvent(error.to_string())
-        })?;
+    let decision_envelope = order_decision_from_event(&decision_rr).map_err(|error| {
+        TradeValidationReceiptJobError::InvalidActiveTradeEvent(error.to_string())
+    })?;
 
-    let listing_event_ptr = parse_trade_listing_event_tag(&request_rr.tags)
+    let listing_event_ptr = parse_order_listing_event_tag(&request_rr.tags)
         .map_err(|error| {
             TradeValidationReceiptJobError::InvalidActiveTradeEvent(error.to_string())
         })?
@@ -520,10 +519,10 @@ pub async fn handle_trade_validation_receipt_job_request(
         return Err(TradeValidationReceiptJobError::EventSetMismatch);
     }
 
-    let root_event_id = parse_trade_root_tag(&decision_rr.tags).map_err(|error| {
+    let root_event_id = parse_order_root_tag(&decision_rr.tags).map_err(|error| {
         TradeValidationReceiptJobError::InvalidActiveTradeEvent(error.to_string())
     })?;
-    let prev_event_id = parse_trade_prev_tag(&decision_rr.tags).map_err(|error| {
+    let prev_event_id = parse_order_prev_tag(&decision_rr.tags).map_err(|error| {
         TradeValidationReceiptJobError::InvalidActiveTradeEvent(error.to_string())
     })?;
     if root_event_id.as_deref() != Some(request.request_event_id.as_str())
@@ -613,7 +612,7 @@ pub async fn handle_trade_validation_receipt_job_request(
     let result_tags = result_tags(event, &receipt_event_id, &result);
     publish_event_parts_io(
         client,
-        KIND_WORKER_TRADE_TRANSITION_PROOF_RES,
+        KIND_TRADE_TRANSITION_PROOF_RESULT,
         result_content,
         result_tags,
     )
@@ -711,7 +710,7 @@ fn hex_lower(bytes: &[u8]) -> String {
 }
 
 fn order_request_witness_from_payload(
-    payload: RadrootsTradeOrderRequested,
+    payload: RadrootsOrderRequest,
 ) -> RadrootsSp1TradeOrderRequestWitness {
     RadrootsSp1TradeOrderRequestWitness {
         order_id: payload.order_id,
@@ -730,7 +729,7 @@ fn order_request_witness_from_payload(
 }
 
 fn order_decision_witness_from_payload(
-    payload: RadrootsTradeOrderDecisionEvent,
+    payload: RadrootsOrderDecision,
 ) -> RadrootsSp1TradeOrderDecisionEventWitness {
     RadrootsSp1TradeOrderDecisionEventWitness {
         order_id: payload.order_id,
@@ -738,7 +737,7 @@ fn order_decision_witness_from_payload(
         buyer_pubkey: payload.buyer_pubkey,
         seller_pubkey: payload.seller_pubkey,
         decision: match payload.decision {
-            RadrootsTradeOrderDecision::Accepted {
+            RadrootsOrderDecisionOutcome::Accepted {
                 inventory_commitments,
             } => RadrootsSp1TradeOrderDecisionWitness::Accepted {
                 inventory_commitments: inventory_commitments
@@ -749,7 +748,7 @@ fn order_decision_witness_from_payload(
                     })
                     .collect(),
             },
-            RadrootsTradeOrderDecision::Declined { reason } => {
+            RadrootsOrderDecisionOutcome::Declined { reason } => {
                 RadrootsSp1TradeOrderDecisionWitness::Declined { reason }
             }
         },
@@ -1512,18 +1511,15 @@ mod tests {
     };
     use radroots_events::RadrootsNostrEventPtr;
     use radroots_events::kinds::{
-        KIND_LISTING, KIND_TRADE_VALIDATION_RECEIPT, KIND_WORKER_TRADE_TRANSITION_PROOF_REQ,
-        KIND_WORKER_TRADE_TRANSITION_PROOF_RES,
+        KIND_LISTING, KIND_TRADE_TRANSITION_PROOF_REQUEST, KIND_TRADE_TRANSITION_PROOF_RESULT,
+        KIND_TRADE_VALIDATION_RECEIPT,
     };
-    use radroots_events::trade::{
-        RadrootsTradeInventoryCommitment, RadrootsTradeOrderDecision,
-        RadrootsTradeOrderDecisionEvent, RadrootsTradeOrderEconomicItem,
-        RadrootsTradeOrderEconomicLine, RadrootsTradeOrderEconomics, RadrootsTradeOrderItem,
-        RadrootsTradeOrderRequested, RadrootsTradePricingBasis,
+    use radroots_events::order::{
+        RadrootsOrderDecision, RadrootsOrderDecisionOutcome, RadrootsOrderEconomicItem,
+        RadrootsOrderEconomicLine, RadrootsOrderEconomics, RadrootsOrderInventoryCommitment,
+        RadrootsOrderItem, RadrootsOrderPricingBasis, RadrootsOrderRequest,
     };
-    use radroots_events_codec::trade::{
-        active_trade_order_decision_event_build, active_trade_order_request_event_build,
-    };
+    use radroots_events_codec::order::{order_decision_event_build, order_request_event_build};
     use radroots_nostr::prelude::{
         RadrootsNostrClient, RadrootsNostrEvent, RadrootsNostrEventBuilder, RadrootsNostrKeys,
         RadrootsNostrKind, RadrootsNostrTag, RadrootsNostrTagKind, radroots_event_from_nostr,
@@ -1597,13 +1593,13 @@ mod tests {
         listing_addr: &str,
         buyer: &RadrootsNostrKeys,
         seller: &RadrootsNostrKeys,
-    ) -> RadrootsTradeOrderRequested {
-        RadrootsTradeOrderRequested {
+    ) -> RadrootsOrderRequest {
+        RadrootsOrderRequest {
             order_id: order_id.to_string(),
             listing_addr: listing_addr.to_string(),
             buyer_pubkey: buyer.public_key().to_hex(),
             seller_pubkey: seller.public_key().to_hex(),
-            items: vec![RadrootsTradeOrderItem {
+            items: vec![RadrootsOrderItem {
                 bin_id: "bin-1".to_string(),
                 bin_count: 2,
             }],
@@ -1616,14 +1612,14 @@ mod tests {
         listing_addr: &str,
         buyer: &RadrootsNostrKeys,
         seller: &RadrootsNostrKeys,
-    ) -> RadrootsTradeOrderDecisionEvent {
-        RadrootsTradeOrderDecisionEvent {
+    ) -> RadrootsOrderDecision {
+        RadrootsOrderDecision {
             order_id: order_id.to_string(),
             listing_addr: listing_addr.to_string(),
             buyer_pubkey: buyer.public_key().to_hex(),
             seller_pubkey: seller.public_key().to_hex(),
-            decision: RadrootsTradeOrderDecision::Accepted {
-                inventory_commitments: vec![RadrootsTradeInventoryCommitment {
+            decision: RadrootsOrderDecisionOutcome::Accepted {
+                inventory_commitments: vec![RadrootsOrderInventoryCommitment {
                     bin_id: "bin-1".to_string(),
                     bin_count: 2,
                 }],
@@ -1631,15 +1627,15 @@ mod tests {
         }
     }
 
-    fn economics(order_id: &str, bin_count: u32) -> RadrootsTradeOrderEconomics {
+    fn economics(order_id: &str, bin_count: u32) -> RadrootsOrderEconomics {
         let subtotal = RadrootsCoreDecimal::from(5u32) * RadrootsCoreDecimal::from(bin_count);
         let money = RadrootsCoreMoney::new(subtotal, RadrootsCoreCurrency::USD);
-        RadrootsTradeOrderEconomics {
+        RadrootsOrderEconomics {
             quote_id: format!("{order_id}-quote"),
             quote_version: 1,
-            pricing_basis: RadrootsTradePricingBasis::ListingEvent,
+            pricing_basis: RadrootsOrderPricingBasis::ListingEvent,
             currency: RadrootsCoreCurrency::USD,
-            items: vec![RadrootsTradeOrderEconomicItem {
+            items: vec![RadrootsOrderEconomicItem {
                 bin_id: "bin-1".to_string(),
                 bin_count,
                 quantity_amount: RadrootsCoreDecimal::from(1u32),
@@ -1648,8 +1644,8 @@ mod tests {
                 unit_price_currency: RadrootsCoreCurrency::USD,
                 line_subtotal: money.clone(),
             }],
-            discounts: Vec::<RadrootsTradeOrderEconomicLine>::new(),
-            adjustments: Vec::<RadrootsTradeOrderEconomicLine>::new(),
+            discounts: Vec::<RadrootsOrderEconomicLine>::new(),
+            adjustments: Vec::<RadrootsOrderEconomicLine>::new(),
             subtotal: money.clone(),
             discount_total: RadrootsCoreMoney::zero(RadrootsCoreCurrency::USD),
             adjustment_total: RadrootsCoreMoney::zero(RadrootsCoreCurrency::USD),
@@ -1668,7 +1664,7 @@ mod tests {
             id: listing_event.id.to_hex(),
             relays: None,
         };
-        let request_wire = active_trade_order_request_event_build(
+        let request_wire = order_request_event_build(
             &listing_ptr,
             &request_payload(order_id, &listing_addr, buyer, seller),
         )
@@ -1679,7 +1675,7 @@ mod tests {
             request_wire.content,
             request_wire.tags,
         );
-        let decision_wire = active_trade_order_decision_event_build(
+        let decision_wire = order_decision_event_build(
             &request_event.id.to_hex(),
             &request_event.id.to_hex(),
             &decision_payload(order_id, &listing_addr, buyer, seller),
@@ -1727,7 +1723,7 @@ mod tests {
         };
         signed_event(
             requester,
-            KIND_WORKER_TRADE_TRANSITION_PROOF_REQ,
+            KIND_TRADE_TRANSITION_PROOF_REQUEST,
             serde_json::to_string(&request).expect("job json"),
             vec![vec!["p".to_string(), worker.public_key().to_string()]],
         )
@@ -2060,7 +2056,7 @@ mod tests {
 
         assert_eq!(published.len(), 2);
         assert_eq!(published[0].kind, KIND_TRADE_VALIDATION_RECEIPT);
-        assert_eq!(published[1].kind, KIND_WORKER_TRADE_TRANSITION_PROOF_RES);
+        assert_eq!(published[1].kind, KIND_TRADE_TRANSITION_PROOF_RESULT);
         let result: TradeValidationReceiptJobResult =
             serde_json::from_str(&published[1].content).expect("result json");
         assert_eq!(
@@ -2585,7 +2581,7 @@ mod tests {
             .clone();
         assert_eq!(published.len(), 2);
         assert_eq!(published[0].kind, KIND_TRADE_VALIDATION_RECEIPT);
-        assert_eq!(published[1].kind, KIND_WORKER_TRADE_TRANSITION_PROOF_RES);
+        assert_eq!(published[1].kind, KIND_TRADE_TRANSITION_PROOF_RESULT);
 
         let receipt_event = radroots_events::RadrootsNostrEvent {
             id: publish_result_id(1),
@@ -2721,7 +2717,7 @@ mod tests {
         request_json["prover_backend"] = serde_json::Value::String("local_cpu_prove".to_string());
         let job = signed_event(
             &requester,
-            KIND_WORKER_TRADE_TRANSITION_PROOF_REQ,
+            KIND_TRADE_TRANSITION_PROOF_REQUEST,
             serde_json::to_string(&request_json).expect("request json"),
             vec![vec!["p".to_string(), worker.public_key().to_string()]],
         );
@@ -2882,7 +2878,7 @@ mod tests {
             "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd".to_string();
         let job = signed_event(
             &requester,
-            KIND_WORKER_TRADE_TRANSITION_PROOF_REQ,
+            KIND_TRADE_TRANSITION_PROOF_REQUEST,
             serde_json::to_string(&request).expect("job json"),
             vec![vec!["p".to_string(), worker.public_key().to_string()]],
         );
@@ -2991,7 +2987,7 @@ mod tests {
         let worker = RadrootsNostrKeys::generate();
         let requester = RadrootsNostrKeys::generate();
         let job = RadrootsNostrEventBuilder::new(
-            RadrootsNostrKind::Custom(KIND_WORKER_TRADE_TRANSITION_PROOF_REQ as u16),
+            RadrootsNostrKind::Custom(KIND_TRADE_TRANSITION_PROOF_REQUEST as u16),
             "{}",
         )
         .tags(vec![RadrootsNostrTag::custom(
@@ -3030,7 +3026,7 @@ mod tests {
     }
 
     #[test]
-    fn signed_events_are_canonical_active_trade_events() {
+    fn signed_events_are_canonical_order_events() {
         let _guard = test_guard();
         let buyer = RadrootsNostrKeys::generate();
         let seller = RadrootsNostrKeys::generate();
@@ -3039,7 +3035,7 @@ mod tests {
         let request_rr = radroots_event_from_nostr(&request_event);
         let decision_rr = radroots_event_from_nostr(&decision_event);
         assert!(
-            active_trade_order_request_event_build(
+            order_request_event_build(
                 &RadrootsNostrEventPtr {
                     id: listing_event.id.to_hex(),
                     relays: None,

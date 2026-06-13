@@ -6,7 +6,8 @@ use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 use radroots_events::kinds::{
-    KIND_LISTING, KIND_LISTING_DRAFT, TRADE_LISTING_KINDS, is_trade_service_kind,
+    KIND_LISTING, KIND_LISTING_DRAFT, ORDER_EVENT_KINDS, TRADE_VALIDATION_EVENT_KINDS,
+    is_trade_validation_service_event_kind,
 };
 use radroots_nostr::prelude::{
     RadrootsNostrClient, RadrootsNostrEvent, RadrootsNostrFilter, RadrootsNostrKeys,
@@ -230,7 +231,7 @@ async fn process_event_notification(
         match err {
             TradeListingDvmError::MissingRecipient | TradeListingDvmError::UnsupportedKind => {}
             other => {
-                if event_kind.is_some_and(is_trade_service_kind) {
+                if event_kind.is_some_and(is_trade_validation_service_event_kind) {
                     if let Err(err) = handle_error_io(other, &event, &client).await {
                         warn!("trade_listing: failed to send error feedback: {err}");
                     }
@@ -266,10 +267,11 @@ pub async fn subscriber(
 ) -> Result<()> {
     let subscribed_kinds = [KIND_LISTING, KIND_LISTING_DRAFT]
         .into_iter()
-        .chain(TRADE_LISTING_KINDS)
+        .chain(ORDER_EVENT_KINDS)
+        .chain(TRADE_VALIDATION_EVENT_KINDS)
         .collect::<Vec<_>>();
     info!(
-        "Starting subscriber for trade listing and public trade kinds: {:?}",
+        "Starting subscriber for trade listing, order, and trade validation kinds: {:?}",
         subscribed_kinds
     );
 

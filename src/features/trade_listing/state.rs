@@ -4,7 +4,6 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use radroots_events::trade::RadrootsTradeOrderStatus as TradeOrderStatus;
 use radroots_nostr::prelude::{RadrootsNostrFilter, RadrootsNostrKind, RadrootsNostrTimestamp};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -13,6 +12,17 @@ use tokio::sync::Mutex;
 pub type SharedTradeListingState = Arc<Mutex<TradeListingState>>;
 
 const TRADE_LISTING_STATE_VERSION: u32 = 1;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TradeOrderStatus {
+    Requested,
+    Accepted,
+    Declined,
+    Cancelled,
+    Completed,
+    Disputed,
+    Invalid,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TradeOrderState {
@@ -341,9 +351,8 @@ mod tests {
     use super::{
         ListingEventState, PersistedTradeListingState, TradeListingRuntime,
         TradeListingRuntimeConfig, TradeListingRuntimeError, TradeListingState,
-        TradeListingStateError, TradeOrderState, ValidatedListingState,
+        TradeListingStateError, TradeOrderState, TradeOrderStatus, ValidatedListingState,
     };
-    use radroots_events::trade::RadrootsTradeOrderStatus as TradeOrderStatus;
     use std::collections::{HashMap, HashSet};
 
     fn unique_state_path(suffix: &str) -> std::path::PathBuf {

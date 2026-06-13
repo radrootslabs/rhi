@@ -13,7 +13,9 @@ pub mod rhi;
 pub use cli::Args as cli_args;
 
 use anyhow::Result;
-use radroots_events::kinds::{KIND_LISTING, KIND_LISTING_DRAFT, TRADE_LISTING_KINDS};
+use radroots_events::kinds::{
+    KIND_LISTING, KIND_LISTING_DRAFT, ORDER_EVENT_KINDS, TRADE_VALIDATION_EVENT_KINDS,
+};
 use std::time::Duration;
 
 use crate::features::trade_listing::state::{TradeListingRuntime, TradeListingRuntimeConfig};
@@ -141,7 +143,8 @@ pub async fn run_rhi(settings: &config::Settings, args: &cli_args) -> Result<()>
     if !relays.is_empty() {
         let handler_kinds = [KIND_LISTING, KIND_LISTING_DRAFT]
             .into_iter()
-            .chain(TRADE_LISTING_KINDS)
+            .chain(ORDER_EVENT_KINDS)
+            .chain(TRADE_VALIDATION_EVENT_KINDS)
             .collect();
         let handler_spec = RadrootsNostrApplicationHandlerSpec {
             kinds: handler_kinds,
