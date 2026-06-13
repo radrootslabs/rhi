@@ -515,7 +515,7 @@ async fn handle_order_request(
     seen.insert(event_id.clone());
     state.insert_order(TradeOrderState {
         order_id: envelope.order_id,
-        listing_addr: envelope.payload.listing_addr,
+        listing_addr: envelope.payload.listing_addr.to_string(),
         buyer_pubkey: envelope.payload.buyer_pubkey,
         seller_pubkey: envelope.payload.seller_pubkey,
         status: TradeOrderStatus::Requested,

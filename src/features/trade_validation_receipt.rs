@@ -713,15 +713,15 @@ fn order_request_witness_from_payload(
     payload: RadrootsOrderRequest,
 ) -> RadrootsSp1TradeOrderRequestWitness {
     RadrootsSp1TradeOrderRequestWitness {
-        order_id: payload.order_id,
-        listing_addr: payload.listing_addr,
+        order_id: payload.order_id.to_string(),
+        listing_addr: payload.listing_addr.to_string(),
         buyer_pubkey: payload.buyer_pubkey,
         seller_pubkey: payload.seller_pubkey,
         items: payload
             .items
             .into_iter()
             .map(|item| RadrootsSp1TradeOrderItemWitness {
-                bin_id: item.bin_id,
+                bin_id: item.bin_id.to_string(),
                 bin_count: item.bin_count,
             })
             .collect(),
@@ -732,8 +732,8 @@ fn order_decision_witness_from_payload(
     payload: RadrootsOrderDecision,
 ) -> RadrootsSp1TradeOrderDecisionEventWitness {
     RadrootsSp1TradeOrderDecisionEventWitness {
-        order_id: payload.order_id,
-        listing_addr: payload.listing_addr,
+        order_id: payload.order_id.to_string(),
+        listing_addr: payload.listing_addr.to_string(),
         buyer_pubkey: payload.buyer_pubkey,
         seller_pubkey: payload.seller_pubkey,
         decision: match payload.decision {
@@ -743,7 +743,7 @@ fn order_decision_witness_from_payload(
                 inventory_commitments: inventory_commitments
                     .into_iter()
                     .map(|commitment| RadrootsSp1TradeInventoryCommitmentWitness {
-                        bin_id: commitment.bin_id,
+                        bin_id: commitment.bin_id.to_string(),
                         bin_count: commitment.bin_count,
                     })
                     .collect(),
