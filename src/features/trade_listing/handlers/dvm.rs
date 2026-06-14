@@ -22,12 +22,11 @@ use radroots_events::trade_validation::{
     RadrootsTradeValidationListingResult as TradeListingValidateResult,
 };
 use radroots_events_codec::order::{
-    RadrootsOrderEnvelopeParseError, RadrootsOrderListingAddress as OrderListingAddress,
-    order_cancellation_from_event, order_decision_from_event, order_fulfillment_update_from_event,
-    order_payment_record_from_event, order_receipt_from_event, order_request_from_event,
-    order_revision_decision_from_event, order_revision_proposal_from_event,
-    order_settlement_decision_from_event, parse_order_listing_event_tag, parse_order_prev_tag,
-    parse_order_root_tag,
+    RadrootsOrderEnvelopeParseError, order_cancellation_from_event, order_decision_from_event,
+    order_fulfillment_update_from_event, order_payment_record_from_event, order_receipt_from_event,
+    order_request_from_event, order_revision_decision_from_event,
+    order_revision_proposal_from_event, order_settlement_decision_from_event,
+    parse_order_listing_event_tag, parse_order_prev_tag, parse_order_root_tag,
 };
 use radroots_nostr::prelude::{
     RadrootsNostrClient, RadrootsNostrEvent, RadrootsNostrEventBuilder, RadrootsNostrFilter,
@@ -35,7 +34,9 @@ use radroots_nostr::prelude::{
     radroots_nostr_build_event, radroots_nostr_build_event_job_feedback,
     radroots_nostr_fetch_event_by_id, radroots_nostr_parse_pubkey, radroots_nostr_send_event,
 };
-use radroots_trade::listing::validation::validate_listing_event;
+use radroots_trade::listing::{
+    parse_listing_address, parse_public_listing_address, validation::validate_listing_event,
+};
 use thiserror::Error;
 
 use crate::features::trade_listing::state::{
@@ -385,11 +386,7 @@ async fn handle_listing_validate_request(
     }
     let rr_event = radroots_event_from_nostr(event);
     let listing_addr = required_tag_value(&rr_event.tags, "a")?;
-    let parsed_listing_addr = OrderListingAddress::parse(&listing_addr)
-        .map_err(|_| TradeListingDvmError::InvalidListingAddr)?;
-    if !is_listing_kind(parsed_listing_addr.kind) {
-        return Err(TradeListingDvmError::InvalidListingAddr);
-    }
+    parse_listing_address(&listing_addr).map_err(|_| TradeListingDvmError::InvalidListingAddr)?;
     let payload: TradeListingValidateRequest = serde_json::from_str(&event.content)?;
     let listing_event = resolve_listing_event(client, &listing_addr, payload.listing_event).await;
     let (validated_event_id, errors) = match listing_event {
@@ -494,11 +491,9 @@ async fn handle_order_request(
 ) -> Result<(), TradeListingDvmError> {
     let rr_event = radroots_event_from_nostr(event);
     let envelope = order_request_from_event(&rr_event).map_err(map_order_parse_error)?;
-    let listing_addr = OrderListingAddress::parse(&envelope.listing_addr)
+    let listing_addr = parse_public_listing_address(&envelope.listing_addr)
         .map_err(|_| TradeListingDvmError::InvalidListingAddr)?;
-    if !is_listing_kind(listing_addr.kind)
-        || envelope.payload.seller_pubkey != listing_addr.seller_pubkey
-    {
+    if envelope.payload.seller_pubkey != listing_addr.seller_pubkey {
         return Err(TradeListingDvmError::InvalidListingAddr);
     }
     let listing_event = parse_order_listing_event_tag(&rr_event.tags)
@@ -821,15 +816,15 @@ async fn fetch_listing_by_addr(
     client: &RadrootsNostrClient,
     listing_addr: &str,
 ) -> Result<Option<RadrootsNostrEvent>, TradeListingDvmError> {
-    let addr = OrderListingAddress::parse(listing_addr)
+    let addr = parse_listing_address(listing_addr)
         .map_err(|_| TradeListingDvmError::InvalidListingAddr)?;
-    let author = radroots_nostr_parse_pubkey(&addr.seller_pubkey)
+    let author = radroots_nostr_parse_pubkey(addr.seller_pubkey.as_str())
         .map_err(|_| TradeListingDvmError::InvalidListingAddr)?;
     let kind = u16::try_from(addr.kind).map_err(|_| TradeListingDvmError::InvalidListingAddr)?;
     let filter = RadrootsNostrFilter::new()
         .kind(RadrootsNostrKind::Custom(kind))
         .author(author)
-        .identifier(addr.listing_id);
+        .identifier(addr.listing_id.into_string());
     let events = fetch_events_io(client, filter, Duration::from_secs(10)).await?;
     Ok(events
         .into_iter()
