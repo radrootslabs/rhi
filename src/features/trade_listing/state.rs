@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use radroots_nostr::prelude::{RadrootsNostrFilter, RadrootsNostrKind, RadrootsNostrTimestamp};
+use radroots_trade::workflow::RadrootsTradeWorkflowState;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::Mutex;
@@ -13,24 +14,13 @@ pub type SharedTradeListingState = Arc<Mutex<TradeListingState>>;
 
 const TRADE_LISTING_STATE_VERSION: u32 = 1;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum TradeOrderStatus {
-    Requested,
-    Accepted,
-    Declined,
-    Cancelled,
-    Completed,
-    Disputed,
-    Invalid,
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TradeOrderState {
     pub order_id: String,
     pub listing_addr: String,
     pub buyer_pubkey: String,
     pub seller_pubkey: String,
-    pub status: TradeOrderStatus,
+    pub status: RadrootsTradeWorkflowState,
     #[serde(default)]
     pub listing_snapshot_event_id: Option<String>,
     #[serde(default)]
@@ -214,6 +204,10 @@ impl TradeListingState {
         self.orders.get_mut(order_id)
     }
 
+    pub fn get_order(&self, order_id: &str) -> Option<&TradeOrderState> {
+        self.orders.get(order_id)
+    }
+
     pub fn insert_order(&mut self, order: TradeOrderState) {
         self.orders.insert(order.order_id.clone(), order);
     }
@@ -314,19 +308,12 @@ fn temp_state_path(path: &Path) -> Result<PathBuf, TradeListingRuntimeError> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TradeListingStateError {
     MissingOrder,
-    InvalidTransition {
-        from: TradeOrderStatus,
-        to: TradeOrderStatus,
-    },
 }
 
 impl core::fmt::Display for TradeListingStateError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             TradeListingStateError::MissingOrder => write!(f, "missing order state"),
-            TradeListingStateError::InvalidTransition { from, to } => {
-                write!(f, "invalid order transition: {from:?} -> {to:?}")
-            }
         }
     }
 }
@@ -351,8 +338,9 @@ mod tests {
     use super::{
         ListingEventState, PersistedTradeListingState, TradeListingRuntime,
         TradeListingRuntimeConfig, TradeListingRuntimeError, TradeListingState,
-        TradeListingStateError, TradeOrderState, TradeOrderStatus, ValidatedListingState,
+        TradeListingStateError, TradeOrderState, ValidatedListingState,
     };
+    use radroots_trade::workflow::RadrootsTradeWorkflowState;
     use std::collections::{HashMap, HashSet};
 
     fn unique_state_path(suffix: &str) -> std::path::PathBuf {
@@ -379,7 +367,7 @@ mod tests {
             listing_addr: "addr".into(),
             buyer_pubkey: "buyer".into(),
             seller_pubkey: "seller".into(),
-            status: TradeOrderStatus::Requested,
+            status: RadrootsTradeWorkflowState::Requested,
             listing_snapshot_event_id: Some("evt-listing-1".into()),
             root_event_id: Some("evt-root-1".into()),
             last_event_id: Some("evt-root-1".into()),
@@ -415,14 +403,7 @@ mod tests {
             "missing order state"
         );
 
-        let invalid = TradeListingStateError::InvalidTransition {
-            from: TradeOrderStatus::Requested,
-            to: TradeOrderStatus::Completed,
-        };
-        assert_eq!(
-            invalid.to_string(),
-            "invalid order transition: Requested -> Completed"
-        );
+        assert!(state.get_order("missing").is_none());
     }
 
     #[tokio::test]

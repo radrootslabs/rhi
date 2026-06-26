@@ -5,16 +5,12 @@ use std::{sync::Arc, time::Duration};
 
 use radroots_events::farm::RadrootsFarmRef;
 use radroots_events::kinds::{
-    KIND_FARM, KIND_ORDER_CANCELLATION, KIND_ORDER_DECISION, KIND_ORDER_FULFILLMENT_UPDATE,
-    KIND_ORDER_PAYMENT_RECORD, KIND_ORDER_RECEIPT, KIND_ORDER_REQUEST,
-    KIND_ORDER_REVISION_DECISION, KIND_ORDER_REVISION_PROPOSAL, KIND_ORDER_SETTLEMENT_DECISION,
+    KIND_FARM, KIND_ORDER_CANCELLATION, KIND_ORDER_DECISION, KIND_ORDER_REQUEST,
+    KIND_ORDER_REVISION_DECISION, KIND_ORDER_REVISION_PROPOSAL,
     KIND_TRADE_LISTING_VALIDATION_REQUEST, KIND_TRADE_LISTING_VALIDATION_RESULT,
-    KIND_TRADE_TRANSITION_PROOF_REQUEST, KIND_TRADE_TRANSITION_PROOF_RESULT, is_listing_kind,
-    is_order_event_kind, is_trade_validation_service_event_kind,
-};
-use radroots_events::order::{
-    RadrootsOrderDecisionOutcome, RadrootsOrderFulfillmentState, RadrootsOrderReceipt,
-    RadrootsOrderRevisionOutcome,
+    KIND_TRADE_TRANSITION_PROOF_REQUEST, KIND_TRADE_TRANSITION_PROOF_RESULT,
+    KIND_TRADE_VALIDATION_RECEIPT, is_listing_kind, is_order_event_kind,
+    is_trade_validation_service_event_kind,
 };
 use radroots_events::trade_validation::{
     RadrootsTradeValidationListingError as TradeListingValidationError,
@@ -22,11 +18,7 @@ use radroots_events::trade_validation::{
     RadrootsTradeValidationListingResult as TradeListingValidateResult,
 };
 use radroots_events_codec::order::{
-    RadrootsOrderEnvelopeParseError, order_cancellation_from_event, order_decision_from_event,
-    order_fulfillment_update_from_event, order_payment_record_from_event, order_receipt_from_event,
-    order_request_from_event, order_revision_decision_from_event,
-    order_revision_proposal_from_event, order_settlement_decision_from_event,
-    parse_order_listing_event_tag, parse_order_prev_tag, parse_order_root_tag,
+    RadrootsOrderEnvelopeParseError, parse_order_listing_event_tag,
 };
 use radroots_nostr::prelude::{
     RadrootsNostrClient, RadrootsNostrEvent, RadrootsNostrEventBuilder, RadrootsNostrFilter,
@@ -37,10 +29,15 @@ use radroots_nostr::prelude::{
 use radroots_trade::listing::{
     parse_listing_address, parse_public_listing_address, validation::validate_listing_event,
 };
+use radroots_trade::order::{
+    RadrootsOrderEventRecord, RadrootsOrderProjection, order_event_record_from_event,
+    reduce_order_event_records,
+};
+use radroots_trade::workflow::RadrootsTradeWorkflowState;
 use thiserror::Error;
 
 use crate::features::trade_listing::state::{
-    TradeListingState, TradeListingStateError, TradeOrderState, TradeOrderStatus,
+    TradeListingState, TradeListingStateError, TradeOrderState,
 };
 use crate::features::trade_validation_receipt::{
     TradeValidationReceiptJobError, TradeValidationReceiptProverPolicy,
@@ -65,6 +62,8 @@ pub enum TradeListingDvmError {
     InvalidListingAddr,
     #[error("invalid order request payload")]
     InvalidOrder,
+    #[error("shared workflow rejected trade transition: {0}")]
+    Workflow(String),
     #[error("state error: {0}")]
     State(#[from] TradeListingStateError),
     #[error("nostr error: {0}")]
@@ -266,7 +265,10 @@ pub async fn handle_event_with_policy(
         ensure_service_recipient(&event, &keys)?;
         return handle_listing_validate_request(&event, &client, &state).await;
     }
-    if kind == KIND_TRADE_LISTING_VALIDATION_RESULT || kind == KIND_TRADE_TRANSITION_PROOF_RESULT {
+    if kind == KIND_TRADE_LISTING_VALIDATION_RESULT
+        || kind == KIND_TRADE_TRANSITION_PROOF_RESULT
+        || kind == KIND_TRADE_VALIDATION_RECEIPT
+    {
         state
             .lock()
             .await
@@ -472,14 +474,10 @@ async fn handle_order_event(
 ) -> Result<(), TradeListingDvmError> {
     match kind {
         KIND_ORDER_REQUEST => handle_order_request(event, client, state).await,
-        KIND_ORDER_DECISION => handle_order_decision(event, state).await,
-        KIND_ORDER_REVISION_PROPOSAL => handle_order_revision_proposal(event, state).await,
-        KIND_ORDER_REVISION_DECISION => handle_order_revision_decision(event, state).await,
-        KIND_ORDER_CANCELLATION => handle_order_cancellation(event, state).await,
-        KIND_ORDER_FULFILLMENT_UPDATE => handle_order_fulfillment_update(event, state).await,
-        KIND_ORDER_RECEIPT => handle_order_receipt(event, state).await,
-        KIND_ORDER_PAYMENT_RECORD => handle_order_payment_record(event, state).await,
-        KIND_ORDER_SETTLEMENT_DECISION => handle_order_settlement_decision(event, state).await,
+        KIND_ORDER_DECISION
+        | KIND_ORDER_REVISION_PROPOSAL
+        | KIND_ORDER_REVISION_DECISION
+        | KIND_ORDER_CANCELLATION => handle_order_workflow_event(event, client, state).await,
         _ => Err(TradeListingDvmError::UnsupportedKind),
     }
 }
@@ -490,30 +488,41 @@ async fn handle_order_request(
     state: &Arc<tokio::sync::Mutex<TradeListingState>>,
 ) -> Result<(), TradeListingDvmError> {
     let rr_event = radroots_event_from_nostr(event);
-    let envelope = order_request_from_event(&rr_event).map_err(map_order_parse_error)?;
-    let listing_addr = parse_public_listing_address(&envelope.listing_addr)
+    let record = order_event_record_from_event(&rr_event).map_err(map_order_decode_error)?;
+    let order_id = record.order_id().clone();
+    let projection = reduce_order_event_records(&order_id, [record.clone()]);
+    if projection.status != RadrootsTradeWorkflowState::Requested || !projection.issues.is_empty() {
+        return Err(TradeListingDvmError::Workflow(workflow_rejection_message(
+            &projection,
+        )));
+    }
+    let RadrootsOrderEventRecord::Request(request) = record else {
+        return Err(TradeListingDvmError::UnsupportedKind);
+    };
+    let listing_addr = parse_public_listing_address(&request.payload.listing_addr)
         .map_err(|_| TradeListingDvmError::InvalidListingAddr)?;
-    if envelope.payload.seller_pubkey != listing_addr.seller_pubkey {
+    if request.payload.seller_pubkey != listing_addr.seller_pubkey {
         return Err(TradeListingDvmError::InvalidListingAddr);
     }
     let listing_event = parse_order_listing_event_tag(&rr_event.tags)
         .map_err(|error| TradeListingDvmError::InvalidPayload(error.to_string()))?
         .ok_or(TradeListingDvmError::MissingTag("listing_event"))?;
     let listing_snapshot_event_id =
-        ensure_listing_snapshot(&envelope.listing_addr, &listing_event, client, state).await?;
+        ensure_listing_snapshot(&request.payload.listing_addr, &listing_event, client, state)
+            .await?;
     let event_id = event.id.to_string();
     let mut state = state.lock().await;
-    if state.order_exists(&envelope.order_id) {
+    if state.order_exists(order_id.as_str()) {
         return Ok(());
     }
     let mut seen = std::collections::HashSet::new();
     seen.insert(event_id.clone());
     state.insert_order(TradeOrderState {
-        order_id: envelope.order_id,
-        listing_addr: envelope.payload.listing_addr.to_string(),
-        buyer_pubkey: envelope.payload.buyer_pubkey.to_string(),
-        seller_pubkey: envelope.payload.seller_pubkey.to_string(),
-        status: TradeOrderStatus::Requested,
+        order_id: order_id.to_string(),
+        listing_addr: request.payload.listing_addr.to_string(),
+        buyer_pubkey: request.payload.buyer_pubkey.to_string(),
+        seller_pubkey: request.payload.seller_pubkey.to_string(),
+        status: projection.status,
         listing_snapshot_event_id: Some(listing_snapshot_event_id),
         root_event_id: Some(event_id.clone()),
         last_event_id: Some(event_id),
@@ -546,268 +555,116 @@ async fn ensure_listing_snapshot(
     Ok(listing_event.id.clone())
 }
 
-async fn handle_order_decision(
+async fn handle_order_workflow_event(
     event: &RadrootsNostrEvent,
+    client: &RadrootsNostrClient,
     state: &Arc<tokio::sync::Mutex<TradeListingState>>,
 ) -> Result<(), TradeListingDvmError> {
     let rr_event = radroots_event_from_nostr(event);
-    let envelope = order_decision_from_event(&rr_event).map_err(map_order_parse_error)?;
-    let next_status = match envelope.payload.decision {
-        RadrootsOrderDecisionOutcome::Accepted { .. } => TradeOrderStatus::Accepted,
-        RadrootsOrderDecisionOutcome::Declined { .. } => TradeOrderStatus::Declined,
-    };
-    update_existing_order(event, &rr_event.tags, state, &envelope.order_id, |order| {
-        ensure_order_binding(
-            order,
-            &envelope.payload.listing_addr,
-            &envelope.payload.buyer_pubkey,
-            &envelope.payload.seller_pubkey,
-        )?;
-        ensure_transition(&order.status, &next_status)?;
-        order.status = next_status;
-        Ok(())
-    })
-    .await
-}
-
-async fn handle_order_revision_proposal(
-    event: &RadrootsNostrEvent,
-    state: &Arc<tokio::sync::Mutex<TradeListingState>>,
-) -> Result<(), TradeListingDvmError> {
-    let rr_event = radroots_event_from_nostr(event);
-    let envelope = order_revision_proposal_from_event(&rr_event).map_err(map_order_parse_error)?;
-    update_existing_order(event, &rr_event.tags, state, &envelope.order_id, |order| {
-        ensure_order_binding(
-            order,
-            &envelope.payload.listing_addr,
-            &envelope.payload.buyer_pubkey,
-            &envelope.payload.seller_pubkey,
-        )?;
-        ensure_transition(&order.status, &TradeOrderStatus::Accepted)?;
-        Ok(())
-    })
-    .await
-}
-
-async fn handle_order_revision_decision(
-    event: &RadrootsNostrEvent,
-    state: &Arc<tokio::sync::Mutex<TradeListingState>>,
-) -> Result<(), TradeListingDvmError> {
-    let rr_event = radroots_event_from_nostr(event);
-    let envelope = order_revision_decision_from_event(&rr_event).map_err(map_order_parse_error)?;
-    update_existing_order(event, &rr_event.tags, state, &envelope.order_id, |order| {
-        ensure_order_binding(
-            order,
-            &envelope.payload.listing_addr,
-            &envelope.payload.buyer_pubkey,
-            &envelope.payload.seller_pubkey,
-        )?;
-        match envelope.payload.decision {
-            RadrootsOrderRevisionOutcome::Accepted
-            | RadrootsOrderRevisionOutcome::Declined { .. } => {
-                ensure_transition(&order.status, &TradeOrderStatus::Accepted)?;
-                Ok(())
-            }
-        }
-    })
-    .await
-}
-
-async fn handle_order_cancellation(
-    event: &RadrootsNostrEvent,
-    state: &Arc<tokio::sync::Mutex<TradeListingState>>,
-) -> Result<(), TradeListingDvmError> {
-    let rr_event = radroots_event_from_nostr(event);
-    let envelope = order_cancellation_from_event(&rr_event).map_err(map_order_parse_error)?;
-    update_existing_order(event, &rr_event.tags, state, &envelope.order_id, |order| {
-        ensure_order_binding(
-            order,
-            &envelope.payload.listing_addr,
-            &envelope.payload.buyer_pubkey,
-            &envelope.payload.seller_pubkey,
-        )?;
-        ensure_transition(&order.status, &TradeOrderStatus::Cancelled)?;
-        order.status = TradeOrderStatus::Cancelled;
-        Ok(())
-    })
-    .await
-}
-
-async fn handle_order_fulfillment_update(
-    event: &RadrootsNostrEvent,
-    state: &Arc<tokio::sync::Mutex<TradeListingState>>,
-) -> Result<(), TradeListingDvmError> {
-    let rr_event = radroots_event_from_nostr(event);
-    let envelope = order_fulfillment_update_from_event(&rr_event).map_err(map_order_parse_error)?;
-    update_existing_order(event, &rr_event.tags, state, &envelope.order_id, |order| {
-        ensure_order_binding(
-            order,
-            &envelope.payload.listing_addr,
-            &envelope.payload.buyer_pubkey,
-            &envelope.payload.seller_pubkey,
-        )?;
-        ensure_transition(&order.status, &TradeOrderStatus::Accepted)?;
-        if envelope.payload.status == RadrootsOrderFulfillmentState::SellerCancelled {
-            order.status = TradeOrderStatus::Cancelled;
-        }
-        Ok(())
-    })
-    .await
-}
-
-async fn handle_order_receipt(
-    event: &RadrootsNostrEvent,
-    state: &Arc<tokio::sync::Mutex<TradeListingState>>,
-) -> Result<(), TradeListingDvmError> {
-    let rr_event = radroots_event_from_nostr(event);
-    let envelope = order_receipt_from_event(&rr_event).map_err(map_order_parse_error)?;
-    let next_status = receipt_status(&envelope.payload);
-    update_existing_order(event, &rr_event.tags, state, &envelope.order_id, |order| {
-        ensure_order_binding(
-            order,
-            &envelope.payload.listing_addr,
-            &envelope.payload.buyer_pubkey,
-            &envelope.payload.seller_pubkey,
-        )?;
-        ensure_transition(&order.status, &next_status)?;
-        order.status = next_status;
-        Ok(())
-    })
-    .await
-}
-
-async fn handle_order_payment_record(
-    event: &RadrootsNostrEvent,
-    state: &Arc<tokio::sync::Mutex<TradeListingState>>,
-) -> Result<(), TradeListingDvmError> {
-    let rr_event = radroots_event_from_nostr(event);
-    let envelope = order_payment_record_from_event(&rr_event).map_err(map_order_parse_error)?;
-    update_existing_order(event, &rr_event.tags, state, &envelope.order_id, |order| {
-        ensure_order_binding(
-            order,
-            &envelope.payload.listing_addr,
-            &envelope.payload.buyer_pubkey,
-            &envelope.payload.seller_pubkey,
-        )
-    })
-    .await
-}
-
-async fn handle_order_settlement_decision(
-    event: &RadrootsNostrEvent,
-    state: &Arc<tokio::sync::Mutex<TradeListingState>>,
-) -> Result<(), TradeListingDvmError> {
-    let rr_event = radroots_event_from_nostr(event);
-    let envelope =
-        order_settlement_decision_from_event(&rr_event).map_err(map_order_parse_error)?;
-    update_existing_order(event, &rr_event.tags, state, &envelope.order_id, |order| {
-        ensure_order_binding(
-            order,
-            &envelope.payload.listing_addr,
-            &envelope.payload.buyer_pubkey,
-            &envelope.payload.seller_pubkey,
-        )
-    })
-    .await
-}
-
-async fn update_existing_order<F>(
-    event: &RadrootsNostrEvent,
-    tags: &[Vec<String>],
-    state: &Arc<tokio::sync::Mutex<TradeListingState>>,
-    order_id: &str,
-    update: F,
-) -> Result<(), TradeListingDvmError>
-where
-    F: FnOnce(&mut TradeOrderState) -> Result<(), TradeListingDvmError>,
-{
+    let current_record =
+        order_event_record_from_event(&rr_event).map_err(map_order_decode_error)?;
+    let order_id = current_record.order_id().clone();
     let event_id = event.id.to_string();
+    let order_snapshot = {
+        let state = state.lock().await;
+        if state.is_event_seen(order_id.as_str(), &event_id) {
+            return Ok(());
+        }
+        state
+            .get_order(order_id.as_str())
+            .cloned()
+            .ok_or(TradeListingStateError::MissingOrder)?
+    };
+    let mut records =
+        fetch_seen_order_records(client, &order_snapshot, event, current_record).await?;
+    let projection = reduce_order_event_records(&order_id, records.drain(..));
+    if projection.status != RadrootsTradeWorkflowState::Invalid && !projection.issues.is_empty() {
+        return Err(TradeListingDvmError::Workflow(workflow_rejection_message(
+            &projection,
+        )));
+    }
     let mut state = state.lock().await;
-    if state.is_event_seen(order_id, &event_id) {
+    if state.is_event_seen(order_id.as_str(), &event_id) {
         return Ok(());
     }
     let order = state
-        .get_order_mut(order_id)
+        .get_order_mut(order_id.as_str())
         .ok_or(TradeListingStateError::MissingOrder)?;
-    ensure_order_chain(order, tags)?;
-    update(order)?;
-    order.last_event_id = Some(event_id.clone());
+    ensure_projection_binding(order, &projection)?;
+    order.status = projection.status;
+    order.last_event_id = projection
+        .last_event_id
+        .map(|last_event_id| last_event_id.to_string())
+        .or_else(|| Some(event_id.clone()));
     order.seen_event_ids.insert(event_id);
     Ok(())
 }
 
-fn ensure_order_binding(
+async fn fetch_seen_order_records(
+    client: &RadrootsNostrClient,
     order: &TradeOrderState,
-    listing_addr: &str,
-    buyer_pubkey: &str,
-    seller_pubkey: &str,
-) -> Result<(), TradeListingDvmError> {
-    if order.listing_addr == listing_addr
-        && order.buyer_pubkey == buyer_pubkey
-        && order.seller_pubkey == seller_pubkey
-    {
-        Ok(())
-    } else {
-        Err(TradeListingDvmError::InvalidOrder)
+    current_event: &RadrootsNostrEvent,
+    current_record: RadrootsOrderEventRecord,
+) -> Result<Vec<RadrootsOrderEventRecord>, TradeListingDvmError> {
+    let current_event_id = current_event.id.to_string();
+    let mut event_ids = order
+        .seen_event_ids
+        .iter()
+        .filter(|event_id| event_id.as_str() != current_event_id)
+        .cloned()
+        .collect::<Vec<_>>();
+    event_ids.sort();
+    let mut records = Vec::with_capacity(event_ids.len() + 1);
+    for event_id in event_ids {
+        let event = fetch_event_by_id_io(client, &event_id).await?;
+        let rr_event = radroots_event_from_nostr(&event);
+        let record = order_event_record_from_event(&rr_event).map_err(map_order_decode_error)?;
+        if record.order_id().as_str() != order.order_id {
+            return Err(TradeListingDvmError::InvalidOrder);
+        }
+        records.push(record);
     }
+    records.push(current_record);
+    Ok(records)
 }
 
-fn ensure_order_chain(
+fn ensure_projection_binding(
     order: &TradeOrderState,
-    tags: &[Vec<String>],
+    projection: &RadrootsOrderProjection,
 ) -> Result<(), TradeListingDvmError> {
-    let root_event_id = parse_order_root_tag(tags)
-        .map_err(|error| TradeListingDvmError::InvalidPayload(error.to_string()))?
-        .ok_or(TradeListingDvmError::MissingTag("e:root"))?;
-    let prev_event_id = parse_order_prev_tag(tags)
-        .map_err(|error| TradeListingDvmError::InvalidPayload(error.to_string()))?
-        .ok_or(TradeListingDvmError::MissingTag("e:prev"))?;
-    if order.root_event_id.as_deref() == Some(root_event_id.as_str())
-        && order.last_event_id.as_deref() == Some(prev_event_id.as_str())
+    if projection
+        .listing_addr
+        .as_ref()
+        .is_some_and(|listing_addr| listing_addr.to_string() != order.listing_addr)
+        || projection
+            .buyer_pubkey
+            .as_ref()
+            .is_some_and(|buyer_pubkey| buyer_pubkey.to_string() != order.buyer_pubkey)
+        || projection
+            .seller_pubkey
+            .as_ref()
+            .is_some_and(|seller_pubkey| seller_pubkey.to_string() != order.seller_pubkey)
     {
-        Ok(())
-    } else {
-        Err(TradeListingDvmError::InvalidOrder)
+        return Err(TradeListingDvmError::InvalidOrder);
     }
+    Ok(())
 }
 
-fn receipt_status(payload: &RadrootsOrderReceipt) -> TradeOrderStatus {
-    if payload.received {
-        TradeOrderStatus::Completed
-    } else {
-        TradeOrderStatus::Disputed
-    }
+fn workflow_rejection_message(projection: &RadrootsOrderProjection) -> String {
+    format!("{:?}:{:?}", projection.status, projection.issues)
 }
 
-fn ensure_transition(
-    from: &TradeOrderStatus,
-    to: &TradeOrderStatus,
-) -> Result<(), TradeListingStateError> {
-    if from == to {
-        return Ok(());
-    }
-    let allowed = match from {
-        TradeOrderStatus::Requested => matches!(
-            to,
-            TradeOrderStatus::Accepted | TradeOrderStatus::Declined | TradeOrderStatus::Cancelled
-        ),
-        TradeOrderStatus::Accepted => matches!(
-            to,
-            TradeOrderStatus::Cancelled | TradeOrderStatus::Completed | TradeOrderStatus::Disputed
-        ),
-        TradeOrderStatus::Declined
-        | TradeOrderStatus::Cancelled
-        | TradeOrderStatus::Completed
-        | TradeOrderStatus::Disputed
-        | TradeOrderStatus::Invalid => false,
-    };
-    if allowed {
-        Ok(())
-    } else {
-        Err(TradeListingStateError::InvalidTransition {
-            from: from.clone(),
-            to: to.clone(),
-        })
+fn map_order_decode_error(
+    error: radroots_trade::order::RadrootsOrderEventDecodeError,
+) -> TradeListingDvmError {
+    match error {
+        radroots_trade::order::RadrootsOrderEventDecodeError::Envelope(error) => {
+            map_order_parse_error(error)
+        }
+        radroots_trade::order::RadrootsOrderEventDecodeError::UnsupportedKind { .. } => {
+            TradeListingDvmError::UnsupportedKind
+        }
+        other => TradeListingDvmError::InvalidPayload(other.to_string()),
     }
 }
 
@@ -937,32 +794,37 @@ pub async fn handle_error(
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::{
-        DvmTestHooks, TradeListingDvmError, dvm_test_hooks, ensure_transition, handle_error,
-        handle_event, tag_has_value,
+        DvmTestHooks, TradeListingDvmError, dvm_test_hooks, handle_error, handle_event,
+        tag_has_value,
     };
-    use crate::features::trade_listing::state::{TradeListingState, TradeOrderStatus};
+    use crate::features::trade_listing::state::TradeListingState;
     use radroots_core::{
         RadrootsCoreCurrency, RadrootsCoreDecimal, RadrootsCoreMoney, RadrootsCoreUnit,
     };
     use radroots_events::RadrootsNostrEventPtr;
     use radroots_events::farm::RadrootsFarmRef;
     use radroots_events::ids::{
-        RadrootsInventoryBinId, RadrootsListingAddress, RadrootsOrderId, RadrootsOrderQuoteId,
-        RadrootsPublicKey,
+        RadrootsEventId, RadrootsInventoryBinId, RadrootsListingAddress, RadrootsOrderId,
+        RadrootsOrderQuoteId, RadrootsPublicKey,
     };
     use radroots_events::kinds::{
         KIND_LISTING, KIND_ORDER_REQUEST, KIND_TRADE_LISTING_VALIDATION_REQUEST,
     };
     use radroots_events::order::{
+        RadrootsOrderCancellation, RadrootsOrderDecision, RadrootsOrderDecisionOutcome,
         RadrootsOrderEconomicItem, RadrootsOrderEconomicLine, RadrootsOrderEconomics,
-        RadrootsOrderItem, RadrootsOrderPricingBasis, RadrootsOrderRequest,
+        RadrootsOrderInventoryCommitment, RadrootsOrderItem, RadrootsOrderPricingBasis,
+        RadrootsOrderRequest,
     };
     use radroots_events::trade_validation::RadrootsTradeValidationListingRequest;
-    use radroots_events_codec::order::order_request_event_build;
+    use radroots_events_codec::order::{
+        order_cancellation_event_build, order_decision_event_build, order_request_event_build,
+    };
     use radroots_nostr::prelude::{
         RadrootsNostrClient, RadrootsNostrEvent, RadrootsNostrEventBuilder, RadrootsNostrKeys,
         RadrootsNostrKind, radroots_nostr_build_event,
     };
+    use radroots_trade::workflow::RadrootsTradeWorkflowState;
     use std::sync::Arc;
     use tokio::sync::{Mutex, MutexGuard};
 
@@ -1004,6 +866,10 @@ mod tests {
 
     fn typed_pubkey(keys: &RadrootsNostrKeys) -> RadrootsPublicKey {
         RadrootsPublicKey::parse(keys.public_key().to_string()).expect("public key")
+    }
+
+    fn typed_event_id(event: &RadrootsNostrEvent) -> RadrootsEventId {
+        RadrootsEventId::parse(event.id.to_string()).expect("event id")
     }
 
     fn listing_event_ptr() -> RadrootsNostrEventPtr {
@@ -1070,12 +936,77 @@ mod tests {
         }
     }
 
+    fn order_decision(
+        order_id: &str,
+        buyer: &RadrootsNostrKeys,
+        seller: &RadrootsNostrKeys,
+    ) -> RadrootsOrderDecision {
+        RadrootsOrderDecision {
+            order_id: typed_order_id(order_id),
+            listing_addr: typed_listing_addr(seller),
+            buyer_pubkey: typed_pubkey(buyer),
+            seller_pubkey: typed_pubkey(seller),
+            decision: RadrootsOrderDecisionOutcome::Accepted {
+                inventory_commitments: vec![RadrootsOrderInventoryCommitment {
+                    bin_id: typed_bin_id(),
+                    bin_count: 2,
+                }],
+            },
+        }
+    }
+
+    fn order_cancellation(
+        order_id: &str,
+        buyer: &RadrootsNostrKeys,
+        seller: &RadrootsNostrKeys,
+    ) -> RadrootsOrderCancellation {
+        RadrootsOrderCancellation {
+            order_id: typed_order_id(order_id),
+            listing_addr: typed_listing_addr(seller),
+            buyer_pubkey: typed_pubkey(buyer),
+            seller_pubkey: typed_pubkey(seller),
+            reason: "cancel after agreement".to_string(),
+        }
+    }
+
     fn signed_order_request_event(
         buyer: &RadrootsNostrKeys,
         seller: &RadrootsNostrKeys,
     ) -> RadrootsNostrEvent {
         let payload = order_request("order-1", buyer, seller);
         let wire = order_request_event_build(&listing_event_ptr(), &payload).expect("wire");
+        radroots_nostr_build_event(wire.kind, wire.content, wire.tags)
+            .expect("builder")
+            .sign_with_keys(buyer)
+            .expect("event")
+    }
+
+    fn signed_order_decision_event(
+        buyer: &RadrootsNostrKeys,
+        seller: &RadrootsNostrKeys,
+        request_event: &RadrootsNostrEvent,
+    ) -> RadrootsNostrEvent {
+        let payload = order_decision("order-1", buyer, seller);
+        let root_event_id = typed_event_id(request_event);
+        let wire =
+            order_decision_event_build(&root_event_id, &root_event_id, &payload).expect("wire");
+        radroots_nostr_build_event(wire.kind, wire.content, wire.tags)
+            .expect("builder")
+            .sign_with_keys(seller)
+            .expect("event")
+    }
+
+    fn signed_order_cancellation_event(
+        buyer: &RadrootsNostrKeys,
+        seller: &RadrootsNostrKeys,
+        request_event: &RadrootsNostrEvent,
+        decision_event: &RadrootsNostrEvent,
+    ) -> RadrootsNostrEvent {
+        let payload = order_cancellation("order-1", buyer, seller);
+        let root_event_id = typed_event_id(request_event);
+        let prev_event_id = typed_event_id(decision_event);
+        let wire =
+            order_cancellation_event_build(&root_event_id, &prev_event_id, &payload).expect("wire");
         radroots_nostr_build_event(wire.kind, wire.content, wire.tags)
             .expect("builder")
             .sign_with_keys(buyer)
@@ -1105,21 +1036,118 @@ mod tests {
             KIND_LISTING,
         );
 
+        let request_event = signed_order_request_event(&buyer, &seller);
+        handle_event(request_event, Vec::new(), worker, client, state.clone())
+            .await
+            .expect("order request");
+
+        let mut state = state.lock().await;
+        let order = state.get_order_mut("order-1").expect("order");
+        assert_eq!(order.status, RadrootsTradeWorkflowState::Requested);
+        assert_eq!(order.buyer_pubkey, buyer.public_key().to_string());
+        assert_eq!(order.seller_pubkey, seller.public_key().to_string());
+    }
+
+    #[tokio::test]
+    async fn order_decision_uses_shared_workflow_pending_rhi_state() {
+        let _guard = test_guard().await;
+        let worker = RadrootsNostrKeys::generate();
+        let buyer = RadrootsNostrKeys::generate();
+        let seller = RadrootsNostrKeys::generate();
+        let client = RadrootsNostrClient::new(worker.clone());
+        let state = Arc::new(Mutex::new(TradeListingState::default()));
+        state.lock().await.upsert_listing_event(
+            &listing_addr(&seller),
+            listing_event_id(),
+            KIND_LISTING,
+        );
+        let request_event = signed_order_request_event(&buyer, &seller);
         handle_event(
-            signed_order_request_event(&buyer, &seller),
+            request_event.clone(),
+            Vec::new(),
+            worker.clone(),
+            client.clone(),
+            state.clone(),
+        )
+        .await
+        .expect("order request");
+        let decision_event = signed_order_decision_event(&buyer, &seller, &request_event);
+        dvm_test_hooks()
+            .lock()
+            .expect("hooks")
+            .fetch_event_by_id_results
+            .push_back(Ok(request_event));
+
+        handle_event(decision_event, Vec::new(), worker, client, state.clone())
+            .await
+            .expect("order decision");
+
+        let mut state = state.lock().await;
+        let order = state.get_order_mut("order-1").expect("order");
+        assert_eq!(order.status, RadrootsTradeWorkflowState::AgreedPendingRhi);
+    }
+
+    #[tokio::test]
+    async fn cancellation_after_pending_agreement_uses_shared_workflow_invalid_state() {
+        let _guard = test_guard().await;
+        let worker = RadrootsNostrKeys::generate();
+        let buyer = RadrootsNostrKeys::generate();
+        let seller = RadrootsNostrKeys::generate();
+        let client = RadrootsNostrClient::new(worker.clone());
+        let state = Arc::new(Mutex::new(TradeListingState::default()));
+        state.lock().await.upsert_listing_event(
+            &listing_addr(&seller),
+            listing_event_id(),
+            KIND_LISTING,
+        );
+        let request_event = signed_order_request_event(&buyer, &seller);
+        handle_event(
+            request_event.clone(),
+            Vec::new(),
+            worker.clone(),
+            client.clone(),
+            state.clone(),
+        )
+        .await
+        .expect("order request");
+        let decision_event = signed_order_decision_event(&buyer, &seller, &request_event);
+        dvm_test_hooks()
+            .lock()
+            .expect("hooks")
+            .fetch_event_by_id_results
+            .push_back(Ok(request_event.clone()));
+        handle_event(
+            decision_event.clone(),
+            Vec::new(),
+            worker.clone(),
+            client.clone(),
+            state.clone(),
+        )
+        .await
+        .expect("order decision");
+        let cancellation_event =
+            signed_order_cancellation_event(&buyer, &seller, &request_event, &decision_event);
+        {
+            let mut hooks = dvm_test_hooks().lock().expect("hooks");
+            hooks.fetch_event_by_id_results.push_back(Ok(request_event));
+            hooks
+                .fetch_event_by_id_results
+                .push_back(Ok(decision_event));
+        }
+
+        handle_event(
+            cancellation_event,
             Vec::new(),
             worker,
             client,
             state.clone(),
         )
         .await
-        .expect("order request");
+        .expect("order cancellation");
 
         let mut state = state.lock().await;
         let order = state.get_order_mut("order-1").expect("order");
-        assert_eq!(order.status, TradeOrderStatus::Requested);
-        assert_eq!(order.buyer_pubkey, buyer.public_key().to_string());
-        assert_eq!(order.seller_pubkey, seller.public_key().to_string());
+        assert_eq!(order.status, RadrootsTradeWorkflowState::Invalid);
     }
 
     #[tokio::test]
@@ -1184,17 +1212,16 @@ mod tests {
     }
 
     #[test]
-    fn transition_and_tag_helpers_cover_core_paths() {
-        assert!(
-            ensure_transition(&TradeOrderStatus::Requested, &TradeOrderStatus::Accepted).is_ok()
-        );
-        assert!(
-            ensure_transition(&TradeOrderStatus::Declined, &TradeOrderStatus::Accepted).is_err()
-        );
+    fn tag_helpers_cover_core_paths() {
         assert!(tag_has_value(
             &[vec!["p".to_string(), "pubkey".to_string()]],
             "p",
             "pubkey"
+        ));
+        assert!(!tag_has_value(
+            &[vec!["p".to_string(), "pubkey".to_string()]],
+            "p",
+            "other"
         ));
     }
 
