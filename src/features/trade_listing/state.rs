@@ -12,7 +12,7 @@ use tokio::sync::Mutex;
 
 pub type SharedTradeListingState = Arc<Mutex<TradeListingState>>;
 
-const TRADE_LISTING_STATE_VERSION: u32 = 1;
+const TRADE_LISTING_STATE_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TradeOrderState {
@@ -30,6 +30,33 @@ pub struct TradeOrderState {
     pub seen_event_ids: HashSet<String>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RhiProcessedJobStatus {
+    Processing,
+    ReceiptPublished,
+    Completed,
+    Failed,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RhiProcessedJobState {
+    pub request_id: String,
+    pub request_kind: u32,
+    pub request_hash: String,
+    pub customer_pubkey: String,
+    pub status: RhiProcessedJobStatus,
+    #[serde(default)]
+    pub receipt_event_id: Option<String>,
+    #[serde(default)]
+    pub result_event_id: Option<String>,
+    #[serde(default)]
+    pub error_code: Option<String>,
+    pub created_timestamp: u32,
+    #[serde(default)]
+    pub completed_timestamp: Option<u32>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ValidatedListingState {
     pub event_id: String,
@@ -42,15 +69,16 @@ pub struct ListingEventState {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TradeListingState {
-    #[serde(default)]
-    validated_listings: HashSet<String>,
     #[serde(default)]
     validated_listing_events: HashMap<String, ValidatedListingState>,
     #[serde(default)]
     listing_events: HashMap<String, ListingEventState>,
     #[serde(default)]
     seen_non_order_event_ids: HashSet<String>,
+    #[serde(default)]
+    rhi_processed_jobs: HashMap<String, RhiProcessedJobState>,
     orders: HashMap<String, TradeOrderState>,
     last_event_created_at: Option<u32>,
 }
@@ -172,7 +200,6 @@ impl TradeListingState {
     }
 
     pub fn mark_listing_validated(&mut self, listing_addr: &str, event_id: &str) {
-        self.validated_listings.insert(listing_addr.to_string());
         self.validated_listing_events.insert(
             listing_addr.to_string(),
             ValidatedListingState {
@@ -182,7 +209,6 @@ impl TradeListingState {
     }
 
     pub fn clear_listing_validation(&mut self, listing_addr: &str) {
-        self.validated_listings.remove(listing_addr);
         self.validated_listing_events.remove(listing_addr);
     }
 
@@ -233,6 +259,14 @@ impl TradeListingState {
 
     pub fn is_non_order_event_seen(&self, event_id: &str) -> bool {
         self.seen_non_order_event_ids.contains(event_id)
+    }
+
+    pub fn rhi_processed_job(&self, request_id: &str) -> Option<&RhiProcessedJobState> {
+        self.rhi_processed_jobs.get(request_id)
+    }
+
+    pub fn upsert_rhi_processed_job(&mut self, job: RhiProcessedJobState) {
+        self.rhi_processed_jobs.insert(job.request_id.clone(), job);
     }
 
     pub fn observe_event_created_at(&mut self, created_at: u32) {
@@ -336,9 +370,9 @@ pub enum TradeListingRuntimeError {
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::{
-        ListingEventState, PersistedTradeListingState, TradeListingRuntime,
-        TradeListingRuntimeConfig, TradeListingRuntimeError, TradeListingState,
-        TradeListingStateError, TradeOrderState, ValidatedListingState,
+        ListingEventState, PersistedTradeListingState, RhiProcessedJobState, RhiProcessedJobStatus,
+        TradeListingRuntime, TradeListingRuntimeConfig, TradeListingRuntimeError,
+        TradeListingState, TradeListingStateError, TradeOrderState, ValidatedListingState,
     };
     use radroots_trade::workflow::RadrootsTradeWorkflowState;
     use std::collections::{HashMap, HashSet};
@@ -380,6 +414,25 @@ mod tests {
         assert!(!state.is_non_order_event_seen("evt-non-order"));
         assert!(state.mark_non_order_event_seen("evt-non-order"));
         assert!(state.is_non_order_event_seen("evt-non-order"));
+        state.upsert_rhi_processed_job(RhiProcessedJobState {
+            request_id: "evt-request-1".to_string(),
+            request_kind: 5322,
+            request_hash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                .to_string(),
+            customer_pubkey: "buyer".to_string(),
+            status: RhiProcessedJobStatus::Processing,
+            receipt_event_id: None,
+            result_event_id: None,
+            error_code: None,
+            created_timestamp: 900,
+            completed_timestamp: None,
+        });
+        assert_eq!(
+            state
+                .rhi_processed_job("evt-request-1")
+                .map(|job| job.status),
+            Some(RhiProcessedJobStatus::Processing)
+        );
         state.upsert_listing_event("addr", "evt-listing-1", 30402);
         assert_eq!(state.listing_event_id("addr"), Some("evt-listing-1"));
         assert_eq!(state.replay_since(1_000, 300, 60), 700);
@@ -480,35 +533,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runtime_loads_legacy_validation_state_without_trusting_it() {
-        let path = unique_state_path("legacy-validation");
+    async fn runtime_rejects_previous_state_versions() {
+        let path = unique_state_path("previous-version");
         let payload = PersistedTradeListingState {
             version: 1,
-            state: TradeListingState {
-                validated_listings: ["addr".to_string()].into_iter().collect(),
-                validated_listing_events: HashMap::new(),
-                listing_events: HashMap::new(),
-                seen_non_order_event_ids: HashSet::new(),
-                orders: HashMap::new(),
-                last_event_created_at: Some(321),
-            },
+            state: TradeListingState::default(),
         };
         tokio::fs::write(&path, serde_json::to_vec(&payload).expect("payload"))
             .await
             .expect("write");
 
-        let loaded = TradeListingRuntime::load(TradeListingRuntimeConfig {
+        let err = TradeListingRuntime::load(TradeListingRuntimeConfig {
             state_path: path.clone(),
             replay_window_secs: 600,
             replay_overlap_secs: 30,
         })
         .await
-        .expect("load");
-        let loaded_state_handle = loaded.state();
-        let loaded_state = loaded_state_handle.lock().await;
-        assert!(!loaded_state.is_listing_validated("addr"));
-        assert_eq!(loaded_state.validated_listing_event_id("addr"), None);
-        assert_eq!(loaded_state.last_event_created_at(), Some(321));
+        .expect_err("previous snapshot version should fail");
+        assert!(matches!(
+            err,
+            TradeListingRuntimeError::UnsupportedStateVersion(1)
+        ));
 
         let _ = tokio::fs::remove_file(path).await;
     }
@@ -516,7 +561,6 @@ mod tests {
     #[test]
     fn state_can_clear_listing_validation() {
         let mut state = TradeListingState {
-            validated_listings: ["addr".to_string()].into_iter().collect(),
             validated_listing_events: HashMap::from([(
                 "addr".to_string(),
                 ValidatedListingState {
@@ -531,6 +575,7 @@ mod tests {
                 },
             )]),
             seen_non_order_event_ids: HashSet::new(),
+            rhi_processed_jobs: HashMap::new(),
             orders: HashMap::new(),
             last_event_created_at: None,
         };

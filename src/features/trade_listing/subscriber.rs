@@ -20,7 +20,7 @@ use tracing::{info, warn};
 
 use crate::features::trade_listing::{
     handlers::dvm::{TradeListingDvmError, handle_error, handle_event_with_policy},
-    state::{SharedTradeListingState, TradeListingRuntime},
+    state::TradeListingRuntime,
 };
 use crate::features::trade_validation_receipt::TradeValidationReceiptProverPolicy;
 
@@ -159,13 +159,14 @@ async fn handle_event_io(
     resolved_tags: Vec<RadrootsNostrTag>,
     keys: RadrootsNostrKeys,
     client: RadrootsNostrClient,
-    state: SharedTradeListingState,
+    runtime: TradeListingRuntime,
     proof_policy: TradeValidationReceiptProverPolicy,
 ) -> Result<(), TradeListingDvmError> {
     let result = match take_handle_event_hook() {
         Some(result) => result,
         None => {
-            handle_event_with_policy(event, resolved_tags, keys, client, state, &proof_policy).await
+            handle_event_with_policy(event, resolved_tags, keys, client, runtime, &proof_policy)
+                .await
         }
     };
     result?;
@@ -213,7 +214,6 @@ async fn process_event_notification(
         }
     };
 
-    let state = runtime.state();
     let event_kind = match event.kind {
         RadrootsNostrKind::Custom(v) => Some(u32::from(v)),
         _ => None,
@@ -223,7 +223,7 @@ async fn process_event_notification(
         resolved_tags,
         keys,
         client.clone(),
-        state.clone(),
+        runtime.clone(),
         proof_policy,
     )
     .await
@@ -409,14 +409,13 @@ mod tests {
         assert!(resolve_tags_io(&event, &keys).is_ok());
 
         let runtime = shared_runtime();
-        let state = runtime.state();
         assert!(matches!(
             handle_event_io(
                 event.clone(),
                 Vec::new(),
                 keys.clone(),
                 client.clone(),
-                state.clone(),
+                runtime.clone(),
                 proof_policy()
             )
             .await,
@@ -433,7 +432,7 @@ mod tests {
                 Vec::new(),
                 keys.clone(),
                 client.clone(),
-                state,
+                runtime,
                 proof_policy()
             )
             .await

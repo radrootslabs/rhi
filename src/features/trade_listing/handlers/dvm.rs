@@ -4,8 +4,9 @@
 use std::{sync::Arc, time::Duration};
 
 use radroots_events::farm::RadrootsFarmRef;
+use radroots_events::ids::{RadrootsEventId, RadrootsPublicKey};
 use radroots_events::kinds::{
-    KIND_FARM, KIND_ORDER_CANCELLATION, KIND_ORDER_DECISION, KIND_ORDER_REQUEST,
+    KIND_FARM, KIND_JOB_FEEDBACK, KIND_ORDER_CANCELLATION, KIND_ORDER_DECISION, KIND_ORDER_REQUEST,
     KIND_ORDER_REVISION_DECISION, KIND_ORDER_REVISION_PROPOSAL,
     KIND_TRADE_LISTING_VALIDATION_REQUEST, KIND_TRADE_LISTING_VALIDATION_RESULT,
     KIND_TRADE_TRANSITION_PROOF_REQUEST, KIND_TRADE_TRANSITION_PROOF_RESULT,
@@ -23,9 +24,10 @@ use radroots_events_codec::order::{
 use radroots_nostr::prelude::{
     RadrootsNostrClient, RadrootsNostrEvent, RadrootsNostrEventBuilder, RadrootsNostrFilter,
     RadrootsNostrKeys, RadrootsNostrKind, RadrootsNostrTag, radroots_event_from_nostr,
-    radroots_nostr_build_event, radroots_nostr_build_event_job_feedback,
-    radroots_nostr_fetch_event_by_id, radroots_nostr_parse_pubkey, radroots_nostr_send_event,
+    radroots_nostr_build_event, radroots_nostr_fetch_event_by_id, radroots_nostr_parse_pubkey,
+    radroots_nostr_send_event,
 };
+use radroots_trade::dvm::{RadrootsTradeDvmFeedbackStatus, build_job_feedback_tags};
 use radroots_trade::listing::{
     parse_listing_address, parse_public_listing_address, validation::validate_listing_event,
 };
@@ -37,7 +39,7 @@ use radroots_trade::workflow::RadrootsTradeWorkflowState;
 use thiserror::Error;
 
 use crate::features::trade_listing::state::{
-    TradeListingState, TradeListingStateError, TradeOrderState,
+    TradeListingRuntime, TradeListingState, TradeListingStateError, TradeOrderState,
 };
 use crate::features::trade_validation_receipt::{
     TradeValidationReceiptJobError, TradeValidationReceiptProverPolicy,
@@ -246,10 +248,11 @@ pub async fn handle_event_with_policy(
     _tags: Vec<RadrootsNostrTag>,
     keys: RadrootsNostrKeys,
     client: RadrootsNostrClient,
-    state: Arc<tokio::sync::Mutex<TradeListingState>>,
+    runtime: TradeListingRuntime,
     proof_policy: &TradeValidationReceiptProverPolicy,
 ) -> Result<(), TradeListingDvmError> {
     let kind = event_kind_u32(&event)?;
+    let state = runtime.state();
     if is_listing_kind(kind) {
         return handle_listing_event(&event, &state).await;
     }
@@ -257,9 +260,15 @@ pub async fn handle_event_with_policy(
         return Ok(());
     }
     if kind == KIND_TRADE_TRANSITION_PROOF_REQUEST {
-        return handle_trade_validation_receipt_job_request(&event, &keys, &client, proof_policy)
-            .await
-            .map_err(map_trade_validation_receipt_job_error);
+        return handle_trade_validation_receipt_job_request(
+            &event,
+            &keys,
+            &client,
+            &runtime,
+            proof_policy,
+        )
+        .await
+        .map_err(map_trade_validation_receipt_job_error);
     }
     if kind == KIND_TRADE_LISTING_VALIDATION_REQUEST {
         ensure_service_recipient(&event, &keys)?;
@@ -290,14 +299,14 @@ pub async fn handle_event(
     tags: Vec<RadrootsNostrTag>,
     keys: RadrootsNostrKeys,
     client: RadrootsNostrClient,
-    state: Arc<tokio::sync::Mutex<TradeListingState>>,
+    runtime: TradeListingRuntime,
 ) -> Result<(), TradeListingDvmError> {
     handle_event_with_policy(
         event,
         tags,
         keys,
         client,
-        state,
+        runtime,
         &TradeValidationReceiptProverPolicy::default(),
     )
     .await
@@ -785,8 +794,16 @@ pub async fn handle_error(
     event: &RadrootsNostrEvent,
     client: &RadrootsNostrClient,
 ) -> Result<(), TradeListingDvmError> {
-    let builder =
-        radroots_nostr_build_event_job_feedback(event, "error", Some(error.to_string()), None)?;
+    let request_event_id = RadrootsEventId::parse(event.id.to_hex())
+        .map_err(|err| TradeListingDvmError::InvalidPayload(err.to_string()))?;
+    let customer_pubkey = RadrootsPublicKey::parse(event.pubkey.to_hex())
+        .map_err(|err| TradeListingDvmError::InvalidPayload(err.to_string()))?;
+    let tags = build_job_feedback_tags(
+        RadrootsTradeDvmFeedbackStatus::Error,
+        &request_event_id,
+        &customer_pubkey,
+    );
+    let builder = radroots_nostr_build_event(KIND_JOB_FEEDBACK, error.to_string(), tags)?;
     send_event_io(client, builder).await
 }
 
@@ -797,7 +814,7 @@ mod tests {
         DvmTestHooks, TradeListingDvmError, dvm_test_hooks, handle_error, handle_event,
         tag_has_value,
     };
-    use crate::features::trade_listing::state::TradeListingState;
+    use crate::features::trade_listing::state::TradeListingRuntime;
     use radroots_core::{
         RadrootsCoreCurrency, RadrootsCoreDecimal, RadrootsCoreMoney, RadrootsCoreUnit,
     };
@@ -825,7 +842,6 @@ mod tests {
         RadrootsNostrKind, radroots_nostr_build_event,
     };
     use radroots_trade::workflow::RadrootsTradeWorkflowState;
-    use std::sync::Arc;
     use tokio::sync::{Mutex, MutexGuard};
 
     static TEST_LOCK: Mutex<()> = Mutex::const_new(());
@@ -1029,7 +1045,8 @@ mod tests {
         let buyer = RadrootsNostrKeys::generate();
         let seller = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(worker.clone());
-        let state = Arc::new(Mutex::new(TradeListingState::default()));
+        let runtime = TradeListingRuntime::new();
+        let state = runtime.state();
         state.lock().await.upsert_listing_event(
             &listing_addr(&seller),
             listing_event_id(),
@@ -1037,7 +1054,7 @@ mod tests {
         );
 
         let request_event = signed_order_request_event(&buyer, &seller);
-        handle_event(request_event, Vec::new(), worker, client, state.clone())
+        handle_event(request_event, Vec::new(), worker, client, runtime.clone())
             .await
             .expect("order request");
 
@@ -1055,7 +1072,8 @@ mod tests {
         let buyer = RadrootsNostrKeys::generate();
         let seller = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(worker.clone());
-        let state = Arc::new(Mutex::new(TradeListingState::default()));
+        let runtime = TradeListingRuntime::new();
+        let state = runtime.state();
         state.lock().await.upsert_listing_event(
             &listing_addr(&seller),
             listing_event_id(),
@@ -1067,7 +1085,7 @@ mod tests {
             Vec::new(),
             worker.clone(),
             client.clone(),
-            state.clone(),
+            runtime.clone(),
         )
         .await
         .expect("order request");
@@ -1078,7 +1096,7 @@ mod tests {
             .fetch_event_by_id_results
             .push_back(Ok(request_event));
 
-        handle_event(decision_event, Vec::new(), worker, client, state.clone())
+        handle_event(decision_event, Vec::new(), worker, client, runtime.clone())
             .await
             .expect("order decision");
 
@@ -1094,7 +1112,8 @@ mod tests {
         let buyer = RadrootsNostrKeys::generate();
         let seller = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(worker.clone());
-        let state = Arc::new(Mutex::new(TradeListingState::default()));
+        let runtime = TradeListingRuntime::new();
+        let state = runtime.state();
         state.lock().await.upsert_listing_event(
             &listing_addr(&seller),
             listing_event_id(),
@@ -1106,7 +1125,7 @@ mod tests {
             Vec::new(),
             worker.clone(),
             client.clone(),
-            state.clone(),
+            runtime.clone(),
         )
         .await
         .expect("order request");
@@ -1121,7 +1140,7 @@ mod tests {
             Vec::new(),
             worker.clone(),
             client.clone(),
-            state.clone(),
+            runtime.clone(),
         )
         .await
         .expect("order decision");
@@ -1140,7 +1159,7 @@ mod tests {
             Vec::new(),
             worker,
             client,
-            state.clone(),
+            runtime.clone(),
         )
         .await
         .expect("order cancellation");
@@ -1157,7 +1176,8 @@ mod tests {
         let seller = RadrootsNostrKeys::generate();
         let requester = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(worker.clone());
-        let state = Arc::new(Mutex::new(TradeListingState::default()));
+        let runtime = TradeListingRuntime::new();
+        let state = runtime.state();
         let listing_addr = listing_addr(&seller);
         {
             let mut hooks = dvm_test_hooks().lock().expect("hooks");
@@ -1189,7 +1209,7 @@ mod tests {
         .sign_with_keys(&requester)
         .expect("event");
 
-        handle_event(event, Vec::new(), worker, client, state.clone())
+        handle_event(event, Vec::new(), worker, client, runtime.clone())
             .await
             .expect("validation request");
 
@@ -1201,12 +1221,12 @@ mod tests {
         let _guard = test_guard().await;
         let worker = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(worker.clone());
-        let state = Arc::new(Mutex::new(TradeListingState::default()));
+        let runtime = TradeListingRuntime::new();
         let event = RadrootsNostrEventBuilder::new(RadrootsNostrKind::Custom(4999), "test")
             .sign_with_keys(&RadrootsNostrKeys::generate())
             .expect("event");
         assert!(matches!(
-            handle_event(event, Vec::new(), worker, client, state).await,
+            handle_event(event, Vec::new(), worker, client, runtime).await,
             Err(TradeListingDvmError::UnsupportedKind)
         ));
     }
