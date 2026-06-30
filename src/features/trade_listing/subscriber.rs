@@ -11,8 +11,8 @@ use radroots_events::kinds::{
 };
 use radroots_nostr::prelude::{
     RadrootsNostrClient, RadrootsNostrEvent, RadrootsNostrFilter, RadrootsNostrKeys,
-    RadrootsNostrKind, RadrootsNostrRelayPoolNotification, RadrootsNostrTag,
-    radroots_nostr_tags_resolve,
+    RadrootsNostrKind, RadrootsNostrRelayPoolNotification, RadrootsNostrSubscriptionId,
+    RadrootsNostrTag, radroots_nostr_tags_resolve,
 };
 use tokio::sync::watch;
 use tokio::time::sleep;
@@ -27,6 +27,8 @@ use crate::features::trade_validation_receipt::TradeValidationReceiptProverPolic
 #[cfg(test)]
 #[derive(Default)]
 struct SubscriberTestHooks {
+    subscribe_results: std::collections::VecDeque<Result<RadrootsNostrSubscriptionId, ()>>,
+    unsubscribe_results: std::collections::VecDeque<()>,
     notifications: std::collections::VecDeque<Result<RadrootsNostrRelayPoolNotification, ()>>,
     delay_before_event_handle: std::collections::VecDeque<bool>,
     resolve_tags_results: std::collections::VecDeque<
@@ -43,6 +45,24 @@ static SUBSCRIBER_TEST_HOOKS: std::sync::OnceLock<std::sync::Mutex<SubscriberTes
 #[cfg(test)]
 fn subscriber_test_hooks() -> &'static std::sync::Mutex<SubscriberTestHooks> {
     SUBSCRIBER_TEST_HOOKS.get_or_init(|| std::sync::Mutex::new(SubscriberTestHooks::default()))
+}
+
+#[cfg(test)]
+fn pop_subscribe_hook() -> Option<Result<RadrootsNostrSubscriptionId, ()>> {
+    subscriber_test_hooks()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .subscribe_results
+        .pop_front()
+}
+
+#[cfg(test)]
+fn pop_unsubscribe_hook() -> Option<()> {
+    subscriber_test_hooks()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .unsubscribe_results
+        .pop_front()
 }
 
 #[cfg(test)]
@@ -152,6 +172,29 @@ fn map_notification_recv_result(
     result: Result<RadrootsNostrRelayPoolNotification, tokio::sync::broadcast::error::RecvError>,
 ) -> Result<RadrootsNostrRelayPoolNotification, ()> {
     result.map_err(|_| ())
+}
+
+async fn subscribe_io(
+    client: &RadrootsNostrClient,
+    filter: RadrootsNostrFilter,
+) -> Result<RadrootsNostrSubscriptionId> {
+    #[cfg(test)]
+    if let Some(result) = pop_subscribe_hook() {
+        return result.map_err(|_| anyhow!("trade_listing subscriber subscribe failed"));
+    }
+    let subscription = client.subscribe(filter, None).await?;
+    Ok(subscription.val)
+}
+
+async fn unsubscribe_io(
+    client: &RadrootsNostrClient,
+    subscription_id: &RadrootsNostrSubscriptionId,
+) {
+    #[cfg(test)]
+    if pop_unsubscribe_hook().is_some() {
+        return;
+    }
+    client.unsubscribe(subscription_id).await;
 }
 
 async fn handle_event_io(
@@ -286,7 +329,7 @@ pub async fn subscriber(
         return Ok(());
     }
 
-    let subscription = client.subscribe(filter, None).await?;
+    let subscription_id = subscribe_io(&client, filter).await?;
     let mut notifications = client.notifications();
 
     let mut notifications_closed = false;
@@ -323,7 +366,7 @@ pub async fn subscriber(
         }
     }
 
-    client.unsubscribe(&subscription.val).await;
+    unsubscribe_io(&client, &subscription_id).await;
     if notifications_closed {
         return Err(anyhow!("trade_listing subscriber notifications closed"));
     }
@@ -371,6 +414,16 @@ mod tests {
 
     fn scripted_shutdown_notification() -> RadrootsNostrRelayPoolNotification {
         RadrootsNostrRelayPoolNotification::Shutdown
+    }
+
+    fn prime_subscription_hooks() {
+        let mut hooks = subscriber_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        hooks
+            .subscribe_results
+            .push_back(Ok(RadrootsNostrSubscriptionId::new("sub-hook")));
+        hooks.unsubscribe_results.push_back(());
     }
 
     fn shared_runtime() -> TradeListingRuntime {
@@ -514,11 +567,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn subscriber_can_stop_after_start_when_relay_is_present() {
+    async fn subscriber_can_stop_after_start_when_subscription_is_ready() {
         let _guard = test_guard().await;
         let keys = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(keys.clone());
-        let _ = client.add_relay("wss://relay.example.com").await;
+        prime_subscription_hooks();
         let (tx, rx) = watch::channel(false);
         let join = tokio::spawn(subscriber(
             client,
@@ -537,7 +590,7 @@ mod tests {
         let _guard = test_guard().await;
         let keys = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(keys.clone());
-        let _ = client.add_relay("wss://relay.example.com").await;
+        prime_subscription_hooks();
         subscriber_test_hooks()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -556,7 +609,7 @@ mod tests {
         let _guard = test_guard().await;
         let keys = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(keys.clone());
-        let _ = client.add_relay("wss://relay.example.com").await;
+        prime_subscription_hooks();
 
         subscriber_test_hooks()
             .lock()
@@ -583,7 +636,7 @@ mod tests {
         let _guard = test_guard().await;
         let keys = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(keys.clone());
-        let _ = client.add_relay("wss://relay.example.com").await;
+        prime_subscription_hooks();
         subscriber_test_hooks()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -614,7 +667,7 @@ mod tests {
         let _guard = test_guard().await;
         let keys = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(keys.clone());
-        let _ = client.add_relay("wss://relay.example.com").await;
+        prime_subscription_hooks();
 
         let mut hooks = subscriber_test_hooks()
             .lock()
@@ -656,7 +709,7 @@ mod tests {
         let _guard = test_guard().await;
         let keys = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(keys.clone());
-        let _ = client.add_relay("wss://relay.example.com").await;
+        prime_subscription_hooks();
 
         let mut hooks = subscriber_test_hooks()
             .lock()
