@@ -427,6 +427,8 @@ pub enum TradeValidationReceiptJobError {
     DuplicateConflictingJob,
     #[error("duplicate validation receipt conflicts with processed job state")]
     DuplicateConflictingReceipt,
+    #[error("duplicate validation result conflicts with processed job state")]
+    DuplicateConflictingResult,
     #[error("invalid active trade event: {0}")]
     InvalidActiveTradeEvent(String),
     #[error("rhi prover backend is disabled")]
@@ -657,7 +659,10 @@ async fn process_trade_validation_receipt_job_request(
     match processed_job_action(runtime, &job).await? {
         ProcessedJobAction::Completed => return Ok(()),
         ProcessedJobAction::InProgress => return Ok(()),
-        ProcessedJobAction::RecoverResult { receipt_event_id } => {
+        ProcessedJobAction::RecoverResult {
+            receipt_event_id,
+            result_event_id,
+        } => {
             let receipt_event = io.fetch_event_by_id(&receipt_event_id).await?;
             let verified_receipt =
                 verify_existing_receipt_event(&receipt_event, request, prover_policy)?;
@@ -672,6 +677,7 @@ async fn process_trade_validation_receipt_job_request(
                 verified_receipt,
                 prover_policy,
                 None,
+                result_event_id,
             )
             .await?;
             return Ok(());
@@ -683,6 +689,11 @@ async fn process_trade_validation_receipt_job_request(
         find_existing_receipt_event(io, keys, request, prover_policy).await?
     {
         mark_job_receipt_published(runtime, &job, &receipt_event_id).await?;
+        let result_event_id =
+            match claim_job_result_publication(runtime, &job, &receipt_event_id).await? {
+                ResultPublicationAction::Publish { result_event_id } => result_event_id,
+                ResultPublicationAction::Skip => return Ok(()),
+            };
         publish_result_and_complete(
             event,
             keys,
@@ -694,6 +705,7 @@ async fn process_trade_validation_receipt_job_request(
             verified_receipt,
             prover_policy,
             None,
+            result_event_id,
         )
         .await?;
         return Ok(());
@@ -807,6 +819,11 @@ async fn process_trade_validation_receipt_job_request(
         )
         .await?;
     mark_job_receipt_published(runtime, &job, &receipt_event_id).await?;
+    let result_event_id =
+        match claim_job_result_publication(runtime, &job, &receipt_event_id).await? {
+            ResultPublicationAction::Publish { result_event_id } => result_event_id,
+            ResultPublicationAction::Skip => return Ok(()),
+        };
 
     publish_result_and_complete(
         event,
@@ -819,6 +836,7 @@ async fn process_trade_validation_receipt_job_request(
         verified_receipt,
         prover_policy,
         Some(&proof_outcome),
+        result_event_id,
     )
     .await?;
 
@@ -828,8 +846,16 @@ async fn process_trade_validation_receipt_job_request(
 enum ProcessedJobAction {
     Execute,
     InProgress,
-    RecoverResult { receipt_event_id: String },
+    RecoverResult {
+        receipt_event_id: String,
+        result_event_id: Option<String>,
+    },
     Completed,
+}
+
+enum ResultPublicationAction {
+    Publish { result_event_id: Option<String> },
+    Skip,
 }
 
 fn processed_job_for_request(
@@ -865,10 +891,41 @@ async fn processed_job_action(
     {
         RhiProcessedJobClaim::Execute => Ok(ProcessedJobAction::Execute),
         RhiProcessedJobClaim::InProgress => Ok(ProcessedJobAction::InProgress),
-        RhiProcessedJobClaim::RecoverResult { receipt_event_id } => {
-            Ok(ProcessedJobAction::RecoverResult { receipt_event_id })
-        }
+        RhiProcessedJobClaim::RecoverResult {
+            receipt_event_id,
+            result_event_id,
+        } => Ok(ProcessedJobAction::RecoverResult {
+            receipt_event_id,
+            result_event_id,
+        }),
         RhiProcessedJobClaim::Completed => Ok(ProcessedJobAction::Completed),
+    }
+}
+
+async fn claim_job_result_publication(
+    runtime: &TradeListingRuntime,
+    job: &RhiProcessedJobState,
+    receipt_event_id: &str,
+) -> Result<ResultPublicationAction, TradeValidationReceiptJobError> {
+    match runtime
+        .processed_jobs()
+        .claim_job(job, now_unix_ms(), RHI_PROCESSED_JOB_CLAIM_LEASE_MS)
+        .await
+        .map_err(processed_job_store_error)?
+    {
+        RhiProcessedJobClaim::RecoverResult {
+            receipt_event_id: claimed_receipt_event_id,
+            result_event_id,
+        } => {
+            if claimed_receipt_event_id != receipt_event_id {
+                return Err(TradeValidationReceiptJobError::DuplicateConflictingReceipt);
+            }
+            Ok(ResultPublicationAction::Publish { result_event_id })
+        }
+        RhiProcessedJobClaim::InProgress | RhiProcessedJobClaim::Completed => {
+            Ok(ResultPublicationAction::Skip)
+        }
+        RhiProcessedJobClaim::Execute => Err(TradeValidationReceiptJobError::InvalidJobRequest),
     }
 }
 
@@ -1019,6 +1076,25 @@ impl<'a> TradeValidationReceiptJobIo<'a> {
         }
     }
 
+    async fn publish_signed_event(
+        &mut self,
+        event: RadrootsNostrEvent,
+    ) -> Result<String, TradeValidationReceiptJobError> {
+        match self {
+            Self::Nostr { client } => publish_signed_event_io(client, event).await,
+            Self::Local {
+                events_by_id,
+                published_events,
+                ..
+            } => {
+                let event_id = event.id.to_hex();
+                events_by_id.insert(event_id.clone(), event.clone());
+                published_events.push(event);
+                Ok(event_id)
+            }
+        }
+    }
+
     fn into_published_events(self) -> Vec<RadrootsNostrEvent> {
         match self {
             Self::Nostr { .. } => Vec::new(),
@@ -1074,6 +1150,7 @@ async fn publish_result_and_complete(
     verified_receipt: RadrootsVerifiedValidationReceipt,
     prover_policy: &TradeValidationReceiptProverPolicy,
     proof_outcome: Option<&TradeValidationReceiptProofOutcome>,
+    claimed_result_event_id: Option<String>,
 ) -> Result<(), TradeValidationReceiptJobError> {
     let result = result_payload(
         request_event,
@@ -1087,15 +1164,49 @@ async fn publish_result_and_complete(
     let result_content = serde_json::to_string(&result)?;
     let result_tags =
         result_tags_from_dvm(request_event, &envelope.tags.inputs, &receipt_event_id)?;
-    let result_event_id = io
-        .publish_event_parts(
-            keys,
-            KIND_TRADE_TRANSITION_PROOF_RESULT,
-            result_content,
-            result_tags,
-        )
-        .await?;
+    let result_event = signed_event_from_parts(
+        keys,
+        KIND_TRADE_TRANSITION_PROOF_RESULT,
+        result_content,
+        result_tags,
+        Some(request_event.created_at.as_secs()),
+    )?;
+    let result_event_id = result_event.id.to_hex();
+    if claimed_result_event_id
+        .as_ref()
+        .is_some_and(|claimed| claimed != &result_event_id)
+    {
+        return Err(TradeValidationReceiptJobError::DuplicateConflictingResult);
+    }
+    let intent = runtime
+        .processed_jobs()
+        .mark_result_publishing(job, &receipt_event_id, &result_event_id, now_unix_ms())
+        .await
+        .map_err(processed_job_store_error)?;
+    if intent.status == RhiProcessedJobStatus::Completed {
+        return Ok(());
+    }
+    let published_result_event_id = io.publish_signed_event(result_event).await?;
+    if published_result_event_id != result_event_id {
+        return Err(TradeValidationReceiptJobError::DuplicateConflictingResult);
+    }
     mark_job_completed(runtime, job, &receipt_event_id, &result_event_id).await
+}
+
+fn signed_event_from_parts(
+    keys: &RadrootsNostrKeys,
+    kind: u32,
+    content: String,
+    tags: Vec<Vec<String>>,
+    created_at_secs: Option<u64>,
+) -> Result<RadrootsNostrEvent, TradeValidationReceiptJobError> {
+    let mut builder = radroots_nostr_build_event(kind, content, tags)?;
+    if let Some(created_at_secs) = created_at_secs {
+        builder = builder.custom_created_at(RadrootsNostrTimestamp::from_secs(created_at_secs));
+    }
+    builder
+        .sign_with_keys(keys)
+        .map_err(|_| TradeValidationReceiptJobError::InvalidSignedEvent)
 }
 
 fn result_payload(
@@ -1527,6 +1638,9 @@ fn processed_job_store_error(error: RhiProcessedJobStoreError) -> TradeValidatio
         }
         RhiProcessedJobStoreError::DuplicateConflictingReceipt => {
             TradeValidationReceiptJobError::DuplicateConflictingReceipt
+        }
+        RhiProcessedJobStoreError::DuplicateConflictingResult => {
+            TradeValidationReceiptJobError::DuplicateConflictingResult
         }
         error => TradeValidationReceiptJobError::Runtime(TradeListingRuntimeError::from(error)),
     }
@@ -2150,6 +2264,20 @@ async fn publish_event_parts_io(
     Ok(output.val.to_hex())
 }
 
+async fn publish_signed_event_io(
+    client: &RadrootsNostrClient,
+    event: RadrootsNostrEvent,
+) -> Result<String, TradeValidationReceiptJobError> {
+    #[cfg(test)]
+    if let Some(result) = pop_publish_signed_event_hook(&event) {
+        result?;
+        return Ok(event.id.to_hex());
+    }
+
+    let output = client.send_event(&event).await?;
+    Ok(output.val.to_hex())
+}
+
 fn zero_event_id() -> String {
     "0000000000000000000000000000000000000000000000000000000000000000".to_string()
 }
@@ -2161,6 +2289,7 @@ fn zero_signature() -> String {
 #[cfg(test)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PublishedEventParts {
+    event_id: Option<String>,
     kind: u32,
     content: String,
     tags: Vec<Vec<String>>,
@@ -2229,9 +2358,30 @@ fn pop_publish_event_hook(
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     hooks.published_events.push(PublishedEventParts {
+        event_id: None,
         kind,
         content,
         tags,
+    });
+    hooks.publish_event_results.pop_front()
+}
+
+#[cfg(test)]
+fn pop_publish_signed_event_hook(
+    event: &RadrootsNostrEvent,
+) -> Option<Result<String, TradeValidationReceiptJobError>> {
+    let mut hooks = trade_validation_receipt_test_hooks()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    hooks.published_events.push(PublishedEventParts {
+        event_id: Some(event.id.to_hex()),
+        kind: event_kind_u32(event).unwrap_or(0),
+        content: event.content.clone(),
+        tags: event
+            .tags
+            .iter()
+            .map(|tag| tag.as_slice().to_vec())
+            .collect(),
     });
     hooks.publish_event_results.pop_front()
 }
@@ -2323,7 +2473,7 @@ mod tests {
         handle_trade_validation_receipt_local_worker_request, trade_validation_receipt_test_hooks,
     };
     use crate::features::trade_listing::processed_jobs::{
-        RhiProcessedJobState, RhiProcessedJobStatus,
+        RhiProcessedJobClaim, RhiProcessedJobState, RhiProcessedJobStatus,
     };
     use crate::features::trade_listing::state::TradeListingRuntime;
     use radroots_core::{
@@ -2365,6 +2515,7 @@ mod tests {
     use radroots_trade::dvm::{
         RadrootsTradeInventoryBinWitnessDto, RadrootsTradeProofMode,
         RadrootsTradeTransitionProofRequestV1, build_transition_proof_request_tags,
+        parse_transition_proof_request_event,
     };
     use radroots_trade::validation_receipt::{
         RadrootsTradeCommitmentConfidence, RadrootsTradeValidationAuthority,
@@ -2739,6 +2890,42 @@ mod tests {
             &radroots_event_from_nostr(job),
         )
         .expect("processed job")
+    }
+
+    fn signed_result_event_for_test(
+        worker: &RadrootsNostrKeys,
+        job: &RadrootsNostrEvent,
+        receipt_event: &RadrootsNostrEvent,
+        policy: &TradeValidationReceiptProverPolicy,
+    ) -> RadrootsNostrEvent {
+        let request_event = radroots_event_from_nostr(job);
+        let envelope = parse_transition_proof_request_event(&request_event).expect("envelope");
+        let verified_receipt =
+            super::verify_existing_receipt_event(receipt_event, &envelope.content, policy)
+                .expect("verified receipt");
+        let processed = processed_job_for_test(job);
+        let receipt_event_id = receipt_event.id.to_hex();
+        let result = super::result_payload(
+            job,
+            &processed,
+            &envelope,
+            receipt_event_id.as_str(),
+            verified_receipt,
+            policy,
+            None,
+        );
+        let result_content = serde_json::to_string(&result).expect("result json");
+        let result_tags =
+            super::result_tags_from_dvm(job, &envelope.tags.inputs, receipt_event_id.as_str())
+                .expect("result tags");
+        super::signed_event_from_parts(
+            worker,
+            KIND_TRADE_TRANSITION_PROOF_RESULT,
+            result_content,
+            result_tags,
+            Some(job.created_at.as_secs()),
+        )
+        .expect("signed result")
     }
 
     async fn handle_job_request_for_test(
@@ -3801,6 +3988,13 @@ mod tests {
         .await
         .expect("first proof job");
 
+        let result_event_id = trade_validation_receipt_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .published_events[1]
+            .event_id
+            .clone()
+            .expect("signed result event id");
         let processed = runtime
             .processed_jobs()
             .get_job(&job.id.to_hex())
@@ -3818,7 +4012,7 @@ mod tests {
         );
         assert_eq!(
             processed.result_event_id.as_deref(),
-            Some(publish_result_id(2).as_str())
+            Some(result_event_id.as_str())
         );
 
         *trade_validation_receipt_test_hooks()
@@ -3951,6 +4145,10 @@ mod tests {
         let result: TradeValidationReceiptJobResult =
             serde_json::from_str(&hooks.published_events[0].content).expect("result json");
         assert_eq!(result.receipt_event_id, receipt_event.id.to_hex());
+        let result_event_id = hooks.published_events[0]
+            .event_id
+            .clone()
+            .expect("signed result event id");
         drop(hooks);
 
         let processed = runtime
@@ -3966,7 +4164,151 @@ mod tests {
         );
         assert_eq!(
             processed.result_event_id.as_deref(),
-            Some(publish_result_id(3).as_str())
+            Some(result_event_id.as_str())
+        );
+    }
+
+    #[tokio::test]
+    async fn proof_job_recovers_result_publication_from_recorded_result_intent() {
+        let _guard = test_guard();
+        let worker = RadrootsNostrKeys::generate();
+        let requester = RadrootsNostrKeys::generate();
+        let buyer = RadrootsNostrKeys::generate();
+        let seller = RadrootsNostrKeys::generate();
+        let listing_event = listing_event(&seller);
+        let (request_event, decision_event) = signed_order_events(&buyer, &seller, &listing_event);
+        let job = job_request(
+            &requester,
+            &worker,
+            &listing_event,
+            &request_event,
+            &decision_event,
+            RadrootsSp1TradeProofMode::None,
+            None,
+            None,
+        );
+        {
+            let mut hooks = trade_validation_receipt_test_hooks()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            hooks
+                .fetch_event_by_id_results
+                .push_back(Ok(listing_event.clone()));
+            hooks
+                .fetch_event_by_id_results
+                .push_back(Ok(request_event.clone()));
+            hooks
+                .fetch_event_by_id_results
+                .push_back(Ok(decision_event.clone()));
+            hooks
+                .publish_event_results
+                .push_back(Ok(publish_result_id(1)));
+            hooks
+                .publish_event_results
+                .push_back(Ok(publish_result_id(2)));
+        }
+        handle_job_request_for_test(&job, &worker, &deterministic_policy())
+            .await
+            .expect("setup proof job");
+        let receipt_parts = trade_validation_receipt_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .published_events
+            .first()
+            .expect("receipt event")
+            .clone();
+        let receipt_event = signed_event(
+            &worker,
+            receipt_parts.kind,
+            receipt_parts.content,
+            receipt_parts.tags,
+        );
+        let result_event =
+            signed_result_event_for_test(&worker, &job, &receipt_event, &deterministic_policy());
+        let result_event_id = result_event.id.to_hex();
+        *trade_validation_receipt_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            TradeValidationReceiptTestHooks::default();
+
+        let runtime = TradeListingRuntime::new();
+        let processed = processed_job_for_test(&job);
+        runtime
+            .processed_jobs()
+            .claim_job(&processed, 1, 1)
+            .await
+            .expect("claim processed job");
+        runtime
+            .processed_jobs()
+            .mark_receipt_published(&processed, receipt_event.id.to_hex().as_str(), 2)
+            .await
+            .expect("record receipt");
+        assert_eq!(
+            runtime
+                .processed_jobs()
+                .claim_job(&processed, 3, 1)
+                .await
+                .expect("claim result"),
+            RhiProcessedJobClaim::RecoverResult {
+                receipt_event_id: receipt_event.id.to_hex(),
+                result_event_id: None,
+            }
+        );
+        runtime
+            .processed_jobs()
+            .mark_result_publishing(
+                &processed,
+                receipt_event.id.to_hex().as_str(),
+                result_event_id.as_str(),
+                4,
+            )
+            .await
+            .expect("record result intent");
+
+        {
+            let mut hooks = trade_validation_receipt_test_hooks()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            hooks
+                .fetch_event_by_id_results
+                .push_back(Ok(receipt_event.clone()));
+            hooks
+                .publish_event_results
+                .push_back(Ok(publish_result_id(3)));
+        }
+        handle_trade_validation_receipt_job_request(
+            &job,
+            &worker,
+            &client_for(&worker),
+            &runtime,
+            &deterministic_policy(),
+        )
+        .await
+        .expect("recovered result intent");
+
+        let hooks = trade_validation_receipt_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert_eq!(hooks.published_events.len(), 1);
+        assert_eq!(
+            hooks.published_events[0]
+                .event_id
+                .as_ref()
+                .map(String::as_str),
+            Some(result_event_id.as_str())
+        );
+        drop(hooks);
+
+        let processed = runtime
+            .processed_jobs()
+            .get_job(&job.id.to_hex())
+            .await
+            .expect("processed job lookup")
+            .expect("processed job");
+        assert_eq!(processed.status, RhiProcessedJobStatus::Completed);
+        assert_eq!(
+            processed.result_event_id.as_deref(),
+            Some(result_event_id.as_str())
         );
     }
 
@@ -4062,6 +4404,10 @@ mod tests {
             hooks.published_events[0].kind,
             KIND_TRADE_TRANSITION_PROOF_RESULT
         );
+        let result_event_id = hooks.published_events[0]
+            .event_id
+            .clone()
+            .expect("signed result event id");
         drop(hooks);
 
         let processed = runtime
@@ -4077,7 +4423,7 @@ mod tests {
         );
         assert_eq!(
             processed.result_event_id.as_deref(),
-            Some(publish_result_id(3).as_str())
+            Some(result_event_id.as_str())
         );
     }
 

@@ -16,6 +16,7 @@ const RHI_PROCESSED_JOB_SCHEMA_VERSION: i64 = 1;
 pub enum RhiProcessedJobStatus {
     Processing,
     ReceiptPublished,
+    ResultPublishing,
     Completed,
     Failed,
 }
@@ -25,6 +26,7 @@ impl RhiProcessedJobStatus {
         match self {
             Self::Processing => "processing",
             Self::ReceiptPublished => "receipt_published",
+            Self::ResultPublishing => "result_publishing",
             Self::Completed => "completed",
             Self::Failed => "failed",
         }
@@ -34,6 +36,7 @@ impl RhiProcessedJobStatus {
         match value {
             "processing" => Ok(Self::Processing),
             "receipt_published" => Ok(Self::ReceiptPublished),
+            "result_publishing" => Ok(Self::ResultPublishing),
             "completed" => Ok(Self::Completed),
             "failed" => Ok(Self::Failed),
             _ => Err(RhiProcessedJobStoreError::InvalidStatus(value.to_owned())),
@@ -63,7 +66,10 @@ pub struct RhiProcessedJobState {
 pub enum RhiProcessedJobClaim {
     Execute,
     InProgress,
-    RecoverResult { receipt_event_id: String },
+    RecoverResult {
+        receipt_event_id: String,
+        result_event_id: Option<String>,
+    },
     Completed,
 }
 
@@ -88,6 +94,10 @@ pub enum RhiProcessedJobStoreError {
     DuplicateConflictingJob,
     #[error("duplicate conflicting receipt")]
     DuplicateConflictingReceipt,
+    #[error("duplicate conflicting result")]
+    DuplicateConflictingResult,
+    #[error("result publication was not claimed")]
+    ResultPublicationNotClaimed,
     #[error("missing processed-job claim: {0}")]
     MissingProcessedJobClaim(String),
     #[error("invalid rhi processed-job status: {0}")]
@@ -185,11 +195,64 @@ impl RhiProcessedJobStore {
         };
         ensure_processed_job_matches(&existing, job)?;
         ensure_receipt_matches(&existing, receipt_event_id)?;
+        ensure_result_matches(&existing, result_event_id)?;
+        if existing.status == RhiProcessedJobStatus::Completed {
+            tx.commit().await?;
+            return Ok(existing);
+        }
+        if existing.status != RhiProcessedJobStatus::ResultPublishing
+            || existing.result_event_id.is_none()
+        {
+            return Err(RhiProcessedJobStoreError::ResultPublicationNotClaimed);
+        }
         existing.status = RhiProcessedJobStatus::Completed;
         existing.receipt_event_id = Some(receipt_event_id.to_owned());
         existing.result_event_id = Some(result_event_id.to_owned());
         existing.completed_timestamp = Some(completed_timestamp);
         update_job(&mut tx, &existing, now_ms, None).await?;
+        tx.commit().await?;
+        Ok(existing)
+    }
+
+    pub async fn mark_result_publishing(
+        &self,
+        job: &RhiProcessedJobState,
+        receipt_event_id: &str,
+        result_event_id: &str,
+        now_ms: i64,
+    ) -> Result<RhiProcessedJobState, RhiProcessedJobStoreError> {
+        self.ensure_schema().await?;
+        let mut tx = self.pool.begin().await?;
+        let Some(mut existing) = select_job(&mut tx, job.request_id.as_str()).await? else {
+            return Err(RhiProcessedJobStoreError::MissingProcessedJobClaim(
+                job.request_id.clone(),
+            ));
+        };
+        ensure_processed_job_matches(&existing, job)?;
+        ensure_receipt_matches(&existing, receipt_event_id)?;
+        ensure_result_matches(&existing, result_event_id)?;
+        if existing.status == RhiProcessedJobStatus::Completed {
+            tx.commit().await?;
+            return Ok(existing);
+        }
+        if existing.status != RhiProcessedJobStatus::ResultPublishing {
+            return Err(RhiProcessedJobStoreError::ResultPublicationNotClaimed);
+        }
+        existing.receipt_event_id = Some(receipt_event_id.to_owned());
+        existing.result_event_id = Some(result_event_id.to_owned());
+        sqlx::query(
+            "UPDATE rhi_processed_jobs
+                SET receipt_event_id = ?,
+                    result_event_id = ?,
+                    updated_at_ms = ?
+                WHERE request_id = ?",
+        )
+        .bind(existing.receipt_event_id.as_deref())
+        .bind(existing.result_event_id.as_deref())
+        .bind(now_ms)
+        .bind(existing.request_id.as_str())
+        .execute(&mut *tx)
+        .await?;
         tx.commit().await?;
         Ok(existing)
     }
@@ -405,7 +468,49 @@ async fn claim_for_existing_job(
         return Ok(RhiProcessedJobClaim::Completed);
     }
     if let Some(receipt_event_id) = existing.receipt_event_id.clone() {
-        return Ok(RhiProcessedJobClaim::RecoverResult { receipt_event_id });
+        let current_claim_expires_at_ms: Option<i64> =
+            sqlx::query("SELECT claim_expires_at_ms FROM rhi_processed_jobs WHERE request_id = ?")
+                .bind(existing.request_id.as_str())
+                .fetch_one(&mut **tx)
+                .await?
+                .try_get("claim_expires_at_ms")?;
+        if existing.status == RhiProcessedJobStatus::ResultPublishing
+            && current_claim_expires_at_ms.is_some_and(|expires_at_ms| expires_at_ms > now_ms)
+        {
+            return Ok(RhiProcessedJobClaim::InProgress);
+        }
+        let changed = sqlx::query(
+            "UPDATE rhi_processed_jobs
+                SET status = ?,
+                    claim_expires_at_ms = ?,
+                    updated_at_ms = ?
+                WHERE request_id = ?
+                  AND receipt_event_id = ?
+                  AND status != ?
+                  AND (
+                    status != ?
+                    OR claim_expires_at_ms IS NULL
+                    OR claim_expires_at_ms <= ?
+                  )",
+        )
+        .bind(RhiProcessedJobStatus::ResultPublishing.as_str())
+        .bind(claim_expires_at_ms)
+        .bind(now_ms)
+        .bind(existing.request_id.as_str())
+        .bind(receipt_event_id.as_str())
+        .bind(RhiProcessedJobStatus::Completed.as_str())
+        .bind(RhiProcessedJobStatus::ResultPublishing.as_str())
+        .bind(now_ms)
+        .execute(&mut **tx)
+        .await?
+        .rows_affected();
+        if changed == 1 {
+            return Ok(RhiProcessedJobClaim::RecoverResult {
+                receipt_event_id,
+                result_event_id: existing.result_event_id,
+            });
+        }
+        return Ok(RhiProcessedJobClaim::InProgress);
     }
 
     let current_claim_expires_at_ms: Option<i64> =
@@ -513,6 +618,20 @@ fn ensure_receipt_matches(
     Ok(())
 }
 
+fn ensure_result_matches(
+    existing: &RhiProcessedJobState,
+    result_event_id: &str,
+) -> Result<(), RhiProcessedJobStoreError> {
+    if existing
+        .result_event_id
+        .as_ref()
+        .is_some_and(|existing| existing != result_event_id)
+    {
+        return Err(RhiProcessedJobStoreError::DuplicateConflictingResult);
+    }
+    Ok(())
+}
+
 fn job_from_row(row: SqliteRow) -> Result<RhiProcessedJobState, RhiProcessedJobStoreError> {
     Ok(RhiProcessedJobState {
         request_id: row.try_get("request_id")?,
@@ -592,6 +711,30 @@ mod tests {
             .await
             .expect("receipt");
         assert_eq!(published.status, RhiProcessedJobStatus::ReceiptPublished);
+        let error = store
+            .mark_completed(&job, "receipt-1", "result-1", 1_700_000_001, 1_150)
+            .await
+            .expect_err("unclaimed result completion");
+        assert!(matches!(
+            error,
+            RhiProcessedJobStoreError::ResultPublicationNotClaimed
+        ));
+        assert_eq!(
+            store
+                .claim_job(&job, 1_160, 10_000)
+                .await
+                .expect("result claim"),
+            RhiProcessedJobClaim::RecoverResult {
+                receipt_event_id: "receipt-1".to_owned(),
+                result_event_id: None,
+            }
+        );
+        let publishing = store
+            .mark_result_publishing(&job, "receipt-1", "result-1", 1_170)
+            .await
+            .expect("result intent");
+        assert_eq!(publishing.status, RhiProcessedJobStatus::ResultPublishing);
+        assert_eq!(publishing.result_event_id.as_deref(), Some("result-1"));
         let completed = store
             .mark_completed(&job, "receipt-1", "result-1", 1_700_000_001, 1_200)
             .await
@@ -634,6 +777,61 @@ mod tests {
                 .expect("expired claim"),
             RhiProcessedJobClaim::Execute
         );
+    }
+
+    #[tokio::test]
+    async fn processed_job_store_claims_result_publication_and_rejects_conflicting_result_ids() {
+        let store = RhiProcessedJobStore::open_memory().expect("store");
+        let job = job("request-2-result");
+        store.claim_job(&job, 10, 100).await.expect("claim");
+        store
+            .mark_receipt_published(&job, "receipt-1", 20)
+            .await
+            .expect("receipt");
+        assert_eq!(
+            store.claim_job(&job, 30, 100).await.expect("result claim"),
+            RhiProcessedJobClaim::RecoverResult {
+                receipt_event_id: "receipt-1".to_owned(),
+                result_event_id: None,
+            }
+        );
+        store
+            .mark_result_publishing(&job, "receipt-1", "result-1", 40)
+            .await
+            .expect("result intent");
+        assert_eq!(
+            store
+                .claim_job(&job, 50, 100)
+                .await
+                .expect("duplicate result claim"),
+            RhiProcessedJobClaim::InProgress
+        );
+        assert_eq!(
+            store
+                .claim_job(&job, 131, 100)
+                .await
+                .expect("expired result claim"),
+            RhiProcessedJobClaim::RecoverResult {
+                receipt_event_id: "receipt-1".to_owned(),
+                result_event_id: Some("result-1".to_owned()),
+            }
+        );
+        let error = store
+            .mark_result_publishing(&job, "receipt-1", "result-2", 140)
+            .await
+            .expect_err("conflicting result");
+        assert!(matches!(
+            error,
+            RhiProcessedJobStoreError::DuplicateConflictingResult
+        ));
+        let error = store
+            .mark_completed(&job, "receipt-1", "result-2", 1_700_000_001, 150)
+            .await
+            .expect_err("conflicting completion");
+        assert!(matches!(
+            error,
+            RhiProcessedJobStoreError::DuplicateConflictingResult
+        ));
     }
 
     #[tokio::test]

@@ -100,10 +100,14 @@ fn rhi_processed_job_state_is_durable_workflow_authority() {
         "CREATE TABLE IF NOT EXISTS rhi_processed_jobs",
         "request_id TEXT PRIMARY KEY",
         "CREATE UNIQUE INDEX IF NOT EXISTS rhi_processed_jobs_receipt_event_idx",
+        "CREATE UNIQUE INDEX IF NOT EXISTS rhi_processed_jobs_result_event_idx",
         "pub async fn claim_job(",
         "pub async fn mark_receipt_published(",
+        "pub async fn mark_result_publishing(",
         "pub async fn mark_completed(",
         "RhiProcessedJobClaim::InProgress",
+        "RhiProcessedJobStatus::ResultPublishing",
+        "DuplicateConflictingResult",
     ] {
         assert!(
             processed_jobs.contains(required),
@@ -114,6 +118,8 @@ fn rhi_processed_job_state_is_durable_workflow_authority() {
     for required in [
         "fn processed_job_for_request(",
         "async fn processed_job_action(",
+        "claim_job_result_publication(",
+        "publish_signed_event(",
         "mark_job_completed(",
         "RhiProcessedJobStatus::Completed",
     ] {
