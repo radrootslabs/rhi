@@ -44,9 +44,11 @@ use radroots_trade::dvm::{
     build_transition_proof_result_tags, parse_transition_proof_request_event,
 };
 use radroots_trade::validation_receipt::{
+    RadrootsTradeCommitmentConfidence, RadrootsTradeValidationAuthority,
     RadrootsValidationReceiptError, RadrootsValidationReceiptExpectedBinding,
-    RadrootsValidationReceiptProofSystem, RadrootsVerifiedValidationReceipt,
-    validation_receipt_event_build, verify_validation_receipt_event,
+    RadrootsValidationReceiptProofSystem, RadrootsValidationReceiptResult,
+    RadrootsVerifiedValidationReceipt, validation_receipt_event_build,
+    verify_validation_receipt_event,
 };
 use radroots_trade::{
     order::{
@@ -374,8 +376,8 @@ pub struct TradeValidationReceiptJobResult {
     pub sp1_execute_checked: bool,
     pub sp1_execute_public_values_hash: Option<String>,
     pub status: TradeValidationReceiptJobStatus,
-    pub validation_authority: TradeValidationReceiptValidationAuthority,
-    pub confidence: TradeValidationReceiptJobConfidence,
+    pub validation_authority: RadrootsTradeValidationAuthority,
+    pub confidence: RadrootsTradeCommitmentConfidence,
     pub worker_pubkey: String,
     pub worker_role: TradeValidationReceiptWorkerRole,
 }
@@ -384,18 +386,6 @@ pub struct TradeValidationReceiptJobResult {
 #[serde(rename_all = "snake_case")]
 pub enum TradeValidationReceiptJobStatus {
     Succeeded,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TradeValidationReceiptValidationAuthority {
-    NonAuthoritativeProver,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TradeValidationReceiptJobConfidence {
-    ReceiptVerified,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1173,6 +1163,9 @@ fn result_payload(
         .unwrap_or(
             verified_receipt.receipt.proof.system != RadrootsValidationReceiptProofSystem::None,
         );
+    let validation_authority = validation_authority_for_result(prover_policy, proof_outcome);
+    let confidence =
+        commitment_confidence_for_result(verified_receipt.receipt.result, validation_authority);
     TradeValidationReceiptJobResult {
         cryptographic_proof_verified: proof_outcome
             .map(|outcome| outcome.cryptographic_proof_verified)
@@ -1199,9 +1192,57 @@ fn result_payload(
         sp1_execute_public_values_hash: proof_outcome
             .and_then(|outcome| outcome.sp1_execute_public_values_hash.clone()),
         status: TradeValidationReceiptJobStatus::Succeeded,
-        validation_authority: TradeValidationReceiptValidationAuthority::NonAuthoritativeProver,
-        confidence: TradeValidationReceiptJobConfidence::ReceiptVerified,
+        validation_authority,
+        confidence,
         worker_role: TradeValidationReceiptWorkerRole::NonAuthoritativeProver,
+    }
+}
+
+fn validation_authority_for_result(
+    prover_policy: &TradeValidationReceiptProverPolicy,
+    proof_outcome: Option<&TradeValidationReceiptProofOutcome>,
+) -> RadrootsTradeValidationAuthority {
+    let proof_verified = proof_outcome
+        .map(|outcome| outcome.cryptographic_proof_verified)
+        .unwrap_or(false);
+    match prover_policy.backend {
+        TradeValidationReceiptProverBackend::DeterministicNone => {
+            RadrootsTradeValidationAuthority::DevDeterministicOnly
+        }
+        TradeValidationReceiptProverBackend::LocalCpuProve
+        | TradeValidationReceiptProverBackend::RemoteHttpProve
+            if proof_verified =>
+        {
+            RadrootsTradeValidationAuthority::TrustedServiceAndProofVerified
+        }
+        TradeValidationReceiptProverBackend::LocalExecute => {
+            RadrootsTradeValidationAuthority::TrustedRhiServiceKey
+        }
+        _ if proof_verified => RadrootsTradeValidationAuthority::CryptographicProofVerified,
+        _ => RadrootsTradeValidationAuthority::TrustedRhiServiceKey,
+    }
+}
+
+fn commitment_confidence_for_result(
+    result: RadrootsValidationReceiptResult,
+    authority: RadrootsTradeValidationAuthority,
+) -> RadrootsTradeCommitmentConfidence {
+    if result == RadrootsValidationReceiptResult::Invalid {
+        return RadrootsTradeCommitmentConfidence::Invalid;
+    }
+    match authority {
+        RadrootsTradeValidationAuthority::DevDeterministicOnly => {
+            RadrootsTradeCommitmentConfidence::LocalOnly
+        }
+        RadrootsTradeValidationAuthority::TrustedRhiServiceKey => {
+            RadrootsTradeCommitmentConfidence::CommittedByTrustedService
+        }
+        RadrootsTradeValidationAuthority::CryptographicProofVerified => {
+            RadrootsTradeCommitmentConfidence::CommittedByCryptographicProof
+        }
+        RadrootsTradeValidationAuthority::TrustedServiceAndProofVerified => {
+            RadrootsTradeCommitmentConfidence::CommittedByTrustedServiceAndProof
+        }
     }
 }
 
@@ -2304,11 +2345,10 @@ fn pop_remote_proof_verification_hook() -> Option<Result<(), TradeValidationRece
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::{
-        TradeValidationReceiptJobConfidence, TradeValidationReceiptJobError,
-        TradeValidationReceiptJobResult, TradeValidationReceiptLocalWorkerRequest,
-        TradeValidationReceiptProverBackend, TradeValidationReceiptProverPolicy,
-        TradeValidationReceiptRemoteHttpAuth, TradeValidationReceiptRemoteHttpProverConfig,
-        TradeValidationReceiptTestHooks, TradeValidationReceiptValidationAuthority,
+        TradeValidationReceiptJobError, TradeValidationReceiptJobResult,
+        TradeValidationReceiptLocalWorkerRequest, TradeValidationReceiptProverBackend,
+        TradeValidationReceiptProverPolicy, TradeValidationReceiptRemoteHttpAuth,
+        TradeValidationReceiptRemoteHttpProverConfig, TradeValidationReceiptTestHooks,
         build_trade_validation_receipt_job_request_event,
         handle_trade_validation_receipt_job_request,
         handle_trade_validation_receipt_local_worker_request, trade_validation_receipt_test_hooks,
@@ -2357,6 +2397,7 @@ mod tests {
         RadrootsTradeTransitionProofRequestV1, build_transition_proof_request_tags,
     };
     use radroots_trade::validation_receipt::{
+        RadrootsTradeCommitmentConfidence, RadrootsTradeValidationAuthority,
         RadrootsValidationReceiptExpectedBinding, RadrootsValidationReceiptProofSystem,
         verify_validation_receipt_event,
     };
@@ -3172,11 +3213,11 @@ mod tests {
         assert!(result.sp1_execute_checked);
         assert_eq!(
             result.validation_authority,
-            TradeValidationReceiptValidationAuthority::NonAuthoritativeProver
+            RadrootsTradeValidationAuthority::TrustedServiceAndProofVerified
         );
         assert_eq!(
             result.confidence,
-            TradeValidationReceiptJobConfidence::ReceiptVerified
+            RadrootsTradeCommitmentConfidence::CommittedByTrustedServiceAndProof
         );
         assert_eq!(
             result.sp1_execute_public_values_hash.as_deref(),
@@ -3721,11 +3762,11 @@ mod tests {
         assert!(!result.cryptographic_proof_verified);
         assert_eq!(
             result.validation_authority,
-            TradeValidationReceiptValidationAuthority::NonAuthoritativeProver
+            RadrootsTradeValidationAuthority::DevDeterministicOnly
         );
         assert_eq!(
             result.confidence,
-            TradeValidationReceiptJobConfidence::ReceiptVerified
+            RadrootsTradeCommitmentConfidence::LocalOnly
         );
         assert_eq!(
             result.public_values_hash,
