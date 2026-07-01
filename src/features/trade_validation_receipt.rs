@@ -63,9 +63,10 @@ use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, time::Duration};
 use thiserror::Error;
 
-use crate::features::trade_listing::state::{
-    RhiProcessedJobState, RhiProcessedJobStatus, TradeListingRuntime, TradeListingRuntimeError,
+use crate::features::trade_listing::processed_jobs::{
+    RhiProcessedJobClaim, RhiProcessedJobState, RhiProcessedJobStatus, RhiProcessedJobStoreError,
 };
+use crate::features::trade_listing::state::{TradeListingRuntime, TradeListingRuntimeError};
 
 #[cfg(feature = "sp1_verify")]
 use radroots_sp1_host_trade::{
@@ -73,6 +74,8 @@ use radroots_sp1_host_trade::{
     RadrootsSp1TradeRemoteProverRequest, RadrootsSp1TradeRemoteProverResponse,
     RadrootsSp1TradeRemoteProverStatus, RadrootsSp1TradeResolvedProofArtifact,
 };
+
+const RHI_PROCESSED_JOB_CLAIM_LEASE_MS: i64 = 10 * 60 * 1000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -598,12 +601,11 @@ pub async fn handle_trade_validation_receipt_local_worker_request(
     )
     .await?;
     let processed_job = {
-        let state = runtime.state();
-        state
-            .lock()
+        runtime
+            .processed_jobs()
+            .get_job(&request.job_request_event.id.to_hex())
             .await
-            .rhi_processed_job(&request.job_request_event.id.to_hex())
-            .cloned()
+            .map_err(processed_job_store_error)?
     };
     Ok(TradeValidationReceiptLocalWorkerOutput {
         published_events: io.into_published_events(),
@@ -654,6 +656,7 @@ async fn process_trade_validation_receipt_job_request(
     let job = processed_job_for_request(event, kind, &request_event)?;
     match processed_job_action(runtime, &job).await? {
         ProcessedJobAction::Completed => return Ok(()),
+        ProcessedJobAction::InProgress => return Ok(()),
         ProcessedJobAction::RecoverResult { receipt_event_id } => {
             let receipt_event = io.fetch_event_by_id(&receipt_event_id).await?;
             let verified_receipt =
@@ -824,6 +827,7 @@ async fn process_trade_validation_receipt_job_request(
 
 enum ProcessedJobAction {
     Execute,
+    InProgress,
     RecoverResult { receipt_event_id: String },
     Completed,
 }
@@ -853,49 +857,19 @@ async fn processed_job_action(
     runtime: &TradeListingRuntime,
     job: &RhiProcessedJobState,
 ) -> Result<ProcessedJobAction, TradeValidationReceiptJobError> {
-    let existing = {
-        let state = runtime.state();
-        state
-            .lock()
-            .await
-            .rhi_processed_job(&job.request_id)
-            .cloned()
-    };
-    match existing {
-        Some(existing) => {
-            ensure_processed_job_matches(&existing, job)?;
-            if existing.status == RhiProcessedJobStatus::Completed
-                && existing.result_event_id.is_some()
-            {
-                return Ok(ProcessedJobAction::Completed);
-            }
-            if let Some(receipt_event_id) = existing.receipt_event_id {
-                return Ok(ProcessedJobAction::RecoverResult { receipt_event_id });
-            }
-            Ok(ProcessedJobAction::Execute)
-        }
-        None => {
-            {
-                let state = runtime.state();
-                state.lock().await.upsert_rhi_processed_job(job.clone());
-            }
-            runtime.persist().await?;
-            Ok(ProcessedJobAction::Execute)
-        }
-    }
-}
-
-fn ensure_processed_job_matches(
-    existing: &RhiProcessedJobState,
-    incoming: &RhiProcessedJobState,
-) -> Result<(), TradeValidationReceiptJobError> {
-    if existing.request_kind != incoming.request_kind
-        || existing.request_hash != incoming.request_hash
-        || existing.customer_pubkey != incoming.customer_pubkey
+    match runtime
+        .processed_jobs()
+        .claim_job(job, now_unix_ms(), RHI_PROCESSED_JOB_CLAIM_LEASE_MS)
+        .await
+        .map_err(processed_job_store_error)?
     {
-        return Err(TradeValidationReceiptJobError::DuplicateConflictingJob);
+        RhiProcessedJobClaim::Execute => Ok(ProcessedJobAction::Execute),
+        RhiProcessedJobClaim::InProgress => Ok(ProcessedJobAction::InProgress),
+        RhiProcessedJobClaim::RecoverResult { receipt_event_id } => {
+            Ok(ProcessedJobAction::RecoverResult { receipt_event_id })
+        }
+        RhiProcessedJobClaim::Completed => Ok(ProcessedJobAction::Completed),
     }
-    Ok(())
 }
 
 async fn mark_job_receipt_published(
@@ -903,25 +877,11 @@ async fn mark_job_receipt_published(
     job: &RhiProcessedJobState,
     receipt_event_id: &str,
 ) -> Result<(), TradeValidationReceiptJobError> {
-    {
-        let state = runtime.state();
-        let mut state = state.lock().await;
-        let mut job = state
-            .rhi_processed_job(&job.request_id)
-            .cloned()
-            .unwrap_or_else(|| job.clone());
-        if job
-            .receipt_event_id
-            .as_ref()
-            .is_some_and(|existing| existing != receipt_event_id)
-        {
-            return Err(TradeValidationReceiptJobError::DuplicateConflictingReceipt);
-        }
-        job.status = RhiProcessedJobStatus::ReceiptPublished;
-        job.receipt_event_id = Some(receipt_event_id.to_string());
-        state.upsert_rhi_processed_job(job);
-    }
-    runtime.persist().await?;
+    runtime
+        .processed_jobs()
+        .mark_receipt_published(job, receipt_event_id, now_unix_ms())
+        .await
+        .map_err(processed_job_store_error)?;
     Ok(())
 }
 
@@ -931,27 +891,17 @@ async fn mark_job_completed(
     receipt_event_id: &str,
     result_event_id: &str,
 ) -> Result<(), TradeValidationReceiptJobError> {
-    {
-        let state = runtime.state();
-        let mut state = state.lock().await;
-        let mut job = state
-            .rhi_processed_job(&job.request_id)
-            .cloned()
-            .unwrap_or_else(|| job.clone());
-        if job
-            .receipt_event_id
-            .as_ref()
-            .is_some_and(|existing| existing != receipt_event_id)
-        {
-            return Err(TradeValidationReceiptJobError::DuplicateConflictingReceipt);
-        }
-        job.status = RhiProcessedJobStatus::Completed;
-        job.receipt_event_id = Some(receipt_event_id.to_string());
-        job.result_event_id = Some(result_event_id.to_string());
-        job.completed_timestamp = Some(now_unix_u32());
-        state.upsert_rhi_processed_job(job);
-    }
-    runtime.persist().await?;
+    runtime
+        .processed_jobs()
+        .mark_completed(
+            job,
+            receipt_event_id,
+            result_event_id,
+            now_unix_u32(),
+            now_unix_ms(),
+        )
+        .await
+        .map_err(processed_job_store_error)?;
     Ok(())
 }
 
@@ -1561,6 +1511,25 @@ fn now_unix_u32() -> u32 {
         .map(|duration| duration.as_secs())
         .unwrap_or(0);
     nostr_timestamp_u32(seconds)
+}
+
+fn now_unix_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| i64::try_from(duration.as_millis()).unwrap_or(i64::MAX))
+        .unwrap_or(0)
+}
+
+fn processed_job_store_error(error: RhiProcessedJobStoreError) -> TradeValidationReceiptJobError {
+    match error {
+        RhiProcessedJobStoreError::DuplicateConflictingJob => {
+            TradeValidationReceiptJobError::DuplicateConflictingJob
+        }
+        RhiProcessedJobStoreError::DuplicateConflictingReceipt => {
+            TradeValidationReceiptJobError::DuplicateConflictingReceipt
+        }
+        error => TradeValidationReceiptJobError::Runtime(TradeListingRuntimeError::from(error)),
+    }
 }
 
 fn validate_shared_workflow_pending_agreement(
@@ -2353,9 +2322,10 @@ mod tests {
         handle_trade_validation_receipt_job_request,
         handle_trade_validation_receipt_local_worker_request, trade_validation_receipt_test_hooks,
     };
-    use crate::features::trade_listing::state::{
-        RhiProcessedJobState, RhiProcessedJobStatus, TradeListingRuntime,
+    use crate::features::trade_listing::processed_jobs::{
+        RhiProcessedJobState, RhiProcessedJobStatus,
     };
+    use crate::features::trade_listing::state::TradeListingRuntime;
     use radroots_core::{
         RadrootsCoreCurrency, RadrootsCoreDecimal, RadrootsCoreMoney, RadrootsCoreUnit,
     };
@@ -3831,26 +3801,25 @@ mod tests {
         .await
         .expect("first proof job");
 
-        {
-            let state = runtime.state();
-            let state = state.lock().await;
-            let processed = state
-                .rhi_processed_job(&job.id.to_hex())
-                .expect("processed job");
-            assert_eq!(processed.status, RhiProcessedJobStatus::Completed);
-            assert_eq!(
-                processed.request_hash,
-                super::request_event_hash(&radroots_event_from_nostr(&job)).expect("request hash")
-            );
-            assert_eq!(
-                processed.receipt_event_id.as_deref(),
-                Some(publish_result_id(1).as_str())
-            );
-            assert_eq!(
-                processed.result_event_id.as_deref(),
-                Some(publish_result_id(2).as_str())
-            );
-        }
+        let processed = runtime
+            .processed_jobs()
+            .get_job(&job.id.to_hex())
+            .await
+            .expect("processed job lookup")
+            .expect("processed job");
+        assert_eq!(processed.status, RhiProcessedJobStatus::Completed);
+        assert_eq!(
+            processed.request_hash,
+            super::request_event_hash(&radroots_event_from_nostr(&job)).expect("request hash")
+        );
+        assert_eq!(
+            processed.receipt_event_id.as_deref(),
+            Some(publish_result_id(1).as_str())
+        );
+        assert_eq!(
+            processed.result_event_id.as_deref(),
+            Some(publish_result_id(2).as_str())
+        );
 
         *trade_validation_receipt_test_hooks()
             .lock()
@@ -3937,13 +3906,17 @@ mod tests {
             TradeValidationReceiptTestHooks::default();
 
         let runtime = TradeListingRuntime::new();
-        let mut processed = processed_job_for_test(&job);
-        processed.status = RhiProcessedJobStatus::ReceiptPublished;
-        processed.receipt_event_id = Some(receipt_event.id.to_hex());
-        {
-            let state = runtime.state();
-            state.lock().await.upsert_rhi_processed_job(processed);
-        }
+        let processed = processed_job_for_test(&job);
+        runtime
+            .processed_jobs()
+            .claim_job(&processed, 1, 10_000)
+            .await
+            .expect("claim processed job");
+        runtime
+            .processed_jobs()
+            .mark_receipt_published(&processed, receipt_event.id.to_hex().as_str(), 2)
+            .await
+            .expect("record receipt");
 
         {
             let mut hooks = trade_validation_receipt_test_hooks()
@@ -3980,10 +3953,11 @@ mod tests {
         assert_eq!(result.receipt_event_id, receipt_event.id.to_hex());
         drop(hooks);
 
-        let state = runtime.state();
-        let state = state.lock().await;
-        let processed = state
-            .rhi_processed_job(&job.id.to_hex())
+        let processed = runtime
+            .processed_jobs()
+            .get_job(&job.id.to_hex())
+            .await
+            .expect("processed job lookup")
             .expect("processed job");
         assert_eq!(processed.status, RhiProcessedJobStatus::Completed);
         assert_eq!(
@@ -4090,10 +4064,11 @@ mod tests {
         );
         drop(hooks);
 
-        let state = runtime.state();
-        let state = state.lock().await;
-        let processed = state
-            .rhi_processed_job(&job.id.to_hex())
+        let processed = runtime
+            .processed_jobs()
+            .get_job(&job.id.to_hex())
+            .await
+            .expect("processed job lookup")
             .expect("processed job");
         assert_eq!(processed.status, RhiProcessedJobStatus::Completed);
         assert_eq!(
@@ -4129,10 +4104,11 @@ mod tests {
         let mut processed = processed_job_for_test(&job);
         processed.request_hash =
             "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".to_string();
-        {
-            let state = runtime.state();
-            state.lock().await.upsert_rhi_processed_job(processed);
-        }
+        runtime
+            .processed_jobs()
+            .claim_job(&processed, 1, 10_000)
+            .await
+            .expect("claim conflicting processed job");
 
         let error = handle_trade_validation_receipt_job_request(
             &job,

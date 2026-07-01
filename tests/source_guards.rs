@@ -84,16 +84,30 @@ fn rhi_sources_do_not_import_removed_sdk_or_protocol_bypasses() {
 #[test]
 fn rhi_processed_job_state_is_durable_workflow_authority() {
     let state = read_repo_file("src/features/trade_listing/state.rs");
+    let processed_jobs = read_repo_file("src/features/trade_listing/processed_jobs.rs");
     let receipt_worker = read_repo_file("src/features/trade_validation_receipt.rs");
 
+    assert!(
+        !state.contains("rhi_processed_jobs: HashMap"),
+        "RHI JSON subscriber state must not be the processed-job authority"
+    );
+    assert!(
+        state.contains("processed_jobs: Arc<RhiProcessedJobStore>"),
+        "TradeListingRuntime must own the processed-job SQLite store"
+    );
+
     for required in [
-        "rhi_processed_jobs: HashMap<String, RhiProcessedJobState>",
-        "pub fn rhi_processed_job(&self, request_id: &str)",
-        "pub fn upsert_rhi_processed_job(&mut self, job: RhiProcessedJobState)",
+        "CREATE TABLE IF NOT EXISTS rhi_processed_jobs",
+        "request_id TEXT PRIMARY KEY",
+        "CREATE UNIQUE INDEX IF NOT EXISTS rhi_processed_jobs_receipt_event_idx",
+        "pub async fn claim_job(",
+        "pub async fn mark_receipt_published(",
+        "pub async fn mark_completed(",
+        "RhiProcessedJobClaim::InProgress",
     ] {
         assert!(
-            state.contains(required),
-            "RHI state must retain processed-job storage contract `{required}`"
+            processed_jobs.contains(required),
+            "RHI processed-job store must retain SQLite workflow authority `{required}`"
         );
     }
 

@@ -10,9 +10,14 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::Mutex;
 
+use crate::features::trade_listing::processed_jobs::{
+    RhiProcessedJobStore, RhiProcessedJobStoreError,
+};
+
 pub type SharedTradeListingState = Arc<Mutex<TradeListingState>>;
 
-const TRADE_LISTING_STATE_VERSION: u32 = 2;
+const TRADE_LISTING_STATE_VERSION: u32 = 3;
+const PROCESSED_JOB_STORE_FILE_NAME: &str = "processed_jobs.sqlite";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TradeOrderState {
@@ -28,33 +33,6 @@ pub struct TradeOrderState {
     #[serde(default)]
     pub last_event_id: Option<String>,
     pub seen_event_ids: HashSet<String>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RhiProcessedJobStatus {
-    Processing,
-    ReceiptPublished,
-    Completed,
-    Failed,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RhiProcessedJobState {
-    pub request_id: String,
-    pub request_kind: u32,
-    pub request_hash: String,
-    pub customer_pubkey: String,
-    pub status: RhiProcessedJobStatus,
-    #[serde(default)]
-    pub receipt_event_id: Option<String>,
-    #[serde(default)]
-    pub result_event_id: Option<String>,
-    #[serde(default)]
-    pub error_code: Option<String>,
-    pub created_timestamp: u32,
-    #[serde(default)]
-    pub completed_timestamp: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -77,8 +55,6 @@ pub struct TradeListingState {
     listing_events: HashMap<String, ListingEventState>,
     #[serde(default)]
     seen_non_order_event_ids: HashSet<String>,
-    #[serde(default)]
-    rhi_processed_jobs: HashMap<String, RhiProcessedJobState>,
     orders: HashMap<String, TradeOrderState>,
     last_event_created_at: Option<u32>,
 }
@@ -88,6 +64,7 @@ pub struct TradeListingRuntime {
     state: SharedTradeListingState,
     config: TradeListingRuntimeConfig,
     persistence: Option<Arc<TradeListingStatePersistence>>,
+    processed_jobs: Arc<RhiProcessedJobStore>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -125,6 +102,10 @@ impl Default for TradeListingRuntime {
             state: Arc::new(Mutex::new(TradeListingState::default())),
             config: TradeListingRuntimeConfig::default(),
             persistence: None,
+            processed_jobs: Arc::new(
+                RhiProcessedJobStore::open_memory()
+                    .expect("open in-memory rhi processed-job store"),
+            ),
         }
     }
 }
@@ -136,16 +117,27 @@ impl TradeListingRuntime {
 
     pub async fn load(config: TradeListingRuntimeConfig) -> Result<Self, TradeListingRuntimeError> {
         let persistence = Arc::new(TradeListingStatePersistence::new(config.state_path.clone()));
+        let processed_jobs = Arc::new(
+            RhiProcessedJobStore::open_file(processed_job_store_path_for_state_path(
+                &config.state_path,
+            )?)
+            .await?,
+        );
         let state = persistence.load().await?;
         Ok(Self {
             state: Arc::new(Mutex::new(state)),
             config,
             persistence: Some(persistence),
+            processed_jobs,
         })
     }
 
     pub fn state(&self) -> SharedTradeListingState {
         Arc::clone(&self.state)
+    }
+
+    pub fn processed_jobs(&self) -> Arc<RhiProcessedJobStore> {
+        Arc::clone(&self.processed_jobs)
     }
 
     pub async fn persist(&self) -> Result<(), TradeListingRuntimeError> {
@@ -261,14 +253,6 @@ impl TradeListingState {
         self.seen_non_order_event_ids.contains(event_id)
     }
 
-    pub fn rhi_processed_job(&self, request_id: &str) -> Option<&RhiProcessedJobState> {
-        self.rhi_processed_jobs.get(request_id)
-    }
-
-    pub fn upsert_rhi_processed_job(&mut self, job: RhiProcessedJobState) {
-        self.rhi_processed_jobs.insert(job.request_id.clone(), job);
-    }
-
     pub fn observe_event_created_at(&mut self, created_at: u32) {
         self.last_event_created_at = Some(
             self.last_event_created_at
@@ -339,6 +323,14 @@ fn temp_state_path(path: &Path) -> Result<PathBuf, TradeListingRuntimeError> {
     Ok(path.with_file_name(format!("{}.tmp", file_name.to_string_lossy())))
 }
 
+fn processed_job_store_path_for_state_path(
+    path: &Path,
+) -> Result<PathBuf, TradeListingRuntimeError> {
+    path.file_name()
+        .ok_or_else(|| TradeListingRuntimeError::InvalidStatePath(path.to_path_buf()))?;
+    Ok(path.with_file_name(PROCESSED_JOB_STORE_FILE_NAME))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TradeListingStateError {
     MissingOrder,
@@ -364,18 +356,22 @@ pub enum TradeListingRuntimeError {
     Io(#[from] std::io::Error),
     #[error("trade listing state json error: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("rhi processed-job store error: {0}")]
+    ProcessedJobStore(#[from] RhiProcessedJobStoreError),
 }
 
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::{
-        ListingEventState, PersistedTradeListingState, RhiProcessedJobState, RhiProcessedJobStatus,
-        TradeListingRuntime, TradeListingRuntimeConfig, TradeListingRuntimeError,
-        TradeListingState, TradeListingStateError, TradeOrderState, ValidatedListingState,
+        ListingEventState, PersistedTradeListingState, TradeListingRuntime,
+        TradeListingRuntimeConfig, TradeListingRuntimeError, TradeListingState,
+        TradeListingStateError, TradeOrderState, ValidatedListingState,
+        processed_job_store_path_for_state_path,
     };
     use radroots_trade::workflow::RadrootsTradeWorkflowState;
     use std::collections::{HashMap, HashSet};
+    use std::path::Path;
 
     fn unique_state_path(suffix: &str) -> std::path::PathBuf {
         let nanos = std::time::SystemTime::now()
@@ -414,25 +410,6 @@ mod tests {
         assert!(!state.is_non_order_event_seen("evt-non-order"));
         assert!(state.mark_non_order_event_seen("evt-non-order"));
         assert!(state.is_non_order_event_seen("evt-non-order"));
-        state.upsert_rhi_processed_job(RhiProcessedJobState {
-            request_id: "evt-request-1".to_string(),
-            request_kind: 5322,
-            request_hash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-                .to_string(),
-            customer_pubkey: "buyer".to_string(),
-            status: RhiProcessedJobStatus::Processing,
-            receipt_event_id: None,
-            result_event_id: None,
-            error_code: None,
-            created_timestamp: 900,
-            completed_timestamp: None,
-        });
-        assert_eq!(
-            state
-                .rhi_processed_job("evt-request-1")
-                .map(|job| job.status),
-            Some(RhiProcessedJobStatus::Processing)
-        );
         state.upsert_listing_event("addr", "evt-listing-1", 30402);
         assert_eq!(state.listing_event_id("addr"), Some("evt-listing-1"));
         assert_eq!(state.replay_since(1_000, 300, 60), 700);
@@ -474,6 +451,7 @@ mod tests {
     #[tokio::test]
     async fn runtime_persists_and_loads_trade_listing_state() {
         let path = unique_state_path("roundtrip");
+        let processed_jobs_path = processed_job_store_path_for_state_path(&path).expect("job path");
         let config = TradeListingRuntimeConfig {
             state_path: path.clone(),
             replay_window_secs: 600,
@@ -502,8 +480,14 @@ mod tests {
         );
         assert!(loaded_state.is_non_order_event_seen("evt-validate-1"));
         assert_eq!(loaded_state.last_event_created_at(), Some(456));
+        assert!(
+            tokio::fs::try_exists(processed_jobs_path.as_path())
+                .await
+                .expect("processed job store exists check")
+        );
 
         let _ = tokio::fs::remove_file(path).await;
+        let _ = tokio::fs::remove_file(processed_jobs_path).await;
     }
 
     #[tokio::test]
@@ -575,7 +559,6 @@ mod tests {
                 },
             )]),
             seen_non_order_event_ids: HashSet::new(),
-            rhi_processed_jobs: HashMap::new(),
             orders: HashMap::new(),
             last_event_created_at: None,
         };
@@ -583,5 +566,14 @@ mod tests {
         state.clear_listing_validation("addr");
         assert!(!state.is_listing_validated("addr"));
         assert_eq!(state.validated_listing_event_id("addr"), None);
+    }
+
+    #[test]
+    fn processed_job_store_path_lives_next_to_configured_state_snapshot() {
+        assert_eq!(
+            processed_job_store_path_for_state_path(Path::new("state/trade-listing-state.json"))
+                .expect("processed job path"),
+            Path::new("state/processed_jobs.sqlite")
+        );
     }
 }
