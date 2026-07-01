@@ -4,7 +4,10 @@ use radroots_runtime::{BackoffConfig, RadrootsNostrServiceConfig};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use crate::features::trade_validation_receipt::TradeValidationReceiptProverPolicy;
+use crate::features::trade_validation_receipt::{
+    TradeValidationReceiptProverBackend, TradeValidationReceiptProverPolicy,
+    TradeValidationReceiptRuntimePolicy,
+};
 use crate::paths::{
     RhiRuntimePaths, default_subscriber_state_path_for_process, resolve_runtime_paths_with_resolver,
 };
@@ -219,6 +222,34 @@ impl RawSettings {
     }
 }
 
+fn validate_trade_validation_receipt_runtime_profile(
+    policy: &TradeValidationReceiptProverPolicy,
+    profile: radroots_runtime_paths::RadrootsPathProfile,
+) -> Result<()> {
+    if policy.runtime_policy == TradeValidationReceiptRuntimePolicy::RepoLocalDevelopment
+        && policy.backend != TradeValidationReceiptProverBackend::DeterministicNone
+    {
+        bail!(
+            "trade_validation_receipt.runtime_policy repo_local_development requires backend deterministic_none"
+        );
+    }
+    if policy.backend == TradeValidationReceiptProverBackend::DeterministicNone
+        && policy.runtime_policy != TradeValidationReceiptRuntimePolicy::RepoLocalDevelopment
+    {
+        bail!(
+            "trade_validation_receipt.backend deterministic_none requires runtime_policy repo_local_development"
+        );
+    }
+    if policy.backend == TradeValidationReceiptProverBackend::DeterministicNone
+        && profile != radroots_runtime_paths::RadrootsPathProfile::RepoLocal
+    {
+        bail!(
+            "trade_validation_receipt.backend deterministic_none requires runtime profile repo_local"
+        );
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
     pub metadata: RadrootsNostrMetadata,
@@ -236,7 +267,12 @@ fn load_settings_from_path_with_resolver(
         .with_context(|| format!("read configuration from {}", path.display()))?;
     let settings: RawSettings =
         toml::from_str(&raw).with_context(|| format!("parse configuration {}", path.display()))?;
-    settings.into_settings(&paths)
+    let settings = settings.into_settings(&paths)?;
+    validate_trade_validation_receipt_runtime_profile(
+        &settings.config.trade_validation_receipt,
+        profile,
+    )?;
+    Ok(settings)
 }
 
 pub fn load_settings_from_path(path: &Path) -> Result<Settings> {
@@ -252,7 +288,9 @@ pub fn load_settings_from_path(path: &Path) -> Result<Settings> {
 #[cfg(test)]
 mod tests {
     use super::load_settings_from_path_with_resolver;
-    use crate::features::trade_validation_receipt::TradeValidationReceiptProverBackend;
+    use crate::features::trade_validation_receipt::{
+        TradeValidationReceiptProverBackend, TradeValidationReceiptRuntimePolicy,
+    };
     use crate::paths::{
         default_subscriber_state_path_for_process, resolve_runtime_paths_with_resolver,
         runtime_contract_with_resolver,
@@ -480,15 +518,17 @@ path = "state/trade-listing.json"
 [trade_validation_receipt]
 backend = "deterministic_none"
 proof_mode = "none"
+runtime_policy = "repo_local_development"
 "#,
         )
         .expect("write config");
 
+        let repo_local_root = temp.path().join("repo-local-runtime");
         let settings = load_settings_from_path_with_resolver(
             &config_path,
             &linux_resolver(),
-            RadrootsPathProfile::InteractiveUser,
-            None,
+            RadrootsPathProfile::RepoLocal,
+            Some(repo_local_root.as_path()),
         )
         .expect("load settings");
 
@@ -527,6 +567,83 @@ proof_mode = "none"
             settings.config.trade_validation_receipt.proof_mode,
             RadrootsSp1TradeProofMode::None
         );
+        assert_eq!(
+            settings.config.trade_validation_receipt.runtime_policy,
+            TradeValidationReceiptRuntimePolicy::RepoLocalDevelopment
+        );
+    }
+
+    #[test]
+    fn load_settings_rejects_deterministic_policy_without_repo_local_runtime_policy() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config_path = temp.path().join("config.toml");
+        std::fs::write(
+            &config_path,
+            r#"
+[metadata]
+name = "rhi-test"
+
+[trade_validation_receipt]
+backend = "deterministic_none"
+proof_mode = "none"
+"#,
+        )
+        .expect("write config");
+
+        let repo_local_root = temp.path().join("repo-local-runtime");
+        let error = load_settings_from_path_with_resolver(
+            &config_path,
+            &linux_resolver(),
+            RadrootsPathProfile::RepoLocal,
+            Some(repo_local_root.as_path()),
+        )
+        .expect_err("deterministic_none without runtime policy must fail");
+        let message = format!("{error:#}");
+        assert!(
+            message.contains(
+                "trade_validation_receipt.backend deterministic_none requires runtime_policy repo_local_development"
+            ),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn load_settings_rejects_deterministic_policy_outside_repo_local_profile() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config_path = temp.path().join("config.toml");
+        std::fs::write(
+            &config_path,
+            r#"
+[metadata]
+name = "rhi-test"
+
+[trade_validation_receipt]
+backend = "deterministic_none"
+proof_mode = "none"
+runtime_policy = "repo_local_development"
+"#,
+        )
+        .expect("write config");
+
+        for profile in [
+            RadrootsPathProfile::InteractiveUser,
+            RadrootsPathProfile::ServiceHost,
+        ] {
+            let error = load_settings_from_path_with_resolver(
+                &config_path,
+                &linux_resolver(),
+                profile,
+                None,
+            )
+            .expect_err("production-capable profiles must reject deterministic_none");
+            let message = format!("{error:#}");
+            assert!(
+                message.contains(
+                    "trade_validation_receipt.backend deterministic_none requires runtime profile repo_local"
+                ),
+                "{message}"
+            );
+        }
     }
 
     #[test]

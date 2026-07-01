@@ -130,6 +130,42 @@ fn rhi_processed_job_state_is_durable_workflow_authority() {
     }
 }
 
+#[test]
+fn rhi_deterministic_prover_is_repo_local_only() {
+    let config = read_repo_file("src/config.rs");
+    let receipt_worker = read_repo_file("src/features/trade_validation_receipt.rs");
+
+    for required in [
+        "TradeValidationReceiptRuntimePolicy",
+        "RepoLocalDevelopment",
+        "repo_local_deterministic_none",
+        "DeterministicNoneRequiresRepoLocalDevelopment",
+        "RepoLocalDevelopmentPolicyRequiresDeterministicNone",
+    ] {
+        assert!(
+            receipt_worker.contains(required),
+            "trade validation receipt policy must retain deterministic backend governance `{required}`"
+        );
+    }
+
+    assert!(
+        !receipt_worker.contains("pub fn deterministic_none("),
+        "RHI must not expose an ambiguous deterministic_none constructor"
+    );
+
+    for required in [
+        "validate_trade_validation_receipt_runtime_profile",
+        "RadrootsPathProfile::RepoLocal",
+        "runtime_policy repo_local_development",
+        "runtime profile repo_local",
+    ] {
+        assert!(
+            config.contains(required),
+            "RHI config loading must retain repo-local deterministic governance `{required}`"
+        );
+    }
+}
+
 fn read_repo_file(relative_path: &str) -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(relative_path);
     fs::read_to_string(path.as_path())

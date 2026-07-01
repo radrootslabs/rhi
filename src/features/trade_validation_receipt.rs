@@ -101,11 +101,30 @@ impl TradeValidationReceiptProverBackend {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TradeValidationReceiptRuntimePolicy {
+    #[default]
+    Production,
+    RepoLocalDevelopment,
+}
+
+impl TradeValidationReceiptRuntimePolicy {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Production => "production",
+            Self::RepoLocalDevelopment => "repo_local_development",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TradeValidationReceiptProverPolicy {
     pub backend: TradeValidationReceiptProverBackend,
     pub proof_mode: RadrootsSp1TradeProofMode,
+    #[serde(default)]
+    pub runtime_policy: TradeValidationReceiptRuntimePolicy,
     #[serde(default)]
     pub expected_sp1_program_hash: Option<String>,
     #[serde(default)]
@@ -125,16 +144,18 @@ impl TradeValidationReceiptProverPolicy {
         Self {
             backend: TradeValidationReceiptProverBackend::Disabled,
             proof_mode: RadrootsSp1TradeProofMode::None,
+            runtime_policy: TradeValidationReceiptRuntimePolicy::Production,
             expected_sp1_program_hash: None,
             expected_sp1_verifying_key_hash: None,
             remote_http: None,
         }
     }
 
-    pub fn deterministic_none() -> Self {
+    pub fn repo_local_deterministic_none() -> Self {
         Self {
             backend: TradeValidationReceiptProverBackend::DeterministicNone,
             proof_mode: RadrootsSp1TradeProofMode::None,
+            runtime_policy: TradeValidationReceiptRuntimePolicy::RepoLocalDevelopment,
             expected_sp1_program_hash: None,
             expected_sp1_verifying_key_hash: None,
             remote_http: None,
@@ -144,6 +165,13 @@ impl TradeValidationReceiptProverPolicy {
     pub fn validate(&self) -> Result<(), TradeValidationReceiptJobError> {
         validate_optional_hash32(&self.expected_sp1_program_hash)?;
         validate_optional_hash32(&self.expected_sp1_verifying_key_hash)?;
+        if self.backend != TradeValidationReceiptProverBackend::DeterministicNone
+            && self.runtime_policy == TradeValidationReceiptRuntimePolicy::RepoLocalDevelopment
+        {
+            return Err(
+                TradeValidationReceiptJobError::RepoLocalDevelopmentPolicyRequiresDeterministicNone,
+            );
+        }
         match self.backend {
             TradeValidationReceiptProverBackend::Disabled => {
                 if self.proof_mode != RadrootsSp1TradeProofMode::None {
@@ -160,6 +188,14 @@ impl TradeValidationReceiptProverPolicy {
             }
             TradeValidationReceiptProverBackend::DeterministicNone
             | TradeValidationReceiptProverBackend::LocalExecute => {
+                if self.backend == TradeValidationReceiptProverBackend::DeterministicNone
+                    && self.runtime_policy
+                        != TradeValidationReceiptRuntimePolicy::RepoLocalDevelopment
+                {
+                    return Err(
+                        TradeValidationReceiptJobError::DeterministicNoneRequiresRepoLocalDevelopment,
+                    );
+                }
                 if self.proof_mode != RadrootsSp1TradeProofMode::None {
                     return Err(TradeValidationReceiptJobError::ProverBackendRequiresNone);
                 }
@@ -435,6 +471,10 @@ pub enum TradeValidationReceiptJobError {
     ProverBackendDisabled,
     #[error("rhi prover backend requires proof_mode none")]
     ProverBackendRequiresNone,
+    #[error("rhi deterministic_none prover backend requires repo_local_development runtime policy")]
+    DeterministicNoneRequiresRepoLocalDevelopment,
+    #[error("rhi repo_local_development runtime policy requires deterministic_none prover backend")]
+    RepoLocalDevelopmentPolicyRequiresDeterministicNone,
     #[error("rhi prover backend requires an SP1 proof mode")]
     ProverBackendRequiresSp1Proof,
     #[error("rhi prover backend does not match configured policy")]
@@ -2467,8 +2507,8 @@ mod tests {
         TradeValidationReceiptJobError, TradeValidationReceiptJobResult,
         TradeValidationReceiptLocalWorkerRequest, TradeValidationReceiptProverBackend,
         TradeValidationReceiptProverPolicy, TradeValidationReceiptRemoteHttpAuth,
-        TradeValidationReceiptRemoteHttpProverConfig, TradeValidationReceiptTestHooks,
-        build_trade_validation_receipt_job_request_event,
+        TradeValidationReceiptRemoteHttpProverConfig, TradeValidationReceiptRuntimePolicy,
+        TradeValidationReceiptTestHooks, build_trade_validation_receipt_job_request_event,
         handle_trade_validation_receipt_job_request,
         handle_trade_validation_receipt_local_worker_request, trade_validation_receipt_test_hooks,
     };
@@ -2945,7 +2985,7 @@ mod tests {
     }
 
     fn deterministic_policy() -> TradeValidationReceiptProverPolicy {
-        TradeValidationReceiptProverPolicy::deterministic_none()
+        TradeValidationReceiptProverPolicy::repo_local_deterministic_none()
     }
 
     fn hash32(ch: char) -> String {
@@ -2967,6 +3007,7 @@ mod tests {
         TradeValidationReceiptProverPolicy {
             backend: TradeValidationReceiptProverBackend::RemoteHttpProve,
             proof_mode: RadrootsSp1TradeProofMode::Core,
+            runtime_policy: TradeValidationReceiptRuntimePolicy::Production,
             expected_sp1_program_hash: Some(hash32('a')),
             expected_sp1_verifying_key_hash: Some(hash32('b')),
             remote_http: Some(remote_http_config()),
@@ -3195,10 +3236,44 @@ mod tests {
     }
 
     #[test]
+    fn deterministic_none_policy_requires_explicit_repo_local_runtime_policy() {
+        let policy = TradeValidationReceiptProverPolicy {
+            backend: TradeValidationReceiptProverBackend::DeterministicNone,
+            proof_mode: RadrootsSp1TradeProofMode::None,
+            runtime_policy: TradeValidationReceiptRuntimePolicy::Production,
+            expected_sp1_program_hash: None,
+            expected_sp1_verifying_key_hash: None,
+            remote_http: None,
+        };
+        assert!(matches!(
+            policy.validate(),
+            Err(TradeValidationReceiptJobError::DeterministicNoneRequiresRepoLocalDevelopment)
+        ));
+
+        assert!(deterministic_policy().validate().is_ok());
+
+        let policy = TradeValidationReceiptProverPolicy {
+            backend: TradeValidationReceiptProverBackend::LocalExecute,
+            proof_mode: RadrootsSp1TradeProofMode::None,
+            runtime_policy: TradeValidationReceiptRuntimePolicy::RepoLocalDevelopment,
+            expected_sp1_program_hash: None,
+            expected_sp1_verifying_key_hash: None,
+            remote_http: None,
+        };
+        assert!(matches!(
+            policy.validate(),
+            Err(
+                TradeValidationReceiptJobError::RepoLocalDevelopmentPolicyRequiresDeterministicNone
+            )
+        ));
+    }
+
+    #[test]
     fn prover_policy_requires_configured_sp1_identity_for_local_cpu() {
         let missing_identity = TradeValidationReceiptProverPolicy {
             backend: TradeValidationReceiptProverBackend::LocalCpuProve,
             proof_mode: RadrootsSp1TradeProofMode::Core,
+            runtime_policy: TradeValidationReceiptRuntimePolicy::Production,
             expected_sp1_program_hash: None,
             expected_sp1_verifying_key_hash: Some(hash32('b')),
             remote_http: None,
@@ -3211,6 +3286,7 @@ mod tests {
         let policy = TradeValidationReceiptProverPolicy {
             backend: TradeValidationReceiptProverBackend::LocalCpuProve,
             proof_mode: RadrootsSp1TradeProofMode::Core,
+            runtime_policy: TradeValidationReceiptRuntimePolicy::Production,
             expected_sp1_program_hash: Some(hash32('a')),
             expected_sp1_verifying_key_hash: Some(hash32('b')),
             remote_http: None,
@@ -3239,6 +3315,7 @@ mod tests {
         let missing_config = TradeValidationReceiptProverPolicy {
             backend: TradeValidationReceiptProverBackend::RemoteHttpProve,
             proof_mode: RadrootsSp1TradeProofMode::Core,
+            runtime_policy: TradeValidationReceiptRuntimePolicy::Production,
             expected_sp1_program_hash: Some(hash32('a')),
             expected_sp1_verifying_key_hash: Some(hash32('b')),
             remote_http: None,
@@ -3251,6 +3328,7 @@ mod tests {
         let missing_identity = TradeValidationReceiptProverPolicy {
             backend: TradeValidationReceiptProverBackend::RemoteHttpProve,
             proof_mode: RadrootsSp1TradeProofMode::Core,
+            runtime_policy: TradeValidationReceiptRuntimePolicy::Production,
             expected_sp1_program_hash: None,
             expected_sp1_verifying_key_hash: Some(hash32('b')),
             remote_http: Some(remote_http_config()),
@@ -4825,6 +4903,7 @@ mod tests {
         let local_execute_policy = TradeValidationReceiptProverPolicy {
             backend: TradeValidationReceiptProverBackend::LocalExecute,
             proof_mode: RadrootsSp1TradeProofMode::None,
+            runtime_policy: TradeValidationReceiptRuntimePolicy::Production,
             expected_sp1_program_hash: None,
             expected_sp1_verifying_key_hash: None,
             remote_http: None,
