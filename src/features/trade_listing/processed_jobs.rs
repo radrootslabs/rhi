@@ -9,12 +9,13 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::OnceCell;
 
-const RHI_PROCESSED_JOB_SCHEMA_VERSION: i64 = 1;
+const RHI_PROCESSED_JOB_SCHEMA_VERSION: i64 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RhiProcessedJobStatus {
     Processing,
+    ReceiptPublishing,
     ReceiptPublished,
     ResultPublishing,
     Completed,
@@ -25,6 +26,7 @@ impl RhiProcessedJobStatus {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Processing => "processing",
+            Self::ReceiptPublishing => "receipt_publishing",
             Self::ReceiptPublished => "receipt_published",
             Self::ResultPublishing => "result_publishing",
             Self::Completed => "completed",
@@ -35,6 +37,7 @@ impl RhiProcessedJobStatus {
     fn parse(value: &str) -> Result<Self, RhiProcessedJobStoreError> {
         match value {
             "processing" => Ok(Self::Processing),
+            "receipt_publishing" => Ok(Self::ReceiptPublishing),
             "receipt_published" => Ok(Self::ReceiptPublished),
             "result_publishing" => Ok(Self::ResultPublishing),
             "completed" => Ok(Self::Completed),
@@ -54,7 +57,13 @@ pub struct RhiProcessedJobState {
     #[serde(default)]
     pub receipt_event_id: Option<String>,
     #[serde(default)]
+    pub receipt_event_json: Option<String>,
+    #[serde(default)]
     pub result_event_id: Option<String>,
+    #[serde(default)]
+    pub result_event_json: Option<String>,
+    #[serde(default)]
+    pub proof_metadata_json: Option<String>,
     #[serde(default)]
     pub error_code: Option<String>,
     pub created_timestamp: u32,
@@ -66,9 +75,15 @@ pub struct RhiProcessedJobState {
 pub enum RhiProcessedJobClaim {
     Execute,
     InProgress,
+    RecoverReceipt {
+        receipt_event_id: String,
+        receipt_event_json: String,
+    },
     RecoverResult {
         receipt_event_id: String,
         result_event_id: Option<String>,
+        result_event_json: Option<String>,
+        proof_metadata_json: Option<String>,
     },
     Completed,
 }
@@ -96,6 +111,8 @@ pub enum RhiProcessedJobStoreError {
     DuplicateConflictingReceipt,
     #[error("duplicate conflicting result")]
     DuplicateConflictingResult,
+    #[error("receipt publication was not claimed")]
+    ReceiptPublicationNotClaimed,
     #[error("result publication was not claimed")]
     ResultPublicationNotClaimed,
     #[error("missing processed-job claim: {0}")]
@@ -156,6 +173,34 @@ impl RhiProcessedJobStore {
         Ok(claim)
     }
 
+    pub async fn mark_receipt_publishing(
+        &self,
+        job: &RhiProcessedJobState,
+        receipt_event_id: &str,
+        receipt_event_json: &str,
+        proof_metadata_json: Option<&str>,
+        now_ms: i64,
+    ) -> Result<RhiProcessedJobState, RhiProcessedJobStoreError> {
+        self.ensure_schema().await?;
+        let mut tx = self.pool.begin().await?;
+        let Some(mut existing) = select_job(&mut tx, job.request_id.as_str()).await? else {
+            return Err(RhiProcessedJobStoreError::MissingProcessedJobClaim(
+                job.request_id.clone(),
+            ));
+        };
+        ensure_processed_job_matches(&existing, job)?;
+        ensure_receipt_matches(&existing, receipt_event_id)?;
+        ensure_receipt_event_json_matches(&existing, receipt_event_json)?;
+        ensure_proof_metadata_matches(&existing, proof_metadata_json)?;
+        existing.status = RhiProcessedJobStatus::ReceiptPublishing;
+        existing.receipt_event_id = Some(receipt_event_id.to_owned());
+        existing.receipt_event_json = Some(receipt_event_json.to_owned());
+        existing.proof_metadata_json = proof_metadata_json.map(ToOwned::to_owned);
+        update_job_without_claim_change(&mut tx, &existing, now_ms).await?;
+        tx.commit().await?;
+        Ok(existing)
+    }
+
     pub async fn mark_receipt_published(
         &self,
         job: &RhiProcessedJobState,
@@ -171,6 +216,11 @@ impl RhiProcessedJobStore {
         };
         ensure_processed_job_matches(&existing, job)?;
         ensure_receipt_matches(&existing, receipt_event_id)?;
+        if existing.status != RhiProcessedJobStatus::ReceiptPublishing
+            || existing.receipt_event_json.is_none()
+        {
+            return Err(RhiProcessedJobStoreError::ReceiptPublicationNotClaimed);
+        }
         existing.status = RhiProcessedJobStatus::ReceiptPublished;
         existing.receipt_event_id = Some(receipt_event_id.to_owned());
         update_job(&mut tx, &existing, now_ms, None).await?;
@@ -219,6 +269,7 @@ impl RhiProcessedJobStore {
         job: &RhiProcessedJobState,
         receipt_event_id: &str,
         result_event_id: &str,
+        result_event_json: &str,
         now_ms: i64,
     ) -> Result<RhiProcessedJobState, RhiProcessedJobStoreError> {
         self.ensure_schema().await?;
@@ -231,6 +282,7 @@ impl RhiProcessedJobStore {
         ensure_processed_job_matches(&existing, job)?;
         ensure_receipt_matches(&existing, receipt_event_id)?;
         ensure_result_matches(&existing, result_event_id)?;
+        ensure_result_event_json_matches(&existing, result_event_json)?;
         if existing.status == RhiProcessedJobStatus::Completed {
             tx.commit().await?;
             return Ok(existing);
@@ -240,15 +292,18 @@ impl RhiProcessedJobStore {
         }
         existing.receipt_event_id = Some(receipt_event_id.to_owned());
         existing.result_event_id = Some(result_event_id.to_owned());
+        existing.result_event_json = Some(result_event_json.to_owned());
         sqlx::query(
             "UPDATE rhi_processed_jobs
                 SET receipt_event_id = ?,
                     result_event_id = ?,
+                    result_event_json = ?,
                     updated_at_ms = ?
                 WHERE request_id = ?",
         )
         .bind(existing.receipt_event_id.as_deref())
         .bind(existing.result_event_id.as_deref())
+        .bind(existing.result_event_json.as_deref())
         .bind(now_ms)
         .bind(existing.request_id.as_str())
         .execute(&mut *tx)
@@ -355,7 +410,10 @@ async fn apply_schema(pool: &SqlitePool) -> Result<(), RhiProcessedJobStoreError
             customer_pubkey TEXT NOT NULL,
             status TEXT NOT NULL,
             receipt_event_id TEXT,
+            receipt_event_json TEXT,
             result_event_id TEXT,
+            result_event_json TEXT,
+            proof_metadata_json TEXT,
             error_code TEXT,
             created_timestamp INTEGER NOT NULL,
             completed_timestamp INTEGER,
@@ -403,14 +461,17 @@ async fn insert_claimed_job(
             customer_pubkey,
             status,
             receipt_event_id,
+            receipt_event_json,
             result_event_id,
+            result_event_json,
+            proof_metadata_json,
             error_code,
             created_timestamp,
             completed_timestamp,
             claim_expires_at_ms,
             inserted_at_ms,
             updated_at_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(request_id) DO NOTHING",
     )
     .bind(job.request_id.as_str())
@@ -419,7 +480,10 @@ async fn insert_claimed_job(
     .bind(job.customer_pubkey.as_str())
     .bind(RhiProcessedJobStatus::Processing.as_str())
     .bind(job.receipt_event_id.as_deref())
+    .bind(job.receipt_event_json.as_deref())
     .bind(job.result_event_id.as_deref())
+    .bind(job.result_event_json.as_deref())
+    .bind(job.proof_metadata_json.as_deref())
     .bind(job.error_code.as_deref())
     .bind(i64::from(job.created_timestamp))
     .bind(job.completed_timestamp.map(i64::from))
@@ -444,7 +508,10 @@ async fn select_job(
             customer_pubkey,
             status,
             receipt_event_id,
+            receipt_event_json,
             result_event_id,
+            result_event_json,
+            proof_metadata_json,
             error_code,
             created_timestamp,
             completed_timestamp
@@ -468,15 +535,47 @@ async fn claim_for_existing_job(
         return Ok(RhiProcessedJobClaim::Completed);
     }
     if let Some(receipt_event_id) = existing.receipt_event_id.clone() {
-        let current_claim_expires_at_ms: Option<i64> =
-            sqlx::query("SELECT claim_expires_at_ms FROM rhi_processed_jobs WHERE request_id = ?")
-                .bind(existing.request_id.as_str())
-                .fetch_one(&mut **tx)
-                .await?
-                .try_get("claim_expires_at_ms")?;
-        if existing.status == RhiProcessedJobStatus::ResultPublishing
-            && current_claim_expires_at_ms.is_some_and(|expires_at_ms| expires_at_ms > now_ms)
+        let current_claim_expires_at_ms =
+            select_claim_expires_at_ms(tx, existing.request_id.as_str()).await?;
+        if matches!(
+            existing.status,
+            RhiProcessedJobStatus::ReceiptPublishing | RhiProcessedJobStatus::ResultPublishing
+        ) && current_claim_expires_at_ms.is_some_and(|expires_at_ms| expires_at_ms > now_ms)
         {
+            return Ok(RhiProcessedJobClaim::InProgress);
+        }
+        if existing.status == RhiProcessedJobStatus::ReceiptPublishing {
+            let receipt_event_json = existing
+                .receipt_event_json
+                .clone()
+                .ok_or(RhiProcessedJobStoreError::ReceiptPublicationNotClaimed)?;
+            let changed = sqlx::query(
+                "UPDATE rhi_processed_jobs
+                    SET claim_expires_at_ms = ?,
+                        updated_at_ms = ?
+                    WHERE request_id = ?
+                      AND receipt_event_id = ?
+                      AND status = ?
+                      AND (
+                        claim_expires_at_ms IS NULL
+                        OR claim_expires_at_ms <= ?
+                      )",
+            )
+            .bind(claim_expires_at_ms)
+            .bind(now_ms)
+            .bind(existing.request_id.as_str())
+            .bind(receipt_event_id.as_str())
+            .bind(RhiProcessedJobStatus::ReceiptPublishing.as_str())
+            .bind(now_ms)
+            .execute(&mut **tx)
+            .await?
+            .rows_affected();
+            if changed == 1 {
+                return Ok(RhiProcessedJobClaim::RecoverReceipt {
+                    receipt_event_id,
+                    receipt_event_json,
+                });
+            }
             return Ok(RhiProcessedJobClaim::InProgress);
         }
         let changed = sqlx::query(
@@ -508,6 +607,8 @@ async fn claim_for_existing_job(
             return Ok(RhiProcessedJobClaim::RecoverResult {
                 receipt_event_id,
                 result_event_id: existing.result_event_id,
+                result_event_json: existing.result_event_json,
+                proof_metadata_json: existing.proof_metadata_json,
             });
         }
         return Ok(RhiProcessedJobClaim::InProgress);
@@ -566,7 +667,10 @@ async fn update_job(
                 customer_pubkey = ?,
                 status = ?,
                 receipt_event_id = ?,
+                receipt_event_json = ?,
                 result_event_id = ?,
+                result_event_json = ?,
+                proof_metadata_json = ?,
                 error_code = ?,
                 created_timestamp = ?,
                 completed_timestamp = ?,
@@ -579,11 +683,55 @@ async fn update_job(
     .bind(job.customer_pubkey.as_str())
     .bind(job.status.as_str())
     .bind(job.receipt_event_id.as_deref())
+    .bind(job.receipt_event_json.as_deref())
     .bind(job.result_event_id.as_deref())
+    .bind(job.result_event_json.as_deref())
+    .bind(job.proof_metadata_json.as_deref())
     .bind(job.error_code.as_deref())
     .bind(i64::from(job.created_timestamp))
     .bind(job.completed_timestamp.map(i64::from))
     .bind(claim_expires_at_ms)
+    .bind(now_ms)
+    .bind(job.request_id.as_str())
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+async fn update_job_without_claim_change(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    job: &RhiProcessedJobState,
+    now_ms: i64,
+) -> Result<(), RhiProcessedJobStoreError> {
+    sqlx::query(
+        "UPDATE rhi_processed_jobs
+            SET request_kind = ?,
+                request_hash = ?,
+                customer_pubkey = ?,
+                status = ?,
+                receipt_event_id = ?,
+                receipt_event_json = ?,
+                result_event_id = ?,
+                result_event_json = ?,
+                proof_metadata_json = ?,
+                error_code = ?,
+                created_timestamp = ?,
+                completed_timestamp = ?,
+                updated_at_ms = ?
+            WHERE request_id = ?",
+    )
+    .bind(i64::from(job.request_kind))
+    .bind(job.request_hash.as_str())
+    .bind(job.customer_pubkey.as_str())
+    .bind(job.status.as_str())
+    .bind(job.receipt_event_id.as_deref())
+    .bind(job.receipt_event_json.as_deref())
+    .bind(job.result_event_id.as_deref())
+    .bind(job.result_event_json.as_deref())
+    .bind(job.proof_metadata_json.as_deref())
+    .bind(job.error_code.as_deref())
+    .bind(i64::from(job.created_timestamp))
+    .bind(job.completed_timestamp.map(i64::from))
     .bind(now_ms)
     .bind(job.request_id.as_str())
     .execute(&mut **tx)
@@ -618,6 +766,20 @@ fn ensure_receipt_matches(
     Ok(())
 }
 
+fn ensure_receipt_event_json_matches(
+    existing: &RhiProcessedJobState,
+    receipt_event_json: &str,
+) -> Result<(), RhiProcessedJobStoreError> {
+    if existing
+        .receipt_event_json
+        .as_ref()
+        .is_some_and(|existing| existing != receipt_event_json)
+    {
+        return Err(RhiProcessedJobStoreError::DuplicateConflictingReceipt);
+    }
+    Ok(())
+}
+
 fn ensure_result_matches(
     existing: &RhiProcessedJobState,
     result_event_id: &str,
@@ -632,6 +794,46 @@ fn ensure_result_matches(
     Ok(())
 }
 
+fn ensure_result_event_json_matches(
+    existing: &RhiProcessedJobState,
+    result_event_json: &str,
+) -> Result<(), RhiProcessedJobStoreError> {
+    if existing
+        .result_event_json
+        .as_ref()
+        .is_some_and(|existing| existing != result_event_json)
+    {
+        return Err(RhiProcessedJobStoreError::DuplicateConflictingResult);
+    }
+    Ok(())
+}
+
+fn ensure_proof_metadata_matches(
+    existing: &RhiProcessedJobState,
+    proof_metadata_json: Option<&str>,
+) -> Result<(), RhiProcessedJobStoreError> {
+    if existing
+        .proof_metadata_json
+        .as_deref()
+        .is_some_and(|existing| Some(existing) != proof_metadata_json)
+    {
+        return Err(RhiProcessedJobStoreError::DuplicateConflictingReceipt);
+    }
+    Ok(())
+}
+
+async fn select_claim_expires_at_ms(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    request_id: &str,
+) -> Result<Option<i64>, RhiProcessedJobStoreError> {
+    sqlx::query("SELECT claim_expires_at_ms FROM rhi_processed_jobs WHERE request_id = ?")
+        .bind(request_id)
+        .fetch_one(&mut **tx)
+        .await?
+        .try_get("claim_expires_at_ms")
+        .map_err(Into::into)
+}
+
 fn job_from_row(row: SqliteRow) -> Result<RhiProcessedJobState, RhiProcessedJobStoreError> {
     Ok(RhiProcessedJobState {
         request_id: row.try_get("request_id")?,
@@ -640,7 +842,10 @@ fn job_from_row(row: SqliteRow) -> Result<RhiProcessedJobState, RhiProcessedJobS
         customer_pubkey: row.try_get("customer_pubkey")?,
         status: RhiProcessedJobStatus::parse(row.try_get::<String, _>("status")?.as_str())?,
         receipt_event_id: row.try_get("receipt_event_id")?,
+        receipt_event_json: row.try_get("receipt_event_json")?,
         result_event_id: row.try_get("result_event_id")?,
+        result_event_json: row.try_get("result_event_json")?,
+        proof_metadata_json: row.try_get("proof_metadata_json")?,
         error_code: row.try_get("error_code")?,
         created_timestamp: u32_from_i64(row.try_get("created_timestamp")?, "created_timestamp")?,
         completed_timestamp: row
@@ -681,11 +886,26 @@ mod tests {
             customer_pubkey: "customer".to_owned(),
             status: RhiProcessedJobStatus::Processing,
             receipt_event_id: None,
+            receipt_event_json: None,
             result_event_id: None,
+            result_event_json: None,
+            proof_metadata_json: None,
             error_code: None,
             created_timestamp: 1_700_000_000,
             completed_timestamp: None,
         }
+    }
+
+    fn receipt_json(value: &str) -> String {
+        format!(r#"{{"kind":"receipt","value":"{value}"}}"#)
+    }
+
+    fn result_json(value: &str) -> String {
+        format!(r#"{{"kind":"result","value":"{value}"}}"#)
+    }
+
+    fn proof_json(value: &str) -> String {
+        format!(r#"{{"proof":"{value}"}}"#)
     }
 
     #[tokio::test]
@@ -705,6 +925,24 @@ mod tests {
         assert_eq!(
             store.claim_job(&job, 1_000, 10_000).await.expect("claim"),
             RhiProcessedJobClaim::Execute
+        );
+        let receipt_intent = store
+            .mark_receipt_publishing(
+                &job,
+                "receipt-1",
+                receipt_json("one").as_str(),
+                Some(proof_json("one").as_str()),
+                1_050,
+            )
+            .await
+            .expect("receipt intent");
+        assert_eq!(
+            receipt_intent.status,
+            RhiProcessedJobStatus::ReceiptPublishing
+        );
+        assert_eq!(
+            receipt_intent.receipt_event_json.as_deref(),
+            Some(receipt_json("one").as_str())
         );
         let published = store
             .mark_receipt_published(&job, "receipt-1", 1_100)
@@ -727,14 +965,26 @@ mod tests {
             RhiProcessedJobClaim::RecoverResult {
                 receipt_event_id: "receipt-1".to_owned(),
                 result_event_id: None,
+                result_event_json: None,
+                proof_metadata_json: Some(proof_json("one")),
             }
         );
         let publishing = store
-            .mark_result_publishing(&job, "receipt-1", "result-1", 1_170)
+            .mark_result_publishing(
+                &job,
+                "receipt-1",
+                "result-1",
+                result_json("one").as_str(),
+                1_170,
+            )
             .await
             .expect("result intent");
         assert_eq!(publishing.status, RhiProcessedJobStatus::ResultPublishing);
         assert_eq!(publishing.result_event_id.as_deref(), Some("result-1"));
+        assert_eq!(
+            publishing.result_event_json.as_deref(),
+            Some(result_json("one").as_str())
+        );
         let completed = store
             .mark_completed(&job, "receipt-1", "result-1", 1_700_000_001, 1_200)
             .await
@@ -751,7 +1001,15 @@ mod tests {
             .expect("job");
         assert_eq!(stored.status, RhiProcessedJobStatus::Completed);
         assert_eq!(stored.receipt_event_id.as_deref(), Some("receipt-1"));
+        assert_eq!(
+            stored.receipt_event_json.as_deref(),
+            Some(receipt_json("one").as_str())
+        );
         assert_eq!(stored.result_event_id.as_deref(), Some("result-1"));
+        assert_eq!(
+            stored.result_event_json.as_deref(),
+            Some(result_json("one").as_str())
+        );
     }
 
     #[tokio::test]
@@ -780,10 +1038,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn processed_job_store_recovers_expired_receipt_publication_intent() {
+        let store = RhiProcessedJobStore::open_memory().expect("store");
+        let job = job("request-receipt-recover");
+        store.claim_job(&job, 10, 100).await.expect("claim");
+        store
+            .mark_receipt_publishing(
+                &job,
+                "receipt-recover",
+                receipt_json("recover").as_str(),
+                Some(proof_json("recover").as_str()),
+                20,
+            )
+            .await
+            .expect("receipt intent");
+
+        assert_eq!(
+            store
+                .claim_job(&job, 30, 100)
+                .await
+                .expect("unexpired receipt intent"),
+            RhiProcessedJobClaim::InProgress
+        );
+        assert_eq!(
+            store
+                .claim_job(&job, 111, 100)
+                .await
+                .expect("expired receipt intent"),
+            RhiProcessedJobClaim::RecoverReceipt {
+                receipt_event_id: "receipt-recover".to_owned(),
+                receipt_event_json: receipt_json("recover"),
+            }
+        );
+    }
+
+    #[tokio::test]
     async fn processed_job_store_claims_result_publication_and_rejects_conflicting_result_ids() {
         let store = RhiProcessedJobStore::open_memory().expect("store");
         let job = job("request-2-result");
         store.claim_job(&job, 10, 100).await.expect("claim");
+        store
+            .mark_receipt_publishing(&job, "receipt-1", receipt_json("two").as_str(), None, 15)
+            .await
+            .expect("receipt intent");
         store
             .mark_receipt_published(&job, "receipt-1", 20)
             .await
@@ -793,10 +1090,18 @@ mod tests {
             RhiProcessedJobClaim::RecoverResult {
                 receipt_event_id: "receipt-1".to_owned(),
                 result_event_id: None,
+                result_event_json: None,
+                proof_metadata_json: None,
             }
         );
         store
-            .mark_result_publishing(&job, "receipt-1", "result-1", 40)
+            .mark_result_publishing(
+                &job,
+                "receipt-1",
+                "result-1",
+                result_json("two").as_str(),
+                40,
+            )
             .await
             .expect("result intent");
         assert_eq!(
@@ -814,10 +1119,18 @@ mod tests {
             RhiProcessedJobClaim::RecoverResult {
                 receipt_event_id: "receipt-1".to_owned(),
                 result_event_id: Some("result-1".to_owned()),
+                result_event_json: Some(result_json("two")),
+                proof_metadata_json: None,
             }
         );
         let error = store
-            .mark_result_publishing(&job, "receipt-1", "result-2", 140)
+            .mark_result_publishing(
+                &job,
+                "receipt-1",
+                "result-2",
+                result_json("other").as_str(),
+                140,
+            )
             .await
             .expect_err("conflicting result");
         assert!(matches!(
@@ -859,17 +1172,57 @@ mod tests {
         let job = job("request-4");
         store.claim_job(&job, 10, 100).await.expect("claim");
         store
+            .mark_receipt_publishing(&job, "receipt-1", receipt_json("four").as_str(), None, 15)
+            .await
+            .expect("receipt intent");
+        store
             .mark_receipt_published(&job, "receipt-1", 20)
             .await
             .expect("receipt");
 
         let error = store
-            .mark_receipt_published(&job, "receipt-2", 30)
+            .mark_receipt_publishing(&job, "receipt-2", receipt_json("other").as_str(), None, 30)
             .await
             .expect_err("conflicting receipt");
         assert!(matches!(
             error,
             RhiProcessedJobStoreError::DuplicateConflictingReceipt
+        ));
+    }
+
+    #[tokio::test]
+    async fn processed_job_store_rejects_unsupported_old_schema_versions() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let path = tempdir.path().join("processed_jobs_old.sqlite");
+        let options = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(path.as_path())
+            .create_if_missing(true);
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .expect("open sqlite");
+        sqlx::query(
+            "CREATE TABLE rhi_processed_job_schema(
+                schema_id INTEGER PRIMARY KEY CHECK(schema_id = 1),
+                version INTEGER NOT NULL
+            )",
+        )
+        .execute(&pool)
+        .await
+        .expect("schema table");
+        sqlx::query("INSERT INTO rhi_processed_job_schema(schema_id, version) VALUES (1, 1)")
+            .execute(&pool)
+            .await
+            .expect("schema version");
+        pool.close().await;
+
+        let error = RhiProcessedJobStore::open_file(path.as_path())
+            .await
+            .expect_err("old schema rejected");
+        assert!(matches!(
+            error,
+            RhiProcessedJobStoreError::UnsupportedSchemaVersion(1)
         ));
     }
 }

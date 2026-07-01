@@ -378,7 +378,11 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .expect("time")
             .as_nanos();
-        std::env::temp_dir().join(format!("rhi-trade-state-{suffix}-{nanos}.json"))
+        let path = std::env::temp_dir()
+            .join(format!("rhi-trade-state-{suffix}-{nanos}"))
+            .join("state.json");
+        std::fs::create_dir_all(path.parent().expect("state parent")).expect("state parent dir");
+        path
     }
 
     #[test]

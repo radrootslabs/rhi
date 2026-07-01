@@ -102,11 +102,17 @@ fn rhi_processed_job_state_is_durable_workflow_authority() {
         "CREATE UNIQUE INDEX IF NOT EXISTS rhi_processed_jobs_receipt_event_idx",
         "CREATE UNIQUE INDEX IF NOT EXISTS rhi_processed_jobs_result_event_idx",
         "pub async fn claim_job(",
+        "pub async fn mark_receipt_publishing(",
         "pub async fn mark_receipt_published(",
         "pub async fn mark_result_publishing(",
         "pub async fn mark_completed(",
         "RhiProcessedJobClaim::InProgress",
+        "RhiProcessedJobClaim::RecoverReceipt",
+        "RhiProcessedJobStatus::ReceiptPublishing",
         "RhiProcessedJobStatus::ResultPublishing",
+        "receipt_event_json",
+        "result_event_json",
+        "proof_metadata_json",
         "DuplicateConflictingResult",
     ] {
         assert!(

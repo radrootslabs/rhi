@@ -290,7 +290,9 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .expect("time")
             .as_nanos();
-        std::env::temp_dir().join(format!("rhi-state-{suffix}-{nanos}.json"))
+        std::env::temp_dir()
+            .join(format!("rhi-state-{suffix}-{nanos}"))
+            .join("state.json")
     }
 
     #[tokio::test]
