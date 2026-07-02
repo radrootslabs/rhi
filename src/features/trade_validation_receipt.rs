@@ -1325,7 +1325,18 @@ fn verify_existing_receipt_event(
         &radroots_event_from_nostr(event),
         expected_receipt_binding(request, prover_policy, None, None, None, None),
     )
-    .map_err(TradeValidationReceiptJobError::from)
+    .map_err(receipt_verification_error)
+}
+
+fn receipt_verification_error(
+    error: RadrootsValidationReceiptError,
+) -> TradeValidationReceiptJobError {
+    match error {
+        RadrootsValidationReceiptError::ExpectedBindingMismatch(
+            "proof_system" | "program_hash" | "verifying_key_hash",
+        ) => TradeValidationReceiptJobError::RecoveredResultPolicyMismatch,
+        error => TradeValidationReceiptJobError::from(error),
+    }
 }
 
 async fn publish_result_and_complete(
@@ -4961,6 +4972,116 @@ mod tests {
         }
     }
 
+    #[test]
+    fn validate_recovered_result_event_rejects_current_policy_drift_without_stored_mutation() {
+        let current_backend_policy = TradeValidationReceiptProverPolicy {
+            backend: TradeValidationReceiptProverBackend::LocalExecute,
+            proof_mode: RadrootsSp1TradeProofMode::None,
+            runtime_policy: TradeValidationReceiptRuntimePolicy::Production,
+            expected_sp1_program_hash: None,
+            expected_sp1_verifying_key_hash: None,
+            remote_http: None,
+        };
+        let current_proof_mode_policy = remote_http_policy();
+
+        for (name, current_policy) in [
+            ("backend", current_backend_policy),
+            ("proof_mode", current_proof_mode_policy),
+        ] {
+            let fixture = recovered_result_validation_fixture();
+            let result_event = super::signed_event_from_parts(
+                &fixture.worker,
+                KIND_TRADE_TRANSITION_PROOF_RESULT,
+                serde_json::to_string(&fixture.result_json).expect("result json"),
+                fixture.result_tags.clone(),
+                Some(fixture.job.created_at.as_secs()),
+            )
+            .expect("result event");
+
+            let error = super::validate_recovered_result_event(
+                &result_event,
+                &fixture.job,
+                &fixture.processed,
+                &fixture.envelope,
+                fixture.receipt_event_id.as_str(),
+                &fixture.verified_receipt,
+                &current_policy,
+            )
+            .expect_err(name);
+
+            assert!(matches!(
+                error,
+                TradeValidationReceiptJobError::RecoveredResultPolicyMismatch
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn verify_existing_receipt_event_rejects_current_policy_proof_contract_drift() {
+        let _guard = test_guard();
+        let worker = RadrootsNostrKeys::generate();
+        let requester = RadrootsNostrKeys::generate();
+        let buyer = RadrootsNostrKeys::generate();
+        let seller = RadrootsNostrKeys::generate();
+        let listing_event = listing_event(&seller);
+        let (request_event, decision_event) = signed_order_events(&buyer, &seller, &listing_event);
+        let job = job_request(
+            &requester,
+            &worker,
+            &listing_event,
+            &request_event,
+            &decision_event,
+            RadrootsSp1TradeProofMode::None,
+            None,
+            None,
+        );
+        {
+            let mut hooks = trade_validation_receipt_test_hooks()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            hooks
+                .fetch_event_by_id_results
+                .push_back(Ok(listing_event.clone()));
+            hooks
+                .fetch_event_by_id_results
+                .push_back(Ok(request_event.clone()));
+            hooks
+                .fetch_event_by_id_results
+                .push_back(Ok(decision_event.clone()));
+            hooks
+                .publish_event_results
+                .push_back(Ok(publish_result_id(1)));
+            hooks
+                .publish_event_results
+                .push_back(Ok(publish_result_id(2)));
+        }
+        handle_job_request_for_test(&job, &worker, &deterministic_policy())
+            .await
+            .expect("setup proof job");
+        let receipt_parts = trade_validation_receipt_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .published_events
+            .first()
+            .expect("receipt event")
+            .clone();
+        let receipt_event = published_event(&receipt_parts);
+        let request_event = radroots_event_from_nostr(&job);
+        let envelope = parse_transition_proof_request_event(&request_event).expect("envelope");
+
+        let error = super::verify_existing_receipt_event(
+            &receipt_event,
+            &envelope.content,
+            &remote_http_policy(),
+        )
+        .expect_err("current policy proof contract drift");
+
+        assert!(matches!(
+            error,
+            TradeValidationReceiptJobError::RecoveredResultPolicyMismatch
+        ));
+    }
+
     #[tokio::test]
     async fn proof_job_records_completed_job_and_skips_duplicate_replay() {
         let _guard = test_guard();
@@ -5584,7 +5705,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn proof_job_rejects_recovered_result_intent_policy_drift() {
+    async fn proof_job_rejects_recovered_result_intent_payload_policy_field_drift() {
         let _guard = test_guard();
         let worker = RadrootsNostrKeys::generate();
         let requester = RadrootsNostrKeys::generate();
