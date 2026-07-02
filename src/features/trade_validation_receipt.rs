@@ -466,6 +466,10 @@ pub enum TradeValidationReceiptJobError {
     DuplicateConflictingResult,
     #[error("missing recovered proof execution metadata")]
     MissingRecoveredProofMetadata,
+    #[error("recovered proof execution metadata does not match validation receipt")]
+    RecoveredProofMetadataMismatch,
+    #[error("recovered validation result does not match validation receipt")]
+    RecoveredResultMismatch,
     #[error("invalid active trade event: {0}")]
     InvalidActiveTradeEvent(String),
     #[error("rhi prover backend is disabled")]
@@ -1340,6 +1344,7 @@ async fn publish_result_and_complete(
             envelope,
             &receipt_event_id,
             &verified_receipt,
+            prover_policy,
         )?;
         let result_event_id = result_event.id.to_hex();
         if claimed_result_event_id
@@ -1444,6 +1449,7 @@ fn validate_recovered_result_event(
     envelope: &RadrootsTradeTransitionProofRequestEnvelope,
     receipt_event_id: &str,
     verified_receipt: &RadrootsVerifiedValidationReceipt,
+    prover_policy: &TradeValidationReceiptProverPolicy,
 ) -> Result<(), TradeValidationReceiptJobError> {
     if event_kind_u32(event)? != KIND_TRADE_TRANSITION_PROOF_RESULT {
         return Err(TradeValidationReceiptJobError::DuplicateConflictingResult);
@@ -1452,12 +1458,15 @@ fn validate_recovered_result_event(
         return Err(TradeValidationReceiptJobError::DuplicateConflictingResult);
     }
     let result: TradeValidationReceiptJobResult = serde_json::from_str(event.content.as_str())?;
-    if result.receipt_event_id != receipt_event_id
-        || result.request_hash != job.request_hash
-        || result.public_values_hash != verified_receipt.receipt.public_values_hash
-    {
-        return Err(TradeValidationReceiptJobError::DuplicateConflictingResult);
-    }
+    validate_recovered_result_payload(
+        &result,
+        request_event,
+        job,
+        envelope,
+        receipt_event_id,
+        verified_receipt,
+        prover_policy,
+    )?;
     let expected_tags =
         result_tags_from_dvm(request_event, &envelope.tags.inputs, receipt_event_id)?;
     let event_tags: Vec<Vec<String>> = event
@@ -1467,6 +1476,58 @@ fn validate_recovered_result_event(
         .collect();
     if event_tags != expected_tags {
         return Err(TradeValidationReceiptJobError::DuplicateConflictingResult);
+    }
+    Ok(())
+}
+
+fn validate_recovered_result_payload(
+    result: &TradeValidationReceiptJobResult,
+    request_event: &RadrootsNostrEvent,
+    job: &RhiProcessedJobState,
+    envelope: &RadrootsTradeTransitionProofRequestEnvelope,
+    receipt_event_id: &str,
+    verified_receipt: &RadrootsVerifiedValidationReceipt,
+    prover_policy: &TradeValidationReceiptProverPolicy,
+) -> Result<(), TradeValidationReceiptJobError> {
+    let request = &envelope.content;
+    let proof_metadata = TradeValidationReceiptResultProofMetadata {
+        cryptographic_proof_verified: result.cryptographic_proof_verified,
+        proof_generated: result.proof_generated,
+        sp1_execute_checked: result.sp1_execute_checked,
+        sp1_execute_public_values_hash: result.sp1_execute_public_values_hash.clone(),
+    };
+    validate_recovered_proof_metadata(verified_receipt, prover_policy, Some(&proof_metadata))?;
+    let expected_authority = validation_authority_for_result(prover_policy, Some(&proof_metadata));
+    let expected_confidence =
+        commitment_confidence_for_result(verified_receipt.receipt.result, expected_authority);
+    if result.status != TradeValidationReceiptJobStatus::Succeeded
+        || result.worker_role != TradeValidationReceiptWorkerRole::NonAuthoritativeProver
+        || result.prover_backend != prover_policy.backend
+        || result.receipt_event_id != receipt_event_id
+        || result.receipt_kind != KIND_TRADE_VALIDATION_RECEIPT
+        || result.request_hash != job.request_hash
+        || result.customer_pubkey != request_event.pubkey.to_hex()
+        || result.worker_pubkey != envelope.tags.worker_pubkey.as_str()
+        || result.order_id != request.request.order_id.as_str()
+        || result.listing_event_id != request.listing_event_id.as_str()
+        || result.request_event_id != request.request_event_id.as_str()
+        || result.decision_event_id != request.decision_event_id.as_str()
+        || result.event_set_root != verified_receipt.receipt.event_set_root
+        || result.reducer_output_root != verified_receipt.receipt.new_state_root
+        || result.public_values_hash != verified_receipt.receipt.public_values_hash
+        || result.proof_system != verified_receipt.receipt.proof.system.as_str()
+        || sp1_proof_mode_label(result.proof_mode)
+            != verified_receipt
+                .receipt
+                .proof
+                .mode
+                .as_deref()
+                .unwrap_or("none")
+        || result.proof_mode != prover_policy.proof_mode
+        || result.validation_authority != expected_authority
+        || result.confidence != expected_confidence
+    {
+        return Err(TradeValidationReceiptJobError::RecoveredResultMismatch);
     }
     Ok(())
 }
@@ -1481,11 +1542,8 @@ fn result_payload(
     proof_metadata: Option<&TradeValidationReceiptResultProofMetadata>,
 ) -> Result<TradeValidationReceiptJobResult, TradeValidationReceiptJobError> {
     let request = &envelope.content;
-    let proof_system_is_none =
-        verified_receipt.receipt.proof.system == RadrootsValidationReceiptProofSystem::None;
-    if !proof_system_is_none && proof_metadata.is_none() {
-        return Err(TradeValidationReceiptJobError::MissingRecoveredProofMetadata);
-    }
+    let proof_metadata =
+        validate_recovered_proof_metadata(&verified_receipt, prover_policy, proof_metadata)?;
     let proof_generated = proof_metadata
         .map(|metadata| metadata.proof_generated)
         .unwrap_or(false);
@@ -1522,6 +1580,76 @@ fn result_payload(
         confidence,
         worker_role: TradeValidationReceiptWorkerRole::NonAuthoritativeProver,
     })
+}
+
+fn validate_recovered_proof_metadata<'a>(
+    verified_receipt: &RadrootsVerifiedValidationReceipt,
+    prover_policy: &TradeValidationReceiptProverPolicy,
+    proof_metadata: Option<&'a TradeValidationReceiptResultProofMetadata>,
+) -> Result<Option<&'a TradeValidationReceiptResultProofMetadata>, TradeValidationReceiptJobError> {
+    let proof_generated_expected =
+        verified_receipt.receipt.proof.system != RadrootsValidationReceiptProofSystem::None;
+    let Some(proof_metadata) = proof_metadata else {
+        if prover_policy.backend == TradeValidationReceiptProverBackend::DeterministicNone
+            && !proof_generated_expected
+        {
+            return Ok(None);
+        }
+        return Err(TradeValidationReceiptJobError::MissingRecoveredProofMetadata);
+    };
+    if proof_metadata.proof_generated != proof_generated_expected
+        || proof_metadata.cryptographic_proof_verified != proof_generated_expected
+    {
+        return Err(TradeValidationReceiptJobError::RecoveredProofMetadataMismatch);
+    }
+    if proof_metadata.sp1_execute_checked {
+        if proof_metadata.sp1_execute_public_values_hash.as_deref()
+            != Some(verified_receipt.receipt.public_values_hash.as_str())
+        {
+            return Err(TradeValidationReceiptJobError::RecoveredProofMetadataMismatch);
+        }
+    } else if proof_metadata.sp1_execute_public_values_hash.is_some() || proof_generated_expected {
+        return Err(TradeValidationReceiptJobError::RecoveredProofMetadataMismatch);
+    }
+    match prover_policy.backend {
+        TradeValidationReceiptProverBackend::DeterministicNone => {
+            if proof_metadata.proof_generated
+                || proof_metadata.cryptographic_proof_verified
+                || proof_metadata.sp1_execute_checked
+                || proof_metadata.sp1_execute_public_values_hash.is_some()
+            {
+                return Err(TradeValidationReceiptJobError::RecoveredProofMetadataMismatch);
+            }
+        }
+        TradeValidationReceiptProverBackend::LocalExecute => {
+            if proof_generated_expected
+                || proof_metadata.proof_generated
+                || proof_metadata.cryptographic_proof_verified
+                || !proof_metadata.sp1_execute_checked
+            {
+                return Err(TradeValidationReceiptJobError::RecoveredProofMetadataMismatch);
+            }
+        }
+        TradeValidationReceiptProverBackend::LocalCpuProve
+        | TradeValidationReceiptProverBackend::RemoteHttpProve => {
+            if !proof_generated_expected
+                || !proof_metadata.proof_generated
+                || !proof_metadata.cryptographic_proof_verified
+                || !proof_metadata.sp1_execute_checked
+            {
+                return Err(TradeValidationReceiptJobError::RecoveredProofMetadataMismatch);
+            }
+        }
+        TradeValidationReceiptProverBackend::Disabled
+        | TradeValidationReceiptProverBackend::LocalCudaProve => {
+            return Err(TradeValidationReceiptJobError::RecoveredProofMetadataMismatch);
+        }
+    }
+    Ok(Some(proof_metadata))
+}
+
+fn sp1_proof_mode_label(mode: RadrootsSp1TradeProofMode) -> &'static str {
+    mode.mode_label().unwrap_or("none")
 }
 
 fn validation_authority_for_result(
@@ -4370,6 +4498,229 @@ mod tests {
             result.confidence,
             RadrootsTradeCommitmentConfidence::CommittedByTrustedServiceAndProof
         );
+    }
+
+    #[test]
+    fn result_payload_rejects_recovered_sp1_receipt_with_unchecked_execution_metadata() {
+        let worker = RadrootsNostrKeys::generate();
+        let requester = RadrootsNostrKeys::generate();
+        let buyer = RadrootsNostrKeys::generate();
+        let seller = RadrootsNostrKeys::generate();
+        let listing_event = listing_event(&seller);
+        let (request_event, decision_event) = signed_order_events(&buyer, &seller, &listing_event);
+        let job = job_request(
+            &requester,
+            &worker,
+            &listing_event,
+            &request_event,
+            &decision_event,
+            RadrootsSp1TradeProofMode::Core,
+            Some(hash32('a')),
+            Some(hash32('b')),
+        );
+        let request_event = radroots_event_from_nostr(&job);
+        let envelope = parse_transition_proof_request_event(&request_event).expect("envelope");
+        let processed = processed_job_for_test(&job);
+        let verified_receipt = verified_receipt_for_payload(
+            &envelope.content,
+            RadrootsValidationReceiptProofSystem::Sp1Core,
+        );
+        let metadata = super::TradeValidationReceiptResultProofMetadata {
+            cryptographic_proof_verified: true,
+            proof_generated: true,
+            sp1_execute_checked: false,
+            sp1_execute_public_values_hash: None,
+        };
+
+        let error = super::result_payload(
+            &job,
+            &processed,
+            &envelope,
+            "receipt-id",
+            verified_receipt,
+            &remote_http_policy(),
+            Some(&metadata),
+        )
+        .expect_err("unchecked SP1 metadata rejected");
+
+        assert!(matches!(
+            error,
+            TradeValidationReceiptJobError::RecoveredProofMetadataMismatch
+        ));
+    }
+
+    #[test]
+    fn result_payload_rejects_recovered_sp1_receipt_with_wrong_execution_hash() {
+        let worker = RadrootsNostrKeys::generate();
+        let requester = RadrootsNostrKeys::generate();
+        let buyer = RadrootsNostrKeys::generate();
+        let seller = RadrootsNostrKeys::generate();
+        let listing_event = listing_event(&seller);
+        let (request_event, decision_event) = signed_order_events(&buyer, &seller, &listing_event);
+        let job = job_request(
+            &requester,
+            &worker,
+            &listing_event,
+            &request_event,
+            &decision_event,
+            RadrootsSp1TradeProofMode::Core,
+            Some(hash32('a')),
+            Some(hash32('b')),
+        );
+        let request_event = radroots_event_from_nostr(&job);
+        let envelope = parse_transition_proof_request_event(&request_event).expect("envelope");
+        let processed = processed_job_for_test(&job);
+        let verified_receipt = verified_receipt_for_payload(
+            &envelope.content,
+            RadrootsValidationReceiptProofSystem::Sp1Core,
+        );
+        let metadata = super::TradeValidationReceiptResultProofMetadata {
+            cryptographic_proof_verified: true,
+            proof_generated: true,
+            sp1_execute_checked: true,
+            sp1_execute_public_values_hash: Some(hash32('9')),
+        };
+
+        let error = super::result_payload(
+            &job,
+            &processed,
+            &envelope,
+            "receipt-id",
+            verified_receipt,
+            &remote_http_policy(),
+            Some(&metadata),
+        )
+        .expect_err("wrong SP1 execution hash rejected");
+
+        assert!(matches!(
+            error,
+            TradeValidationReceiptJobError::RecoveredProofMetadataMismatch
+        ));
+    }
+
+    #[test]
+    fn result_payload_rejects_deterministic_metadata_with_execution_binding() {
+        let worker = RadrootsNostrKeys::generate();
+        let requester = RadrootsNostrKeys::generate();
+        let buyer = RadrootsNostrKeys::generate();
+        let seller = RadrootsNostrKeys::generate();
+        let listing_event = listing_event(&seller);
+        let (request_event, decision_event) = signed_order_events(&buyer, &seller, &listing_event);
+        let job = job_request(
+            &requester,
+            &worker,
+            &listing_event,
+            &request_event,
+            &decision_event,
+            RadrootsSp1TradeProofMode::None,
+            None,
+            None,
+        );
+        let request_event = radroots_event_from_nostr(&job);
+        let envelope = parse_transition_proof_request_event(&request_event).expect("envelope");
+        let processed = processed_job_for_test(&job);
+        let verified_receipt = verified_receipt_for_payload(
+            &envelope.content,
+            RadrootsValidationReceiptProofSystem::None,
+        );
+        let public_values_hash = verified_receipt.receipt.public_values_hash.clone();
+        let metadata = super::TradeValidationReceiptResultProofMetadata {
+            cryptographic_proof_verified: false,
+            proof_generated: false,
+            sp1_execute_checked: true,
+            sp1_execute_public_values_hash: Some(public_values_hash),
+        };
+
+        let error = super::result_payload(
+            &job,
+            &processed,
+            &envelope,
+            "receipt-id",
+            verified_receipt,
+            &deterministic_policy(),
+            Some(&metadata),
+        )
+        .expect_err("deterministic SP1 execution metadata rejected");
+
+        assert!(matches!(
+            error,
+            TradeValidationReceiptJobError::RecoveredProofMetadataMismatch
+        ));
+    }
+
+    #[test]
+    fn validate_recovered_result_event_rejects_stored_sp1_result_without_execution_binding() {
+        let worker = RadrootsNostrKeys::generate();
+        let requester = RadrootsNostrKeys::generate();
+        let buyer = RadrootsNostrKeys::generate();
+        let seller = RadrootsNostrKeys::generate();
+        let listing_event = listing_event(&seller);
+        let (request_event, decision_event) = signed_order_events(&buyer, &seller, &listing_event);
+        let job = job_request(
+            &requester,
+            &worker,
+            &listing_event,
+            &request_event,
+            &decision_event,
+            RadrootsSp1TradeProofMode::Core,
+            Some(hash32('a')),
+            Some(hash32('b')),
+        );
+        let request_event = radroots_event_from_nostr(&job);
+        let envelope = parse_transition_proof_request_event(&request_event).expect("envelope");
+        let processed = processed_job_for_test(&job);
+        let verified_receipt = verified_receipt_for_payload(
+            &envelope.content,
+            RadrootsValidationReceiptProofSystem::Sp1Core,
+        );
+        let receipt_event_id = publish_result_id(9);
+        let metadata = super::TradeValidationReceiptResultProofMetadata {
+            cryptographic_proof_verified: true,
+            proof_generated: true,
+            sp1_execute_checked: true,
+            sp1_execute_public_values_hash: Some(
+                verified_receipt.receipt.public_values_hash.clone(),
+            ),
+        };
+        let mut result = super::result_payload(
+            &job,
+            &processed,
+            &envelope,
+            receipt_event_id.as_str(),
+            verified_receipt.clone(),
+            &remote_http_policy(),
+            Some(&metadata),
+        )
+        .expect("valid result payload");
+        result.sp1_execute_checked = false;
+        result.sp1_execute_public_values_hash = None;
+        let result_tags =
+            super::result_tags_from_dvm(&job, &envelope.tags.inputs, receipt_event_id.as_str())
+                .expect("result tags");
+        let result_event = super::signed_event_from_parts(
+            &worker,
+            KIND_TRADE_TRANSITION_PROOF_RESULT,
+            serde_json::to_string(&result).expect("result json"),
+            result_tags,
+            Some(job.created_at.as_secs()),
+        )
+        .expect("result event");
+
+        let error = super::validate_recovered_result_event(
+            &result_event,
+            &job,
+            &processed,
+            &envelope,
+            receipt_event_id.as_str(),
+            &verified_receipt,
+            &remote_http_policy(),
+        )
+        .expect_err("stored unchecked SP1 result rejected");
+
+        assert!(matches!(
+            error,
+            TradeValidationReceiptJobError::RecoveredProofMetadataMismatch
+        ));
     }
 
     #[tokio::test]
