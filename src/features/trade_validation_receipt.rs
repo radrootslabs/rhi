@@ -3309,6 +3309,76 @@ mod tests {
         .expect("signed result")
     }
 
+    struct RecoveredResultValidationFixture {
+        worker: RadrootsNostrKeys,
+        job: RadrootsNostrEvent,
+        envelope: radroots_trade::dvm::RadrootsTradeTransitionProofRequestEnvelope,
+        processed: RhiProcessedJobState,
+        verified_receipt: RadrootsVerifiedValidationReceipt,
+        receipt_event_id: String,
+        result_json: serde_json::Value,
+        result_tags: Vec<Vec<String>>,
+    }
+
+    fn recovered_result_validation_fixture() -> RecoveredResultValidationFixture {
+        let worker = RadrootsNostrKeys::generate();
+        let requester = RadrootsNostrKeys::generate();
+        let buyer = RadrootsNostrKeys::generate();
+        let seller = RadrootsNostrKeys::generate();
+        let listing_event = listing_event(&seller);
+        let (request_event, decision_event) = signed_order_events(&buyer, &seller, &listing_event);
+        let job = job_request(
+            &requester,
+            &worker,
+            &listing_event,
+            &request_event,
+            &decision_event,
+            RadrootsSp1TradeProofMode::None,
+            None,
+            None,
+        );
+        let request_event = radroots_event_from_nostr(&job);
+        let envelope = parse_transition_proof_request_event(&request_event).expect("envelope");
+        let processed = processed_job_for_test(&job);
+        let verified_receipt = verified_receipt_for_payload(
+            &envelope.content,
+            RadrootsValidationReceiptProofSystem::None,
+        );
+        let receipt_event_id = publish_result_id(9);
+        let result = super::result_payload(
+            &job,
+            &processed,
+            &envelope,
+            receipt_event_id.as_str(),
+            verified_receipt.clone(),
+            &deterministic_policy(),
+            None,
+        )
+        .expect("result payload");
+        let result_json = serde_json::to_value(&result).expect("result json");
+        let result_tags =
+            super::result_tags_from_dvm(&job, &envelope.tags.inputs, receipt_event_id.as_str())
+                .expect("result tags");
+        RecoveredResultValidationFixture {
+            worker,
+            job,
+            envelope,
+            processed,
+            verified_receipt,
+            receipt_event_id,
+            result_json,
+            result_tags,
+        }
+    }
+
+    fn set_result_json_field(
+        value: &mut serde_json::Value,
+        field: &str,
+        replacement: impl Into<serde_json::Value>,
+    ) {
+        value[field] = replacement.into();
+    }
+
     fn verified_receipt_for_payload(
         request: &RadrootsTradeTransitionProofRequestV1,
         proof_system: RadrootsValidationReceiptProofSystem,
@@ -4721,6 +4791,136 @@ mod tests {
             error,
             TradeValidationReceiptJobError::RecoveredProofMetadataMismatch
         ));
+    }
+
+    #[test]
+    fn validate_recovered_result_event_rejects_critical_payload_field_corruption() {
+        let cases: Vec<(&str, Box<dyn Fn(&mut serde_json::Value)>)> = vec![
+            (
+                "status",
+                Box::new(|value| set_result_json_field(value, "status", "failed")),
+            ),
+            (
+                "worker_role",
+                Box::new(|value| {
+                    set_result_json_field(value, "worker_role", "authoritative_prover")
+                }),
+            ),
+            (
+                "receipt_kind",
+                Box::new(|value| value["receipt_kind"] = serde_json::json!(1_u32)),
+            ),
+            (
+                "prover_backend",
+                Box::new(|value| set_result_json_field(value, "prover_backend", "local_execute")),
+            ),
+            (
+                "receipt_event_id",
+                Box::new(|value| {
+                    set_result_json_field(value, "receipt_event_id", publish_result_id(8))
+                }),
+            ),
+            (
+                "request_hash",
+                Box::new(|value| set_result_json_field(value, "request_hash", hash32('8'))),
+            ),
+            (
+                "customer_pubkey",
+                Box::new(|value| set_result_json_field(value, "customer_pubkey", "8".repeat(64))),
+            ),
+            (
+                "worker_pubkey",
+                Box::new(|value| set_result_json_field(value, "worker_pubkey", "7".repeat(64))),
+            ),
+            (
+                "order_id",
+                Box::new(|value| set_result_json_field(value, "order_id", "order-other")),
+            ),
+            (
+                "listing_event_id",
+                Box::new(|value| {
+                    set_result_json_field(value, "listing_event_id", publish_result_id(7))
+                }),
+            ),
+            (
+                "request_event_id",
+                Box::new(|value| {
+                    set_result_json_field(value, "request_event_id", publish_result_id(6))
+                }),
+            ),
+            (
+                "decision_event_id",
+                Box::new(|value| {
+                    set_result_json_field(value, "decision_event_id", publish_result_id(5))
+                }),
+            ),
+            (
+                "event_set_root",
+                Box::new(|value| set_result_json_field(value, "event_set_root", hash32('6'))),
+            ),
+            (
+                "reducer_output_root",
+                Box::new(|value| set_result_json_field(value, "reducer_output_root", hash32('7'))),
+            ),
+            (
+                "public_values_hash",
+                Box::new(|value| set_result_json_field(value, "public_values_hash", hash32('8'))),
+            ),
+            (
+                "proof_system",
+                Box::new(|value| set_result_json_field(value, "proof_system", "sp1_core")),
+            ),
+            (
+                "proof_mode",
+                Box::new(|value| set_result_json_field(value, "proof_mode", "core")),
+            ),
+            (
+                "validation_authority",
+                Box::new(|value| {
+                    set_result_json_field(value, "validation_authority", "trusted_rhi_service_key")
+                }),
+            ),
+            (
+                "confidence",
+                Box::new(|value| {
+                    set_result_json_field(value, "confidence", "committed_by_trusted_service")
+                }),
+            ),
+        ];
+
+        for (name, corrupt) in cases {
+            let fixture = recovered_result_validation_fixture();
+            let mut result_json = fixture.result_json;
+            corrupt(&mut result_json);
+            let result_event = super::signed_event_from_parts(
+                &fixture.worker,
+                KIND_TRADE_TRANSITION_PROOF_RESULT,
+                serde_json::to_string(&result_json).expect("result json"),
+                fixture.result_tags.clone(),
+                Some(fixture.job.created_at.as_secs()),
+            )
+            .expect("result event");
+
+            let error = super::validate_recovered_result_event(
+                &result_event,
+                &fixture.job,
+                &fixture.processed,
+                &fixture.envelope,
+                fixture.receipt_event_id.as_str(),
+                &fixture.verified_receipt,
+                &deterministic_policy(),
+            )
+            .expect_err(name);
+
+            assert!(
+                matches!(
+                    error,
+                    TradeValidationReceiptJobError::RecoveredResultMismatch
+                        | TradeValidationReceiptJobError::Serde(_)
+                ),
+                "{name}: {error:?}"
+            );
+        }
     }
 
     #[tokio::test]
