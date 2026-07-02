@@ -81,6 +81,7 @@ pub enum RhiProcessedJobClaim {
     },
     RecoverResult {
         receipt_event_id: String,
+        receipt_event_json: String,
         result_event_id: Option<String>,
         result_event_json: Option<String>,
         proof_metadata_json: Option<String>,
@@ -115,6 +116,8 @@ pub enum RhiProcessedJobStoreError {
     ReceiptPublicationNotClaimed,
     #[error("result publication was not claimed")]
     ResultPublicationNotClaimed,
+    #[error("result recovery is missing stored receipt event json")]
+    MissingReceiptEventJson,
     #[error("missing processed-job claim: {0}")]
     MissingProcessedJobClaim(String),
     #[error("invalid rhi processed-job status: {0}")]
@@ -578,6 +581,10 @@ async fn claim_for_existing_job(
             }
             return Ok(RhiProcessedJobClaim::InProgress);
         }
+        let receipt_event_json = existing
+            .receipt_event_json
+            .clone()
+            .ok_or(RhiProcessedJobStoreError::MissingReceiptEventJson)?;
         let changed = sqlx::query(
             "UPDATE rhi_processed_jobs
                 SET status = ?,
@@ -606,6 +613,7 @@ async fn claim_for_existing_job(
         if changed == 1 {
             return Ok(RhiProcessedJobClaim::RecoverResult {
                 receipt_event_id,
+                receipt_event_json,
                 result_event_id: existing.result_event_id,
                 result_event_json: existing.result_event_json,
                 proof_metadata_json: existing.proof_metadata_json,
@@ -964,6 +972,7 @@ mod tests {
                 .expect("result claim"),
             RhiProcessedJobClaim::RecoverResult {
                 receipt_event_id: "receipt-1".to_owned(),
+                receipt_event_json: receipt_json("one"),
                 result_event_id: None,
                 result_event_json: None,
                 proof_metadata_json: Some(proof_json("one")),
@@ -1089,6 +1098,7 @@ mod tests {
             store.claim_job(&job, 30, 100).await.expect("result claim"),
             RhiProcessedJobClaim::RecoverResult {
                 receipt_event_id: "receipt-1".to_owned(),
+                receipt_event_json: receipt_json("two"),
                 result_event_id: None,
                 result_event_json: None,
                 proof_metadata_json: None,
@@ -1118,6 +1128,7 @@ mod tests {
                 .expect("expired result claim"),
             RhiProcessedJobClaim::RecoverResult {
                 receipt_event_id: "receipt-1".to_owned(),
+                receipt_event_json: receipt_json("two"),
                 result_event_id: Some("result-1".to_owned()),
                 result_event_json: Some(result_json("two")),
                 proof_metadata_json: None,
@@ -1144,6 +1155,42 @@ mod tests {
         assert!(matches!(
             error,
             RhiProcessedJobStoreError::DuplicateConflictingResult
+        ));
+    }
+
+    #[tokio::test]
+    async fn processed_job_store_rejects_result_recovery_without_receipt_event_json() {
+        let store = RhiProcessedJobStore::open_memory().expect("store");
+        let job = job("request-missing-receipt-json");
+        store.claim_job(&job, 10, 100).await.expect("claim");
+        store
+            .mark_receipt_publishing(
+                &job,
+                "receipt-1",
+                receipt_json("missing").as_str(),
+                None,
+                15,
+            )
+            .await
+            .expect("receipt intent");
+        store
+            .mark_receipt_published(&job, "receipt-1", 20)
+            .await
+            .expect("receipt");
+
+        sqlx::query("UPDATE rhi_processed_jobs SET receipt_event_json = NULL WHERE request_id = ?")
+            .bind(job.request_id.as_str())
+            .execute(&store.pool)
+            .await
+            .expect("corrupt receipt json");
+
+        let error = store
+            .claim_job(&job, 131, 100)
+            .await
+            .expect_err("missing receipt event json");
+        assert!(matches!(
+            error,
+            RhiProcessedJobStoreError::MissingReceiptEventJson
         ));
     }
 
