@@ -195,14 +195,6 @@ impl TradeValidationReceiptProverPolicy {
         Ok(())
     }
 
-    fn validate_recovered_replay(&self) -> Result<(), TradeValidationReceiptJobError> {
-        self.validate_shape()?;
-        if self.backend == TradeValidationReceiptProverBackend::Disabled {
-            return Err(TradeValidationReceiptJobError::ProverBackendDisabled);
-        }
-        Ok(())
-    }
-
     fn validate_recovered_result_availability(&self) -> Result<(), TradeValidationReceiptJobError> {
         if self.backend == TradeValidationReceiptProverBackend::Disabled {
             return Err(TradeValidationReceiptJobError::ProverBackendDisabled);
@@ -775,7 +767,7 @@ async fn process_trade_validation_receipt_job_request(
 
     let request = &envelope.content;
     validate_job_request_shape(&request)?;
-    prover_policy.validate_recovered_replay()?;
+    prover_policy.validate_shape()?;
 
     let job = processed_job_for_request(event, kind, &request_event)?;
     match processed_job_action(runtime, &job).await? {
@@ -5409,18 +5401,69 @@ mod tests {
             &worker,
             &client_for(&worker),
             &runtime,
-            &deterministic_policy(),
+            &TradeValidationReceiptProverPolicy::default(),
         )
         .await
         .expect("duplicate completed proof job");
 
-        assert!(
-            trade_validation_receipt_test_hooks()
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .published_events
-                .is_empty()
+        let hooks = trade_validation_receipt_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert!(hooks.fetch_event_by_id_results.is_empty());
+        assert!(hooks.fetch_events_results.is_empty());
+        assert!(hooks.published_events.is_empty());
+    }
+
+    #[tokio::test]
+    async fn proof_job_skips_duplicate_in_progress_replay_with_disabled_policy() {
+        let _guard = test_guard();
+        let worker = RadrootsNostrKeys::generate();
+        let requester = RadrootsNostrKeys::generate();
+        let buyer = RadrootsNostrKeys::generate();
+        let seller = RadrootsNostrKeys::generate();
+        let listing_event = listing_event(&seller);
+        let (request_event, decision_event) = signed_order_events(&buyer, &seller, &listing_event);
+        let job = job_request(
+            &requester,
+            &worker,
+            &listing_event,
+            &request_event,
+            &decision_event,
+            RadrootsSp1TradeProofMode::None,
+            None,
+            None,
         );
+        let runtime = TradeListingRuntime::new();
+        let processed = processed_job_for_test(&job);
+        assert_eq!(
+            runtime
+                .processed_jobs()
+                .claim_job(
+                    &processed,
+                    super::now_unix_ms(),
+                    super::RHI_PROCESSED_JOB_CLAIM_LEASE_MS,
+                )
+                .await
+                .expect("initial claim"),
+            RhiProcessedJobClaim::Execute
+        );
+
+        handle_trade_validation_receipt_job_request(
+            &job,
+            &worker,
+            &client_for(&worker),
+            &runtime,
+            &TradeValidationReceiptProverPolicy::default(),
+        )
+        .await
+        .expect("duplicate in-progress proof job");
+
+        let hooks = trade_validation_receipt_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert!(hooks.fetch_event_by_id_results.is_empty());
+        assert!(hooks.fetch_events_results.is_empty());
+        assert!(hooks.published_events.is_empty());
     }
 
     #[tokio::test]
