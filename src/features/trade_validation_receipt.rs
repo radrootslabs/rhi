@@ -417,17 +417,30 @@ fn validate_job_execution_policy(
     prover_policy: &TradeValidationReceiptProverPolicy,
     request: &RadrootsTradeTransitionProofRequestV1,
 ) -> Result<(), TradeValidationReceiptJobError> {
-    prover_policy.validate()?;
-    if prover_policy.backend == TradeValidationReceiptProverBackend::Disabled {
-        return Err(TradeValidationReceiptJobError::ProverBackendDisabled);
-    }
+    validate_current_job_execution_readiness(prover_policy)?;
     prover_policy.validate_request(request)
 }
 
-fn validate_recovered_replay_request_policy(
+fn validate_current_job_execution_readiness(
+    prover_policy: &TradeValidationReceiptProverPolicy,
+) -> Result<(), TradeValidationReceiptJobError> {
+    prover_policy.validate_shape()?;
+    if prover_policy.backend == TradeValidationReceiptProverBackend::Disabled {
+        return Err(TradeValidationReceiptJobError::ProverBackendDisabled);
+    }
+    if prover_policy.backend == TradeValidationReceiptProverBackend::RemoteHttpProve {
+        if let Some(remote_http) = prover_policy.remote_http.as_ref() {
+            remote_http_auth_token(remote_http)?;
+        }
+    }
+    prover_policy.validate_build_availability()
+}
+
+fn validate_recovered_replay_execution_policy(
     prover_policy: &TradeValidationReceiptProverPolicy,
     request: &RadrootsTradeTransitionProofRequestV1,
 ) -> Result<(), TradeValidationReceiptJobError> {
+    validate_current_job_execution_readiness(prover_policy)?;
     prover_policy
         .validate_request(request)
         .map_err(recovered_replay_request_policy_error)
@@ -773,7 +786,7 @@ async fn process_trade_validation_receipt_job_request(
             result_event_json,
             proof_metadata,
         } => {
-            validate_recovered_replay_request_policy(prover_policy, request)?;
+            validate_recovered_replay_execution_policy(prover_policy, request)?;
             let receipt_event = signed_event_from_json(receipt_event_json.as_str())?;
             if receipt_event.id.to_hex() != receipt_event_id {
                 return Err(TradeValidationReceiptJobError::DuplicateConflictingReceipt);
@@ -801,14 +814,13 @@ async fn process_trade_validation_receipt_job_request(
             receipt_event_id,
             receipt_event_json,
         } => {
-            validate_recovered_replay_request_policy(prover_policy, request)?;
+            validate_recovered_replay_execution_policy(prover_policy, request)?;
             let receipt_event = signed_event_from_json(receipt_event_json.as_str())?;
             if receipt_event.id.to_hex() != receipt_event_id {
                 return Err(TradeValidationReceiptJobError::DuplicateConflictingReceipt);
             }
             let verified_receipt =
                 verify_existing_receipt_event(&receipt_event, request, prover_policy)?;
-            validate_job_execution_policy(prover_policy, request)?;
             let published_receipt_event_id = io.publish_signed_event(receipt_event).await?;
             if published_receipt_event_id != receipt_event_id {
                 return Err(TradeValidationReceiptJobError::DuplicateConflictingReceipt);
@@ -2983,6 +2995,8 @@ mod tests {
     use std::sync::{Mutex, MutexGuard};
 
     static TEST_LOCK: Mutex<()> = Mutex::new(());
+    const RECOVERED_RESULT_MISSING_AUTH_ENV: &str =
+        "RHI_TEST_RECOVERED_RESULT_AUTH_TOKEN_MUST_BE_UNSET";
 
     fn test_guard() -> MutexGuard<'static, ()> {
         let guard = TEST_LOCK
@@ -3510,6 +3524,13 @@ mod tests {
     }
 
     async fn recovered_result_intent_scenario() -> RecoveredResultIntentScenario {
+        recovered_result_intent_scenario_with_stored_events(None, None).await
+    }
+
+    async fn recovered_result_intent_scenario_with_stored_events(
+        stored_receipt_event_json: Option<&str>,
+        stored_result_event_json: Option<&str>,
+    ) -> RecoveredResultIntentScenario {
         let worker = RadrootsNostrKeys::generate();
         let requester = RadrootsNostrKeys::generate();
         let buyer = RadrootsNostrKeys::generate();
@@ -3572,7 +3593,9 @@ mod tests {
             .claim_job(&processed, 1, 1)
             .await
             .expect("claim processed job");
-        let receipt_event_json = serde_json::to_string(&receipt_event).expect("receipt json");
+        let receipt_event_json = stored_receipt_event_json
+            .map(str::to_owned)
+            .unwrap_or_else(|| serde_json::to_string(&receipt_event).expect("receipt json"));
         runtime
             .processed_jobs()
             .mark_receipt_publishing(
@@ -3603,7 +3626,9 @@ mod tests {
                 proof_metadata_json: None,
             }
         );
-        let result_event_json = serde_json::to_string(&result_event).expect("result json");
+        let result_event_json = stored_result_event_json
+            .map(str::to_owned)
+            .unwrap_or_else(|| serde_json::to_string(&result_event).expect("result json"));
         runtime
             .processed_jobs()
             .mark_result_publishing(
@@ -3629,6 +3654,14 @@ mod tests {
 
     async fn recovered_sp1_result_intent_scenario(
         policy: &TradeValidationReceiptProverPolicy,
+    ) -> RecoveredResultIntentScenario {
+        recovered_sp1_result_intent_scenario_with_stored_events(policy, None, None).await
+    }
+
+    async fn recovered_sp1_result_intent_scenario_with_stored_events(
+        policy: &TradeValidationReceiptProverPolicy,
+        stored_receipt_event_json: Option<&str>,
+        stored_result_event_json: Option<&str>,
     ) -> RecoveredResultIntentScenario {
         let worker = RadrootsNostrKeys::generate();
         let requester = RadrootsNostrKeys::generate();
@@ -3684,7 +3717,9 @@ mod tests {
             .claim_job(&processed, 1, 1)
             .await
             .expect("claim processed job");
-        let receipt_event_json = serde_json::to_string(&receipt_event).expect("receipt json");
+        let receipt_event_json = stored_receipt_event_json
+            .map(str::to_owned)
+            .unwrap_or_else(|| serde_json::to_string(&receipt_event).expect("receipt json"));
         runtime
             .processed_jobs()
             .mark_receipt_publishing(
@@ -3715,7 +3750,9 @@ mod tests {
                 proof_metadata_json: Some(proof_metadata_json),
             }
         );
-        let result_event_json = serde_json::to_string(&result_event).expect("result json");
+        let result_event_json = stored_result_event_json
+            .map(str::to_owned)
+            .unwrap_or_else(|| serde_json::to_string(&result_event).expect("result json"));
         runtime
             .processed_jobs()
             .mark_result_publishing(
@@ -3873,6 +3910,16 @@ mod tests {
             expected_sp1_verifying_key_hash: Some(hash32('b')),
             remote_http: Some(remote_http_config()),
         }
+    }
+
+    fn recovered_result_missing_auth_policy() -> TradeValidationReceiptProverPolicy {
+        let mut policy = remote_http_policy();
+        let remote_http = policy.remote_http.as_mut().expect("remote config");
+        remote_http.endpoint_url = "https://example.test/prove".to_string();
+        remote_http.auth = TradeValidationReceiptRemoteHttpAuth::BearerTokenEnv {
+            env_var: RECOVERED_RESULT_MISSING_AUTH_ENV.to_string(),
+        };
+        policy
     }
 
     #[cfg(feature = "sp1_verify")]
@@ -6284,10 +6331,16 @@ mod tests {
             .await
             .expect_err(name);
 
-            assert!(matches!(
-                error,
+            match error {
                 TradeValidationReceiptJobError::RecoveredResultPolicyMismatch
-            ));
+                    if (name == "backend" && cfg!(feature = "sp1_proving"))
+                        || (name == "proof_contract" && cfg!(feature = "sp1_verify")) => {}
+                TradeValidationReceiptJobError::ProverBackendUnavailable("local_execute")
+                    if name == "backend" && !cfg!(feature = "sp1_proving") => {}
+                TradeValidationReceiptJobError::ProverBackendUnavailable("remote_http_prove")
+                    if name == "proof_contract" && !cfg!(feature = "sp1_verify") => {}
+                error => panic!("{name}: unexpected error {error:?}"),
+            }
             let hooks = trade_validation_receipt_test_hooks()
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -6313,12 +6366,7 @@ mod tests {
     #[tokio::test]
     async fn proof_job_rejects_recovered_result_intent_missing_remote_auth_before_publish() {
         let _guard = test_guard();
-        let mut current_policy = remote_http_policy();
-        let remote_http = current_policy.remote_http.as_mut().expect("remote config");
-        remote_http.endpoint_url = "https://example.test/prove".to_string();
-        remote_http.auth = TradeValidationReceiptRemoteHttpAuth::BearerTokenEnv {
-            env_var: "RHI_TEST_RECOVERED_RESULT_AUTH_TOKEN_MUST_BE_UNSET".to_string(),
-        };
+        let current_policy = recovered_result_missing_auth_policy();
         let scenario = recovered_sp1_result_intent_scenario(&current_policy).await;
 
         let error = handle_trade_validation_receipt_job_request(
@@ -6334,7 +6382,130 @@ mod tests {
         assert!(matches!(
             error,
             TradeValidationReceiptJobError::RemoteHttpAuthTokenMissing(env_var)
-                if env_var == "RHI_TEST_RECOVERED_RESULT_AUTH_TOKEN_MUST_BE_UNSET"
+                if env_var == RECOVERED_RESULT_MISSING_AUTH_ENV
+        ));
+        let hooks = trade_validation_receipt_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert_eq!(hooks.fetch_event_by_id_results.len(), 0);
+        assert!(hooks.published_events.is_empty());
+        drop(hooks);
+        assert_result_intent_preserved_after_recovered_failure(
+            &scenario.runtime,
+            &scenario.job,
+            scenario.receipt_event_id.as_str(),
+            scenario.receipt_event_json.as_str(),
+            scenario.result_event_id.as_str(),
+            scenario.result_event_json.as_str(),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn proof_job_rejects_missing_remote_auth_before_invalid_stored_result_json() {
+        let _guard = test_guard();
+        let current_policy = recovered_result_missing_auth_policy();
+        let scenario = recovered_sp1_result_intent_scenario_with_stored_events(
+            &current_policy,
+            None,
+            Some("{"),
+        )
+        .await;
+
+        let error = handle_trade_validation_receipt_job_request(
+            &scenario.job,
+            &scenario.worker,
+            &client_for(&scenario.worker),
+            &scenario.runtime,
+            &current_policy,
+        )
+        .await
+        .expect_err("missing remote auth before invalid stored result json");
+
+        assert!(matches!(
+            error,
+            TradeValidationReceiptJobError::RemoteHttpAuthTokenMissing(env_var)
+                if env_var == RECOVERED_RESULT_MISSING_AUTH_ENV
+        ));
+        let hooks = trade_validation_receipt_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert_eq!(hooks.fetch_event_by_id_results.len(), 0);
+        assert!(hooks.published_events.is_empty());
+        drop(hooks);
+        assert_result_intent_preserved_after_recovered_failure(
+            &scenario.runtime,
+            &scenario.job,
+            scenario.receipt_event_id.as_str(),
+            scenario.receipt_event_json.as_str(),
+            scenario.result_event_id.as_str(),
+            scenario.result_event_json.as_str(),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn proof_job_rejects_missing_remote_auth_before_invalid_stored_receipt_json() {
+        let _guard = test_guard();
+        let current_policy = recovered_result_missing_auth_policy();
+        let scenario = recovered_sp1_result_intent_scenario_with_stored_events(
+            &current_policy,
+            Some("{"),
+            None,
+        )
+        .await;
+
+        let error = handle_trade_validation_receipt_job_request(
+            &scenario.job,
+            &scenario.worker,
+            &client_for(&scenario.worker),
+            &scenario.runtime,
+            &current_policy,
+        )
+        .await
+        .expect_err("missing remote auth before invalid stored receipt json");
+
+        assert!(matches!(
+            error,
+            TradeValidationReceiptJobError::RemoteHttpAuthTokenMissing(env_var)
+                if env_var == RECOVERED_RESULT_MISSING_AUTH_ENV
+        ));
+        let hooks = trade_validation_receipt_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert_eq!(hooks.fetch_event_by_id_results.len(), 0);
+        assert!(hooks.published_events.is_empty());
+        drop(hooks);
+        assert_result_intent_preserved_after_recovered_failure(
+            &scenario.runtime,
+            &scenario.job,
+            scenario.receipt_event_id.as_str(),
+            scenario.receipt_event_json.as_str(),
+            scenario.result_event_id.as_str(),
+            scenario.result_event_json.as_str(),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn proof_job_rejects_recovered_result_intent_disabled_policy_before_stored_corruption() {
+        let _guard = test_guard();
+        let current_policy = TradeValidationReceiptProverPolicy::disabled();
+        let scenario = recovered_result_intent_scenario_with_stored_events(None, Some("{")).await;
+
+        let error = handle_trade_validation_receipt_job_request(
+            &scenario.job,
+            &scenario.worker,
+            &client_for(&scenario.worker),
+            &scenario.runtime,
+            &current_policy,
+        )
+        .await
+        .expect_err("disabled current policy before stored corruption");
+
+        assert!(matches!(
+            error,
+            TradeValidationReceiptJobError::ProverBackendDisabled
         ));
         let hooks = trade_validation_receipt_test_hooks()
             .lock()
