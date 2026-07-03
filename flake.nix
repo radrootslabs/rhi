@@ -109,7 +109,7 @@
           check = mkApp "check" {
             text = ''
               cargo metadata --format-version 1 --no-deps
-              cargo check
+              cargo check --workspace --all-targets
             '';
           };
           coverage-report = mkApp "coverage-report" {
