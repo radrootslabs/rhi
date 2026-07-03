@@ -399,9 +399,7 @@ fn remote_http_auth_token(
         TradeValidationReceiptRemoteHttpAuth::NoAuth => Ok(None),
         TradeValidationReceiptRemoteHttpAuth::BearerTokenEnv { env_var } => {
             let env_var = validate_rhi_secret_env_var_name(env_var)?;
-            let value = std::env::var(env_var).map_err(|_| {
-                TradeValidationReceiptJobError::RemoteHttpAuthTokenMissing(env_var.to_owned())
-            })?;
+            let value = remote_http_auth_env_var_value(env_var)?;
             let token = value.trim();
             if token.is_empty() {
                 return Err(TradeValidationReceiptJobError::RemoteHttpAuthTokenMissing(
@@ -411,6 +409,15 @@ fn remote_http_auth_token(
             Ok(Some(token.to_owned()))
         }
     }
+}
+
+fn remote_http_auth_env_var_value(env_var: &str) -> Result<String, TradeValidationReceiptJobError> {
+    #[cfg(test)]
+    if let Some(value) = remote_http_auth_env_var_value_test_hook(env_var) {
+        return value;
+    }
+    std::env::var(env_var)
+        .map_err(|_| TradeValidationReceiptJobError::RemoteHttpAuthTokenMissing(env_var.to_owned()))
 }
 
 fn validate_job_execution_policy(
@@ -2786,6 +2793,7 @@ struct TradeValidationReceiptTestHooks {
         std::collections::VecDeque<Result<RadrootsNostrEvent, TradeValidationReceiptJobError>>,
     fetch_events_results:
         std::collections::VecDeque<Result<Vec<RadrootsNostrEvent>, TradeValidationReceiptJobError>>,
+    remote_http_auth_env_values: std::collections::BTreeMap<String, Option<String>>,
     publish_event_results:
         std::collections::VecDeque<Result<String, TradeValidationReceiptJobError>>,
     #[cfg(feature = "sp1_verify")]
@@ -2810,6 +2818,23 @@ fn trade_validation_receipt_test_hooks()
 -> &'static std::sync::Mutex<TradeValidationReceiptTestHooks> {
     TRADE_VALIDATION_RECEIPT_TEST_HOOKS
         .get_or_init(|| std::sync::Mutex::new(TradeValidationReceiptTestHooks::default()))
+}
+
+#[cfg(test)]
+fn remote_http_auth_env_var_value_test_hook(
+    env_var: &str,
+) -> Option<Result<String, TradeValidationReceiptJobError>> {
+    trade_validation_receipt_test_hooks()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remote_http_auth_env_values
+        .get(env_var)
+        .map(|value| match value {
+            Some(value) => Ok(value.clone()),
+            None => Err(TradeValidationReceiptJobError::RemoteHttpAuthTokenMissing(
+                env_var.to_owned(),
+            )),
+        })
 }
 
 #[cfg(test)]
@@ -3922,6 +3947,22 @@ mod tests {
         policy
     }
 
+    fn set_remote_http_auth_env_missing(env_var: &str) {
+        trade_validation_receipt_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remote_http_auth_env_values
+            .insert(env_var.to_string(), None);
+    }
+
+    fn set_remote_http_auth_env_value(env_var: &str, value: &str) {
+        trade_validation_receipt_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remote_http_auth_env_values
+            .insert(env_var.to_string(), Some(value.to_string()));
+    }
+
     #[cfg(feature = "sp1_verify")]
     fn remote_response(
         status: RadrootsSp1TradeRemoteProverStatus,
@@ -4284,6 +4325,38 @@ mod tests {
             env_var: "RADROOTS_TEST_REMOTE_HTTP_TOKEN".to_string(),
         };
 
+        assert!(matches!(
+            policy.validate(),
+            Err(TradeValidationReceiptJobError::RemoteHttpInvalidConfig(
+                "auth.env_var"
+            ))
+        ));
+    }
+
+    #[test]
+    fn remote_http_auth_test_hook_controls_process_env_state() {
+        let _guard = test_guard();
+        let mut policy = recovered_result_missing_auth_policy();
+        set_remote_http_auth_env_missing(RECOVERED_RESULT_MISSING_AUTH_ENV);
+
+        assert!(matches!(
+            policy.validate(),
+            Err(TradeValidationReceiptJobError::RemoteHttpAuthTokenMissing(env_var))
+                if env_var == RECOVERED_RESULT_MISSING_AUTH_ENV
+        ));
+
+        set_remote_http_auth_env_value(RECOVERED_RESULT_MISSING_AUTH_ENV, " test-token ");
+        match policy.validate() {
+            Ok(()) if cfg!(feature = "sp1_verify") => {}
+            Err(TradeValidationReceiptJobError::ProverBackendUnavailable("remote_http_prove"))
+                if !cfg!(feature = "sp1_verify") => {}
+            result => panic!("unexpected remote auth validation result: {result:?}"),
+        }
+
+        policy.remote_http.as_mut().expect("remote config").auth =
+            TradeValidationReceiptRemoteHttpAuth::BearerTokenEnv {
+                env_var: "RADROOTS_TEST_REMOTE_HTTP_TOKEN".to_string(),
+            };
         assert!(matches!(
             policy.validate(),
             Err(TradeValidationReceiptJobError::RemoteHttpInvalidConfig(
@@ -6367,6 +6440,7 @@ mod tests {
     async fn proof_job_rejects_recovered_result_intent_missing_remote_auth_before_publish() {
         let _guard = test_guard();
         let current_policy = recovered_result_missing_auth_policy();
+        set_remote_http_auth_env_missing(RECOVERED_RESULT_MISSING_AUTH_ENV);
         let scenario = recovered_sp1_result_intent_scenario(&current_policy).await;
 
         let error = handle_trade_validation_receipt_job_request(
@@ -6405,6 +6479,7 @@ mod tests {
     async fn proof_job_rejects_missing_remote_auth_before_invalid_stored_result_json() {
         let _guard = test_guard();
         let current_policy = recovered_result_missing_auth_policy();
+        set_remote_http_auth_env_missing(RECOVERED_RESULT_MISSING_AUTH_ENV);
         let scenario = recovered_sp1_result_intent_scenario_with_stored_events(
             &current_policy,
             None,
@@ -6448,6 +6523,7 @@ mod tests {
     async fn proof_job_rejects_missing_remote_auth_before_invalid_stored_receipt_json() {
         let _guard = test_guard();
         let current_policy = recovered_result_missing_auth_policy();
+        set_remote_http_auth_env_missing(RECOVERED_RESULT_MISSING_AUTH_ENV);
         let scenario = recovered_sp1_result_intent_scenario_with_stored_events(
             &current_policy,
             Some("{"),
