@@ -1100,6 +1100,7 @@ async fn processed_job_action(
     {
         RhiProcessedJobClaim::Execute => Ok(ProcessedJobAction::Execute),
         RhiProcessedJobClaim::InProgress => Ok(ProcessedJobAction::InProgress),
+        RhiProcessedJobClaim::Failed { .. } => Ok(ProcessedJobAction::Completed),
         RhiProcessedJobClaim::RecoverResult {
             receipt_event_id,
             receipt_event_json,
@@ -1151,9 +1152,9 @@ async fn claim_job_result_publication(
                 proof_metadata: proof_metadata_from_json(proof_metadata_json.as_deref())?,
             }))
         }
-        RhiProcessedJobClaim::InProgress | RhiProcessedJobClaim::Completed => {
-            Ok(ResultPublicationAction::Skip)
-        }
+        RhiProcessedJobClaim::InProgress
+        | RhiProcessedJobClaim::Completed
+        | RhiProcessedJobClaim::Failed { .. } => Ok(ResultPublicationAction::Skip),
         RhiProcessedJobClaim::Execute | RhiProcessedJobClaim::RecoverReceipt { .. } => {
             Err(TradeValidationReceiptJobError::InvalidJobRequest)
         }

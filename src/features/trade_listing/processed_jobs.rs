@@ -9,7 +9,7 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::OnceCell;
 
-const RHI_PROCESSED_JOB_SCHEMA_VERSION: i64 = 2;
+const RHI_PROCESSED_JOB_SCHEMA_VERSION: i64 = 3;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -75,6 +75,9 @@ pub struct RhiProcessedJobState {
 pub enum RhiProcessedJobClaim {
     Execute,
     InProgress,
+    Failed {
+        error_code: String,
+    },
     RecoverReceipt {
         receipt_event_id: String,
         receipt_event_json: String,
@@ -422,7 +425,81 @@ async fn apply_schema(pool: &SqlitePool) -> Result<(), RhiProcessedJobStoreError
             completed_timestamp INTEGER,
             claim_expires_at_ms INTEGER,
             inserted_at_ms INTEGER NOT NULL,
-            updated_at_ms INTEGER NOT NULL
+            updated_at_ms INTEGER NOT NULL,
+            CHECK (
+                (receipt_event_id IS NULL AND receipt_event_json IS NULL)
+                OR (receipt_event_id IS NOT NULL AND receipt_event_json IS NOT NULL)
+            ),
+            CHECK (
+                (result_event_id IS NULL AND result_event_json IS NULL)
+                OR (result_event_id IS NOT NULL AND result_event_json IS NOT NULL)
+            ),
+            CHECK (
+                proof_metadata_json IS NULL
+                OR receipt_event_id IS NOT NULL
+            ),
+            CHECK (
+                (
+                    status = 'processing'
+                    AND receipt_event_id IS NULL
+                    AND receipt_event_json IS NULL
+                    AND result_event_id IS NULL
+                    AND result_event_json IS NULL
+                    AND proof_metadata_json IS NULL
+                    AND error_code IS NULL
+                    AND completed_timestamp IS NULL
+                    AND claim_expires_at_ms IS NOT NULL
+                )
+                OR (
+                    status = 'receipt_publishing'
+                    AND receipt_event_id IS NOT NULL
+                    AND receipt_event_json IS NOT NULL
+                    AND result_event_id IS NULL
+                    AND result_event_json IS NULL
+                    AND error_code IS NULL
+                    AND completed_timestamp IS NULL
+                    AND claim_expires_at_ms IS NOT NULL
+                )
+                OR (
+                    status = 'receipt_published'
+                    AND receipt_event_id IS NOT NULL
+                    AND receipt_event_json IS NOT NULL
+                    AND result_event_id IS NULL
+                    AND result_event_json IS NULL
+                    AND error_code IS NULL
+                    AND completed_timestamp IS NULL
+                    AND claim_expires_at_ms IS NULL
+                )
+                OR (
+                    status = 'result_publishing'
+                    AND receipt_event_id IS NOT NULL
+                    AND receipt_event_json IS NOT NULL
+                    AND error_code IS NULL
+                    AND completed_timestamp IS NULL
+                    AND claim_expires_at_ms IS NOT NULL
+                )
+                OR (
+                    status = 'completed'
+                    AND receipt_event_id IS NOT NULL
+                    AND receipt_event_json IS NOT NULL
+                    AND result_event_id IS NOT NULL
+                    AND result_event_json IS NOT NULL
+                    AND error_code IS NULL
+                    AND completed_timestamp IS NOT NULL
+                    AND claim_expires_at_ms IS NULL
+                )
+                OR (
+                    status = 'failed'
+                    AND receipt_event_id IS NULL
+                    AND receipt_event_json IS NULL
+                    AND result_event_id IS NULL
+                    AND result_event_json IS NULL
+                    AND proof_metadata_json IS NULL
+                    AND error_code IS NOT NULL
+                    AND completed_timestamp IS NOT NULL
+                    AND claim_expires_at_ms IS NULL
+                )
+            )
         )",
     )
     .execute(pool)
@@ -503,7 +580,7 @@ async fn select_job(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     request_id: &str,
 ) -> Result<Option<RhiProcessedJobState>, RhiProcessedJobStoreError> {
-    sqlx::query(
+    let job = sqlx::query(
         "SELECT
             request_id,
             request_kind,
@@ -525,7 +602,11 @@ async fn select_job(
     .fetch_optional(&mut **tx)
     .await?
     .map(job_from_row)
-    .transpose()
+    .transpose()?;
+    if let Some(job) = job.as_ref() {
+        validate_stored_job_state(job)?;
+    }
+    Ok(job)
 }
 
 async fn claim_for_existing_job(
@@ -536,6 +617,13 @@ async fn claim_for_existing_job(
 ) -> Result<RhiProcessedJobClaim, RhiProcessedJobStoreError> {
     if existing.status == RhiProcessedJobStatus::Completed && existing.result_event_id.is_some() {
         return Ok(RhiProcessedJobClaim::Completed);
+    }
+    if existing.status == RhiProcessedJobStatus::Failed {
+        return Ok(RhiProcessedJobClaim::Failed {
+            error_code: existing.error_code.clone().ok_or(
+                RhiProcessedJobStoreError::InvalidStoredValue("failed_error_code"),
+            )?,
+        });
     }
     if let Some(receipt_event_id) = existing.receipt_event_id.clone() {
         let current_claim_expires_at_ms =
@@ -760,6 +848,147 @@ fn ensure_processed_job_matches(
     Ok(())
 }
 
+fn validate_stored_job_state(job: &RhiProcessedJobState) -> Result<(), RhiProcessedJobStoreError> {
+    validate_stored_event_pair(
+        job.receipt_event_id.as_ref(),
+        job.receipt_event_json.as_ref(),
+        "receipt_event",
+    )?;
+    validate_stored_event_pair(
+        job.result_event_id.as_ref(),
+        job.result_event_json.as_ref(),
+        "result_event",
+    )?;
+    if job.proof_metadata_json.is_some() && job.receipt_event_id.is_none() {
+        return Err(RhiProcessedJobStoreError::InvalidStoredValue(
+            "proof_metadata_without_receipt",
+        ));
+    }
+    match job.status {
+        RhiProcessedJobStatus::Processing => {
+            validate_no_receipt(job)?;
+            validate_no_result(job)?;
+            validate_no_terminal_fields(job)?;
+            if job.proof_metadata_json.is_some() {
+                return Err(RhiProcessedJobStoreError::InvalidStoredValue(
+                    "processing_proof_metadata",
+                ));
+            }
+        }
+        RhiProcessedJobStatus::ReceiptPublishing | RhiProcessedJobStatus::ReceiptPublished => {
+            validate_receipt(job)?;
+            validate_no_result(job)?;
+            validate_no_terminal_fields(job)?;
+        }
+        RhiProcessedJobStatus::ResultPublishing => {
+            validate_receipt(job)?;
+            validate_no_terminal_fields(job)?;
+        }
+        RhiProcessedJobStatus::Completed => {
+            validate_receipt(job)?;
+            validate_result(job)?;
+            if job.error_code.is_some() {
+                return Err(RhiProcessedJobStoreError::InvalidStoredValue(
+                    "completed_error_code",
+                ));
+            }
+            if job.completed_timestamp.is_none() {
+                return Err(RhiProcessedJobStoreError::InvalidStoredValue(
+                    "completed_timestamp",
+                ));
+            }
+        }
+        RhiProcessedJobStatus::Failed => {
+            validate_no_receipt(job)?;
+            validate_no_result(job)?;
+            if job.proof_metadata_json.is_some() {
+                return Err(RhiProcessedJobStoreError::InvalidStoredValue(
+                    "failed_proof_metadata",
+                ));
+            }
+            if job.error_code.is_none() {
+                return Err(RhiProcessedJobStoreError::InvalidStoredValue(
+                    "failed_error_code",
+                ));
+            }
+            if job.completed_timestamp.is_none() {
+                return Err(RhiProcessedJobStoreError::InvalidStoredValue(
+                    "failed_completed_timestamp",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_stored_event_pair(
+    event_id: Option<&String>,
+    event_json: Option<&String>,
+    field: &'static str,
+) -> Result<(), RhiProcessedJobStoreError> {
+    if event_id.is_some() == event_json.is_some() {
+        Ok(())
+    } else {
+        Err(RhiProcessedJobStoreError::InvalidStoredValue(field))
+    }
+}
+
+fn validate_receipt(job: &RhiProcessedJobState) -> Result<(), RhiProcessedJobStoreError> {
+    if job.receipt_event_id.is_some() && job.receipt_event_json.is_some() {
+        Ok(())
+    } else {
+        Err(RhiProcessedJobStoreError::InvalidStoredValue(
+            "receipt_event",
+        ))
+    }
+}
+
+fn validate_result(job: &RhiProcessedJobState) -> Result<(), RhiProcessedJobStoreError> {
+    if job.result_event_id.is_some() && job.result_event_json.is_some() {
+        Ok(())
+    } else {
+        Err(RhiProcessedJobStoreError::InvalidStoredValue(
+            "result_event",
+        ))
+    }
+}
+
+fn validate_no_receipt(job: &RhiProcessedJobState) -> Result<(), RhiProcessedJobStoreError> {
+    if job.receipt_event_id.is_none() && job.receipt_event_json.is_none() {
+        Ok(())
+    } else {
+        Err(RhiProcessedJobStoreError::InvalidStoredValue(
+            "unexpected_receipt_event",
+        ))
+    }
+}
+
+fn validate_no_result(job: &RhiProcessedJobState) -> Result<(), RhiProcessedJobStoreError> {
+    if job.result_event_id.is_none() && job.result_event_json.is_none() {
+        Ok(())
+    } else {
+        Err(RhiProcessedJobStoreError::InvalidStoredValue(
+            "unexpected_result_event",
+        ))
+    }
+}
+
+fn validate_no_terminal_fields(
+    job: &RhiProcessedJobState,
+) -> Result<(), RhiProcessedJobStoreError> {
+    if job.error_code.is_some() {
+        return Err(RhiProcessedJobStoreError::InvalidStoredValue(
+            "active_error_code",
+        ));
+    }
+    if job.completed_timestamp.is_some() {
+        return Err(RhiProcessedJobStoreError::InvalidStoredValue(
+            "active_completed_timestamp",
+        ));
+    }
+    Ok(())
+}
+
 fn ensure_receipt_matches(
     existing: &RhiProcessedJobState,
     receipt_event_id: &str,
@@ -914,6 +1143,69 @@ mod tests {
 
     fn proof_json(value: &str) -> String {
         format!(r#"{{"proof":"{value}"}}"#)
+    }
+
+    async fn disable_store_constraints(store: &RhiProcessedJobStore) {
+        sqlx::query("PRAGMA ignore_check_constraints = ON")
+            .execute(&store.pool)
+            .await
+            .expect("disable check constraints");
+    }
+
+    async fn enable_store_constraints(store: &RhiProcessedJobStore) {
+        sqlx::query("PRAGMA ignore_check_constraints = OFF")
+            .execute(&store.pool)
+            .await
+            .expect("enable check constraints");
+    }
+
+    async fn corrupt_job(store: &RhiProcessedJobStore, job: &RhiProcessedJobState, sql: &str) {
+        disable_store_constraints(store).await;
+        sqlx::query(sql)
+            .bind(job.request_id.as_str())
+            .execute(&store.pool)
+            .await
+            .expect("corrupt job");
+        enable_store_constraints(store).await;
+    }
+
+    async fn complete_job(store: &RhiProcessedJobStore, job: &RhiProcessedJobState) {
+        store.claim_job(job, 10, 100).await.expect("claim");
+        store
+            .mark_receipt_publishing(
+                job,
+                "receipt-complete",
+                receipt_json("complete").as_str(),
+                None,
+                20,
+            )
+            .await
+            .expect("receipt intent");
+        store
+            .mark_receipt_published(job, "receipt-complete", 30)
+            .await
+            .expect("receipt published");
+        store.claim_job(job, 131, 100).await.expect("result claim");
+        store
+            .mark_result_publishing(
+                job,
+                "receipt-complete",
+                "result-complete",
+                result_json("complete").as_str(),
+                140,
+            )
+            .await
+            .expect("result intent");
+        store
+            .mark_completed(
+                job,
+                "receipt-complete",
+                "result-complete",
+                1_700_000_001,
+                150,
+            )
+            .await
+            .expect("complete");
     }
 
     #[tokio::test]
@@ -1178,20 +1470,166 @@ mod tests {
             .await
             .expect("receipt");
 
-        sqlx::query("UPDATE rhi_processed_jobs SET receipt_event_json = NULL WHERE request_id = ?")
-            .bind(job.request_id.as_str())
-            .execute(&store.pool)
-            .await
-            .expect("corrupt receipt json");
+        corrupt_job(
+            &store,
+            &job,
+            "UPDATE rhi_processed_jobs SET receipt_event_json = NULL WHERE request_id = ?",
+        )
+        .await;
 
         let error = store
             .claim_job(&job, 131, 100)
             .await
-            .expect_err("missing receipt event json");
+            .expect_err("invalid receipt event json");
         assert!(matches!(
             error,
-            RhiProcessedJobStoreError::MissingReceiptEventJson
+            RhiProcessedJobStoreError::InvalidStoredValue("receipt_event")
         ));
+    }
+
+    #[tokio::test]
+    async fn processed_job_store_rejects_malformed_completed_rows_before_claim() {
+        for (name, sql) in [
+            (
+                "completed without result id",
+                "UPDATE rhi_processed_jobs SET result_event_id = NULL WHERE request_id = ?",
+            ),
+            (
+                "completed without result json",
+                "UPDATE rhi_processed_jobs SET result_event_json = NULL WHERE request_id = ?",
+            ),
+            (
+                "completed with receipt only",
+                "UPDATE rhi_processed_jobs SET result_event_id = NULL, result_event_json = NULL WHERE request_id = ?",
+            ),
+        ] {
+            let store = RhiProcessedJobStore::open_memory().expect("store");
+            let job = job(name);
+            complete_job(&store, &job).await;
+            corrupt_job(&store, &job, sql).await;
+
+            let error = store
+                .claim_job(&job, 200, 100)
+                .await
+                .expect_err("invalid completed row");
+            assert!(
+                matches!(
+                    error,
+                    RhiProcessedJobStoreError::InvalidStoredValue("result_event")
+                ),
+                "{name}: {error:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn processed_job_store_rejects_malformed_failed_rows_before_claim() {
+        let store = RhiProcessedJobStore::open_memory().expect("store");
+        let missing_error = job("failed-without-error");
+        store
+            .claim_job(&missing_error, 10, 100)
+            .await
+            .expect("claim");
+        corrupt_job(
+            &store,
+            &missing_error,
+            "UPDATE rhi_processed_jobs
+                SET status = 'failed',
+                    completed_timestamp = 1700000001,
+                    claim_expires_at_ms = NULL
+                WHERE request_id = ?",
+        )
+        .await;
+        let error = store
+            .claim_job(&missing_error, 200, 100)
+            .await
+            .expect_err("failed row without error");
+        assert!(matches!(
+            error,
+            RhiProcessedJobStoreError::InvalidStoredValue("failed_error_code")
+        ));
+
+        let partial = job("failed-with-partial-evidence");
+        store.claim_job(&partial, 10, 100).await.expect("claim");
+        store
+            .mark_receipt_publishing(
+                &partial,
+                "receipt-partial",
+                receipt_json("partial").as_str(),
+                None,
+                20,
+            )
+            .await
+            .expect("receipt intent");
+        store
+            .mark_receipt_published(&partial, "receipt-partial", 30)
+            .await
+            .expect("receipt published");
+        corrupt_job(
+            &store,
+            &partial,
+            "UPDATE rhi_processed_jobs
+                SET status = 'failed',
+                    error_code = 'proof_failed',
+                    completed_timestamp = 1700000001,
+                    claim_expires_at_ms = NULL
+                WHERE request_id = ?",
+        )
+        .await;
+        let error = store
+            .claim_job(&partial, 200, 100)
+            .await
+            .expect_err("failed row with partial evidence");
+        assert!(matches!(
+            error,
+            RhiProcessedJobStoreError::InvalidStoredValue("unexpected_receipt_event")
+        ));
+    }
+
+    #[tokio::test]
+    async fn processed_job_store_treats_failed_rows_as_terminal() {
+        let store = RhiProcessedJobStore::open_memory().expect("store");
+        let job = job("failed-terminal");
+        store.claim_job(&job, 10, 100).await.expect("claim");
+        sqlx::query(
+            "UPDATE rhi_processed_jobs
+                SET status = 'failed',
+                    error_code = 'proof_failed',
+                    completed_timestamp = 1700000001,
+                    claim_expires_at_ms = NULL
+                WHERE request_id = ?",
+        )
+        .bind(job.request_id.as_str())
+        .execute(&store.pool)
+        .await
+        .expect("valid failed row");
+
+        assert_eq!(
+            store
+                .claim_job(&job, 200, 100)
+                .await
+                .expect("terminal failed claim"),
+            RhiProcessedJobClaim::Failed {
+                error_code: "proof_failed".to_owned()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn processed_job_store_schema_rejects_malformed_completed_rows() {
+        let store = RhiProcessedJobStore::open_memory().expect("store");
+        let job = job("completed-schema-check");
+        complete_job(&store, &job).await;
+
+        let error = sqlx::query(
+            "UPDATE rhi_processed_jobs SET result_event_json = NULL WHERE request_id = ?",
+        )
+        .bind(job.request_id.as_str())
+        .execute(&store.pool)
+        .await
+        .expect_err("schema check rejects malformed completed row");
+
+        assert!(matches!(error, sqlx::Error::Database(_)));
     }
 
     #[tokio::test]
@@ -1258,7 +1696,7 @@ mod tests {
         .execute(&pool)
         .await
         .expect("schema table");
-        sqlx::query("INSERT INTO rhi_processed_job_schema(schema_id, version) VALUES (1, 1)")
+        sqlx::query("INSERT INTO rhi_processed_job_schema(schema_id, version) VALUES (1, 2)")
             .execute(&pool)
             .await
             .expect("schema version");
@@ -1269,7 +1707,7 @@ mod tests {
             .expect_err("old schema rejected");
         assert!(matches!(
             error,
-            RhiProcessedJobStoreError::UnsupportedSchemaVersion(1)
+            RhiProcessedJobStoreError::UnsupportedSchemaVersion(2)
         ));
     }
 }
