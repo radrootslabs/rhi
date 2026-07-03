@@ -195,13 +195,6 @@ impl TradeValidationReceiptProverPolicy {
         Ok(())
     }
 
-    fn validate_recovered_result_availability(&self) -> Result<(), TradeValidationReceiptJobError> {
-        if self.backend == TradeValidationReceiptProverBackend::Disabled {
-            return Err(TradeValidationReceiptJobError::ProverBackendDisabled);
-        }
-        self.validate_build_availability()
-    }
-
     fn validate_shape(&self) -> Result<(), TradeValidationReceiptJobError> {
         validate_optional_hash32(&self.expected_sp1_program_hash)?;
         validate_optional_hash32(&self.expected_sp1_verifying_key_hash)?;
@@ -1431,7 +1424,7 @@ async fn publish_result_and_complete(
             &verified_receipt,
             prover_policy,
         )?;
-        prover_policy.validate_recovered_result_availability()?;
+        validate_job_execution_policy(prover_policy, &envelope.content)?;
         let result_event_id = result_event.id.to_hex();
         if claimed_result_event_id
             .as_ref()
@@ -3362,11 +3355,12 @@ mod tests {
         .expect("processed job")
     }
 
-    fn signed_result_event_for_test(
+    fn signed_result_event_with_metadata_for_test(
         worker: &RadrootsNostrKeys,
         job: &RadrootsNostrEvent,
         receipt_event: &RadrootsNostrEvent,
         policy: &TradeValidationReceiptProverPolicy,
+        proof_metadata: Option<&super::TradeValidationReceiptResultProofMetadata>,
     ) -> RadrootsNostrEvent {
         let request_event = radroots_event_from_nostr(job);
         let envelope = parse_transition_proof_request_event(&request_event).expect("envelope");
@@ -3382,7 +3376,7 @@ mod tests {
             receipt_event_id.as_str(),
             verified_receipt,
             policy,
-            None,
+            proof_metadata,
         )
         .expect("result payload");
         let result_content = serde_json::to_string(&result).expect("result json");
@@ -3397,6 +3391,15 @@ mod tests {
             Some(job.created_at.as_secs()),
         )
         .expect("signed result")
+    }
+
+    fn signed_result_event_for_test(
+        worker: &RadrootsNostrKeys,
+        job: &RadrootsNostrEvent,
+        receipt_event: &RadrootsNostrEvent,
+        policy: &TradeValidationReceiptProverPolicy,
+    ) -> RadrootsNostrEvent {
+        signed_result_event_with_metadata_for_test(worker, job, receipt_event, policy, None)
     }
 
     fn signed_result_event_with_payload_field_for_test(
@@ -3493,6 +3496,17 @@ mod tests {
         receipt_event_json: String,
         result_event_id: String,
         result_event_json: String,
+    }
+
+    fn sp1_result_proof_metadata(
+        public_values_hash: String,
+    ) -> super::TradeValidationReceiptResultProofMetadata {
+        super::TradeValidationReceiptResultProofMetadata {
+            cryptographic_proof_verified: true,
+            proof_generated: true,
+            sp1_execute_checked: true,
+            sp1_execute_public_values_hash: Some(public_values_hash),
+        }
     }
 
     async fn recovered_result_intent_scenario() -> RecoveredResultIntentScenario {
@@ -3613,6 +3627,118 @@ mod tests {
         }
     }
 
+    async fn recovered_sp1_result_intent_scenario(
+        policy: &TradeValidationReceiptProverPolicy,
+    ) -> RecoveredResultIntentScenario {
+        let worker = RadrootsNostrKeys::generate();
+        let requester = RadrootsNostrKeys::generate();
+        let buyer = RadrootsNostrKeys::generate();
+        let seller = RadrootsNostrKeys::generate();
+        let listing_event = listing_event(&seller);
+        let (request_event, decision_event) = signed_order_events(&buyer, &seller, &listing_event);
+        let job = job_request(
+            &requester,
+            &worker,
+            &listing_event,
+            &request_event,
+            &decision_event,
+            policy.proof_mode,
+            policy.expected_sp1_program_hash.clone(),
+            policy.expected_sp1_verifying_key_hash.clone(),
+        );
+        let request_event = radroots_event_from_nostr(&job);
+        let envelope = parse_transition_proof_request_event(&request_event).expect("envelope");
+        let verified_receipt = verified_receipt_for_payload(
+            &envelope.content,
+            RadrootsValidationReceiptProofSystem::Sp1Core,
+        );
+        let proof_metadata =
+            sp1_result_proof_metadata(verified_receipt.receipt.public_values_hash.clone());
+        let proof_metadata_json =
+            serde_json::to_string(&proof_metadata).expect("proof metadata json");
+        let receipt_parts = super::validation_receipt_event_build(
+            envelope.content.request.order_id.as_str(),
+            &verified_receipt.receipt,
+        )
+        .expect("receipt parts");
+        let receipt_event = super::signed_event_from_parts(
+            &worker,
+            receipt_parts.kind,
+            receipt_parts.content,
+            receipt_parts.tags,
+            Some(job.created_at.as_secs()),
+        )
+        .expect("receipt event");
+        let result_event = signed_result_event_with_metadata_for_test(
+            &worker,
+            &job,
+            &receipt_event,
+            policy,
+            Some(&proof_metadata),
+        );
+        let result_event_id = result_event.id.to_hex();
+        let runtime = TradeListingRuntime::new();
+        let processed = processed_job_for_test(&job);
+        runtime
+            .processed_jobs()
+            .claim_job(&processed, 1, 1)
+            .await
+            .expect("claim processed job");
+        let receipt_event_json = serde_json::to_string(&receipt_event).expect("receipt json");
+        runtime
+            .processed_jobs()
+            .mark_receipt_publishing(
+                &processed,
+                receipt_event.id.to_hex().as_str(),
+                receipt_event_json.as_str(),
+                Some(proof_metadata_json.as_str()),
+                2,
+            )
+            .await
+            .expect("record receipt intent");
+        runtime
+            .processed_jobs()
+            .mark_receipt_published(&processed, receipt_event.id.to_hex().as_str(), 3)
+            .await
+            .expect("record receipt");
+        assert_eq!(
+            runtime
+                .processed_jobs()
+                .claim_job(&processed, 3, 1)
+                .await
+                .expect("claim result"),
+            RhiProcessedJobClaim::RecoverResult {
+                receipt_event_id: receipt_event.id.to_hex(),
+                receipt_event_json: receipt_event_json.clone(),
+                result_event_id: None,
+                result_event_json: None,
+                proof_metadata_json: Some(proof_metadata_json),
+            }
+        );
+        let result_event_json = serde_json::to_string(&result_event).expect("result json");
+        runtime
+            .processed_jobs()
+            .mark_result_publishing(
+                &processed,
+                receipt_event.id.to_hex().as_str(),
+                result_event_id.as_str(),
+                result_event_json.as_str(),
+                4,
+            )
+            .await
+            .expect("record result intent");
+
+        RecoveredResultIntentScenario {
+            worker,
+            job,
+            runtime,
+            receipt_event_id: receipt_event.id.to_hex(),
+            receipt_event_json,
+            result_event_id,
+            result_event_json,
+        }
+    }
+
     fn set_result_json_field(
         value: &mut serde_json::Value,
         field: &str,
@@ -3663,17 +3789,20 @@ mod tests {
             receipt: RadrootsTradeValidationReceipt {
                 changed_records_root: hash32('4'),
                 domain: "radroots.receipt".to_string(),
-                error_bitmap: "0x00".to_string(),
+                error_bitmap: "0x00000000000000000000000000000000".to_string(),
                 event_set_root: event_set_root.clone(),
                 new_state_root: reducer_output_root.clone(),
                 previous_state_root: hash32('5'),
                 proof: RadrootsValidationReceiptProof {
                     inline_proof_base64: None,
                     mode: Some("core".to_string()),
-                    program_hash: None,
-                    proof_reference: None,
+                    program_hash: request.sp1_program_hash.clone(),
+                    proof_reference: request
+                        .sp1_program_hash
+                        .as_ref()
+                        .map(|_| format!("radroots-proof://sha256/{}", "1".repeat(64))),
                     system: proof_system,
-                    verifying_key_hash: None,
+                    verifying_key_hash: request.sp1_verifying_key_hash.clone(),
                 },
                 public_values_hash: public_values_hash.clone(),
                 receipt_type: RadrootsValidationReceiptType::TradeTransition,
@@ -6179,6 +6308,49 @@ mod tests {
                 .unwrap_or_else(std::sync::PoisonError::into_inner) =
                 TradeValidationReceiptTestHooks::default();
         }
+    }
+
+    #[tokio::test]
+    async fn proof_job_rejects_recovered_result_intent_missing_remote_auth_before_publish() {
+        let _guard = test_guard();
+        let mut current_policy = remote_http_policy();
+        let remote_http = current_policy.remote_http.as_mut().expect("remote config");
+        remote_http.endpoint_url = "https://example.test/prove".to_string();
+        remote_http.auth = TradeValidationReceiptRemoteHttpAuth::BearerTokenEnv {
+            env_var: "RHI_TEST_RECOVERED_RESULT_AUTH_TOKEN_MUST_BE_UNSET".to_string(),
+        };
+        let scenario = recovered_sp1_result_intent_scenario(&current_policy).await;
+
+        let error = handle_trade_validation_receipt_job_request(
+            &scenario.job,
+            &scenario.worker,
+            &client_for(&scenario.worker),
+            &scenario.runtime,
+            &current_policy,
+        )
+        .await
+        .expect_err("missing recovered result remote auth");
+
+        assert!(matches!(
+            error,
+            TradeValidationReceiptJobError::RemoteHttpAuthTokenMissing(env_var)
+                if env_var == "RHI_TEST_RECOVERED_RESULT_AUTH_TOKEN_MUST_BE_UNSET"
+        ));
+        let hooks = trade_validation_receipt_test_hooks()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert_eq!(hooks.fetch_event_by_id_results.len(), 0);
+        assert!(hooks.published_events.is_empty());
+        drop(hooks);
+        assert_result_intent_preserved_after_recovered_failure(
+            &scenario.runtime,
+            &scenario.job,
+            scenario.receipt_event_id.as_str(),
+            scenario.receipt_event_json.as_str(),
+            scenario.result_event_id.as_str(),
+            scenario.result_event_json.as_str(),
+        )
+        .await;
     }
 
     #[tokio::test]
