@@ -340,7 +340,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn bootstrap_presence_fallback_path_is_callable() {
+    async fn bootstrap_presence_application_handler_path_is_callable() {
         let _guard = test_guard();
         let identity_path = unique_identity_path("bootstrap");
         let identity = crate::identity_storage::load_service_identity(Some(&identity_path), true)

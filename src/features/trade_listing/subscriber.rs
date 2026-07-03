@@ -445,7 +445,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn subscriber_io_wrappers_cover_fallback_and_hook_paths() {
+    async fn subscriber_io_wrappers_cover_direct_and_hook_paths() {
         let _guard = test_guard().await;
         let keys = RadrootsNostrKeys::generate();
         let client = RadrootsNostrClient::new(keys.clone());
