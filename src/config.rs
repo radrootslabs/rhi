@@ -299,7 +299,7 @@ mod tests {
         RadrootsHostEnvironment, RadrootsPathOverrides, RadrootsPathProfile, RadrootsPathResolver,
         RadrootsPlatform, RadrootsRuntimeNamespace,
     };
-    use radroots_sp1_host_trade::RadrootsSp1TradeProofMode;
+    use radroots_trade_sp1_host::RadrootsSp1TradeProofMode;
     use std::path::PathBuf;
 
     fn linux_resolver() -> RadrootsPathResolver {

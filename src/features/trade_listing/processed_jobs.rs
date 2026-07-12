@@ -1314,7 +1314,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn processed_job_store_prevents_unexpired_duplicate_claims_and_reclaims_expired_claims() {
+    async fn processed_job_store_prevent_unexpired_duplicate_claims_and_reclaims_expired_claims() {
         let store = RhiProcessedJobStore::open_memory().expect("store");
         let job = job("request-2");
 

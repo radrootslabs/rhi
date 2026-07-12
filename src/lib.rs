@@ -13,7 +13,7 @@ pub mod rhi;
 pub use cli::Args as cli_args;
 
 use anyhow::Result;
-use radroots_events::kinds::{
+use radroots_event::kinds::{
     KIND_LISTING, KIND_LISTING_DRAFT, ORDER_EVENT_KINDS, TRADE_VALIDATION_EVENT_KINDS,
 };
 use std::time::Duration;

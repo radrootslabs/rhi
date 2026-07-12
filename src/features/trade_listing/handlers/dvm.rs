@@ -3,9 +3,9 @@
 
 use std::{sync::Arc, time::Duration};
 
-use radroots_events::farm::RadrootsFarmRef;
-use radroots_events::ids::{RadrootsEventId, RadrootsPublicKey};
-use radroots_events::kinds::{
+use radroots_event::farm::RadrootsFarmRef;
+use radroots_event::ids::{RadrootsEventId, RadrootsPublicKey};
+use radroots_event::kinds::{
     KIND_FARM, KIND_JOB_FEEDBACK, KIND_ORDER_CANCELLATION, KIND_ORDER_DECISION, KIND_ORDER_REQUEST,
     KIND_ORDER_REVISION_DECISION, KIND_ORDER_REVISION_PROPOSAL,
     KIND_TRADE_LISTING_VALIDATION_REQUEST, KIND_TRADE_LISTING_VALIDATION_RESULT,
@@ -13,14 +13,12 @@ use radroots_events::kinds::{
     KIND_TRADE_VALIDATION_RECEIPT, is_listing_kind, is_order_event_kind,
     is_trade_validation_service_event_kind,
 };
-use radroots_events::trade_validation::{
+use radroots_event::trade_validation::{
     RadrootsTradeValidationListingError as TradeListingValidationError,
     RadrootsTradeValidationListingRequest as TradeListingValidateRequest,
     RadrootsTradeValidationListingResult as TradeListingValidateResult,
 };
-use radroots_events_codec::order::{
-    RadrootsOrderEnvelopeParseError, parse_order_listing_event_tag,
-};
+use radroots_event_codec::order::{RadrootsOrderEnvelopeParseError, parse_order_listing_event_tag};
 use radroots_nostr::prelude::{
     RadrootsNostrClient, RadrootsNostrEvent, RadrootsNostrEventBuilder, RadrootsNostrFilter,
     RadrootsNostrKeys, RadrootsNostrKind, RadrootsNostrTag, radroots_event_from_nostr,
@@ -447,7 +445,7 @@ async fn handle_listing_validate_request(
 async fn resolve_listing_event(
     client: &RadrootsNostrClient,
     listing_addr: &str,
-    listing_event: Option<radroots_events::RadrootsNostrEventPtr>,
+    listing_event: Option<radroots_event::RadrootsEventPtr>,
 ) -> Result<Option<RadrootsNostrEvent>, TradeListingDvmError> {
     match listing_event {
         Some(ptr) => fetch_event_by_id_io(client, &ptr.id).await.map(Some),
@@ -542,7 +540,7 @@ async fn handle_order_request(
 
 async fn ensure_listing_snapshot(
     listing_addr: &str,
-    listing_event: &radroots_events::RadrootsNostrEventPtr,
+    listing_event: &radroots_event::RadrootsEventPtr,
     client: &RadrootsNostrClient,
     state: &Arc<tokio::sync::Mutex<TradeListingState>>,
 ) -> Result<String, TradeListingDvmError> {
@@ -691,8 +689,8 @@ async fn fetch_listing_by_addr(
         .kind(RadrootsNostrKind::Custom(kind))
         .author(author)
         .identifier(addr.listing_id.into_string());
-    let events = fetch_events_io(client, filter, Duration::from_secs(10)).await?;
-    Ok(events
+    let event = fetch_events_io(client, filter, Duration::from_secs(10)).await?;
+    Ok(event
         .into_iter()
         .filter(|event| event.kind == RadrootsNostrKind::Custom(kind))
         .max_by_key(|event| event.created_at))
@@ -704,8 +702,8 @@ async fn fetch_latest_event_by_kind(
     filter: RadrootsNostrFilter,
     kind: RadrootsNostrKind,
 ) -> Result<Option<RadrootsNostrEvent>, TradeListingDvmError> {
-    let events = fetch_events_io(client, filter, Duration::from_secs(10)).await?;
-    Ok(events
+    let event = fetch_events_io(client, filter, Duration::from_secs(10)).await?;
+    Ok(event
         .into_iter()
         .filter(|event| event.kind == kind)
         .max_by_key(|event| event.created_at))
@@ -818,23 +816,23 @@ mod tests {
     use radroots_core::{
         RadrootsCoreCurrency, RadrootsCoreDecimal, RadrootsCoreMoney, RadrootsCoreUnit,
     };
-    use radroots_events::RadrootsNostrEventPtr;
-    use radroots_events::farm::RadrootsFarmRef;
-    use radroots_events::ids::{
+    use radroots_event::RadrootsEventPtr;
+    use radroots_event::farm::RadrootsFarmRef;
+    use radroots_event::ids::{
         RadrootsEventId, RadrootsInventoryBinId, RadrootsListingAddress, RadrootsOrderId,
         RadrootsOrderQuoteId, RadrootsPublicKey,
     };
-    use radroots_events::kinds::{
+    use radroots_event::kinds::{
         KIND_LISTING, KIND_ORDER_REQUEST, KIND_TRADE_LISTING_VALIDATION_REQUEST,
     };
-    use radroots_events::order::{
+    use radroots_event::order::{
         RadrootsOrderCancellation, RadrootsOrderDecision, RadrootsOrderDecisionOutcome,
         RadrootsOrderEconomicItem, RadrootsOrderEconomicLine, RadrootsOrderEconomics,
         RadrootsOrderInventoryCommitment, RadrootsOrderItem, RadrootsOrderPricingBasis,
         RadrootsOrderRequest,
     };
-    use radroots_events::trade_validation::RadrootsTradeValidationListingRequest;
-    use radroots_events_codec::order::{
+    use radroots_event::trade_validation::RadrootsTradeValidationListingRequest;
+    use radroots_event_codec::order::{
         order_cancellation_event_build, order_decision_event_build, order_request_event_build,
     };
     use radroots_nostr::prelude::{
@@ -888,8 +886,8 @@ mod tests {
         RadrootsEventId::parse(event.id.to_string()).expect("event id")
     }
 
-    fn listing_event_ptr() -> RadrootsNostrEventPtr {
-        RadrootsNostrEventPtr {
+    fn listing_event_ptr() -> RadrootsEventPtr {
+        RadrootsEventPtr {
             id: listing_event_id().to_string(),
             relays: None,
         }

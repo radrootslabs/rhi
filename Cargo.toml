@@ -12,37 +12,37 @@ resolver = "2"
 
 [workspace.dependencies]
 radroots_core = { path = "../lib/crates/core" }
-radroots_events = { path = "../lib/crates/events" }
-radroots_events_codec = { path = "../lib/crates/events_codec" }
+radroots_event = { path = "../lib/crates/event" }
+radroots_event_codec = { path = "../lib/crates/event_codec" }
 radroots_identity = { path = "../lib/crates/identity" }
 radroots_log = { path = "../lib/crates/log" }
 radroots_nostr = { path = "../lib/crates/nostr" }
 radroots_runtime = { path = "../lib/crates/runtime" }
 radroots_runtime_paths = { path = "../lib/crates/runtime_paths" }
-radroots_sp1_guest_trade = { path = "../lib/crates/sp1_guest_trade" }
-radroots_sp1_host_trade = { path = "../lib/crates/sp1_host_trade" }
+radroots_trade_sp1_guest = { path = "../lib/crates/trade_sp1_guest" }
+radroots_trade_sp1_host = { path = "../lib/crates/trade_sp1_host" }
 radroots_trade = { path = "../lib/crates/trade" }
 
 [features]
 default = []
-sp1_verify = ["radroots_sp1_host_trade/sp1_verify"]
-sp1_proving = ["sp1_verify", "radroots_sp1_host_trade/sp1_proving"]
-sp1_cuda_proving = ["sp1_proving", "radroots_sp1_host_trade/sp1_cuda"]
+sp1_verify = ["radroots_trade_sp1_host/sp1_verify"]
+sp1_proving = ["sp1_verify", "radroots_trade_sp1_host/sp1_proving"]
+sp1_cuda_proving = ["sp1_proving", "radroots_trade_sp1_host/sp1_cuda"]
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 
 [dependencies]
 radroots_core = { workspace = true, features = ["std", "serde"]  }
-radroots_events = { workspace = true, features = ["serde"] }
-radroots_events_codec = { workspace = true, features = ["nostr"] }
+radroots_event = { workspace = true, features = ["serde"] }
+radroots_event_codec = { workspace = true, features = ["nostr"] }
 radroots_identity = { workspace = true }
 radroots_log = { workspace = true }
 radroots_nostr = { workspace = true, features = ["client", "codec", "events", "http"] }
 radroots_runtime = { workspace = true, features = ["cli"] }
 radroots_runtime_paths = { workspace = true }
-radroots_sp1_guest_trade = { workspace = true }
-radroots_sp1_host_trade = { workspace = true }
+radroots_trade_sp1_guest = { workspace = true }
+radroots_trade_sp1_host = { workspace = true }
 radroots_trade = { workspace = true }
 
 anyhow = { version = "1" }

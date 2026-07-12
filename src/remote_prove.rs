@@ -2,11 +2,11 @@
 #![cfg_attr(coverage_nightly, coverage(off))]
 
 use crate::cli::Command;
-use radroots_sp1_guest_trade::{
+use radroots_trade_sp1_guest::{
     RADROOTS_SP1_TRADE_ORDER_ACCEPTANCE_PROOF_TARGET, RADROOTS_SP1_TRADE_PROTOCOL_VERSION,
     RADROOTS_SP1_TRADE_REDUCER_PROGRAM_HASH, RADROOTS_SP1_TRADE_WITNESS_VERSION,
 };
-use radroots_sp1_host_trade::{
+use radroots_trade_sp1_host::{
     RADROOTS_SP1_TRADE_REMOTE_PROVER_SCHEMA_VERSION, RADROOTS_SP1_TRADE_SP1_VERSION_LINE,
     RadrootsSp1TradeProofEngine, RadrootsSp1TradeProofMode, RadrootsSp1TradeRemoteProverRequest,
     RadrootsSp1TradeRemoteProverResponse, RadrootsSp1TradeRemoteProverStatus,
@@ -163,7 +163,7 @@ fn validate_request(
             return Err(rejection("invalid_hash", "expected hash field is invalid"));
         }
     }
-    let execution = radroots_sp1_host_trade::execute_order_acceptance_public_values(
+    let execution = radroots_trade_sp1_host::execute_order_acceptance_public_values(
         &request.witness,
     )
     .map_err(|_| {
@@ -190,7 +190,7 @@ async fn prove_request(
     request: RadrootsSp1TradeRemoteProverRequest,
     engine: RadrootsSp1TradeProofEngine,
 ) -> RadrootsSp1TradeRemoteProverResponse {
-    match radroots_sp1_host_trade::generate_order_acceptance_sp1_proof_with_engine(
+    match radroots_trade_sp1_host::generate_order_acceptance_sp1_proof_with_engine(
         &request.witness,
         request.proof_mode,
         engine,
@@ -221,7 +221,7 @@ async fn prove_request(
 #[cfg(feature = "sp1_proving")]
 fn completed_response(
     request: RadrootsSp1TradeRemoteProverRequest,
-    bundle: radroots_sp1_host_trade::RadrootsSp1TradeProofBundle,
+    bundle: radroots_trade_sp1_host::RadrootsSp1TradeProofBundle,
 ) -> RadrootsSp1TradeRemoteProverResponse {
     if bundle.execution.public_values_hash != request.expected_public_values_hash {
         return failed_response(
@@ -369,11 +369,11 @@ fn write_output(output: Option<&Path>, bytes: &[u8]) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::handle_request_bytes;
-    use radroots_sp1_guest_trade::{
+    use radroots_trade_sp1_guest::{
         RADROOTS_SP1_TRADE_ORDER_ACCEPTANCE_PROOF_TARGET, RADROOTS_SP1_TRADE_PROTOCOL_VERSION,
         RADROOTS_SP1_TRADE_REDUCER_PROGRAM_HASH, RADROOTS_SP1_TRADE_WITNESS_VERSION,
     };
-    use radroots_sp1_host_trade::{
+    use radroots_trade_sp1_host::{
         RADROOTS_SP1_TRADE_REMOTE_PROVER_SCHEMA_VERSION, RADROOTS_SP1_TRADE_SP1_VERSION_LINE,
         RadrootsSp1TradeProofEngine, RadrootsSp1TradeProofMode,
         RadrootsSp1TradeRemoteProverRequest, RadrootsSp1TradeRemoteProverStatus,
@@ -387,7 +387,7 @@ mod tests {
         let mut witness = crate::proof_smoke::order_acceptance_tiny_witness();
         witness.sp1_program_hash = Some(hash32('a'));
         witness.sp1_verifying_key_hash = Some(hash32('b'));
-        let execution = radroots_sp1_host_trade::execute_order_acceptance_public_values(&witness)
+        let execution = radroots_trade_sp1_host::execute_order_acceptance_public_values(&witness)
             .expect("public values");
         RadrootsSp1TradeRemoteProverRequest {
             schema_version: RADROOTS_SP1_TRADE_REMOTE_PROVER_SCHEMA_VERSION,

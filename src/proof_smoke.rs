@@ -2,7 +2,7 @@
 #![cfg_attr(coverage_nightly, coverage(off))]
 
 use crate::cli::Command;
-use radroots_sp1_guest_trade::{
+use radroots_trade_sp1_guest::{
     RADROOTS_SP1_TRADE_KIND_LISTING, RADROOTS_SP1_TRADE_KIND_ORDER_DECISION,
     RADROOTS_SP1_TRADE_KIND_ORDER_REQUEST, RADROOTS_SP1_TRADE_ORDER_ACCEPTANCE_PROOF_TARGET,
     RADROOTS_SP1_TRADE_PROTOCOL_VERSION, RADROOTS_SP1_TRADE_REDUCER_PROGRAM_HASH,
@@ -13,7 +13,7 @@ use radroots_sp1_guest_trade::{
     RadrootsSp1TradeOrderDecisionWitness, RadrootsSp1TradeOrderItemWitness,
     RadrootsSp1TradeOrderRequestWitness,
 };
-use radroots_sp1_host_trade::{
+use radroots_trade_sp1_host::{
     RadrootsSp1TradeProofMode, generate_order_acceptance_proof,
     verify_order_acceptance_proof_artifact_structure,
 };
@@ -215,7 +215,10 @@ fn deterministic_smoke(
 async fn local_execute_smoke(
     witness: &RadrootsSp1TradeOrderAcceptanceWitness,
 ) -> Result<RhiProofSmokeOutput, RhiProofSmokeError> {
-    let execution = radroots_sp1_host_trade::execute_order_acceptance_sp1_public_values(witness)
+    if !radroots_trade_sp1_host::order_acceptance_sp1_guest_elf_available() {
+        return Err(RhiProofSmokeError::LocalExecuteUnavailable);
+    }
+    let execution = radroots_trade_sp1_host::execute_order_acceptance_sp1_public_values(witness)
         .await
         .map_err(|error| RhiProofSmokeError::Sp1Execute(error.to_string()))?
         .execution;
@@ -319,7 +322,9 @@ fn capabilities() -> Vec<String> {
         "proof_smoke".to_string(),
         "deterministic_none".to_string(),
     ];
-    if cfg!(feature = "sp1_proving") {
+    if cfg!(feature = "sp1_proving")
+        && radroots_trade_sp1_host::order_acceptance_sp1_guest_elf_available()
+    {
         values.push("local_execute".to_string());
     }
     values
@@ -494,7 +499,7 @@ mod tests {
         })
         .expect("request json");
         let response: RhiProofSmokeResponse = handle_request_bytes(&bytes).await;
-        assert!(response.ok);
+        assert!(response.ok, "{:?}", response.error);
         assert_eq!(response.worker_name, "rhi");
         assert!(response.capabilities.contains(&"health".to_string()));
         assert!(!response.proof_generated);
@@ -507,7 +512,7 @@ mod tests {
             RhiProofSmokeBackend::DeterministicNone,
         ))
         .await;
-        assert!(response.ok);
+        assert!(response.ok, "{:?}", response.error);
         assert_eq!(response.operation, RhiProofSmokeOperation::ProofSmoke);
         assert!(response.public_values_hash.is_some());
         assert!(response.sp1_program_hash.is_none());
@@ -589,7 +594,16 @@ mod tests {
             RhiProofSmokeBackend::LocalExecute,
         ))
         .await;
-        assert!(response.ok);
+        if !radroots_trade_sp1_host::order_acceptance_sp1_guest_elf_available() {
+            assert!(!response.ok);
+            assert_eq!(
+                response.error.as_deref(),
+                Some("local_execute backend is unavailable in this build")
+            );
+            assert!(!response.capabilities.contains(&"local_execute".to_string()));
+            return;
+        }
+        assert!(response.ok, "{:?}", response.error);
         assert_eq!(response.operation, RhiProofSmokeOperation::ProofSmoke);
         assert_eq!(response.backend, RhiProofSmokeBackend::LocalExecute);
         assert!(response.capabilities.contains(&"local_execute".to_string()));

@@ -1,4 +1,4 @@
-use radroots_events_codec::job::traits::{JobEventBorrow, JobEventLike};
+use radroots_event_codec::job::traits::{JobEventBorrow, JobEventLike};
 use radroots_nostr::prelude::{RadrootsNostrEvent, RadrootsNostrKind};
 
 #[derive(Clone, Debug)]
@@ -81,7 +81,7 @@ impl JobEventLike for NostrEventAdapter<'_> {
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::NostrEventAdapter;
-    use radroots_events_codec::job::traits::{JobEventBorrow, JobEventLike};
+    use radroots_event_codec::job::traits::{JobEventBorrow, JobEventLike};
     use radroots_nostr::prelude::{
         RadrootsNostrEvent, RadrootsNostrEventBuilder, RadrootsNostrKeys, RadrootsNostrKind,
         RadrootsNostrTag, RadrootsNostrTagKind,

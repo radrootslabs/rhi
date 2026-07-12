@@ -1,15 +1,15 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(coverage_nightly, coverage(off))]
 
-use radroots_events::ids::RadrootsEventId;
-use radroots_events::kinds::{
+use radroots_event::ids::RadrootsEventId;
+use radroots_event::kinds::{
     KIND_TRADE_TRANSITION_PROOF_REQUEST, KIND_TRADE_TRANSITION_PROOF_RESULT,
     KIND_TRADE_VALIDATION_RECEIPT, is_listing_kind,
 };
-use radroots_events::order::{
+use radroots_event::order::{
     RadrootsOrderDecision, RadrootsOrderDecisionOutcome, RadrootsOrderRequest,
 };
-use radroots_events_codec::order::{
+use radroots_event_codec::order::{
     order_decision_from_event, order_request_from_event, parse_order_listing_event_tag,
     parse_order_prev_tag, parse_order_root_tag,
 };
@@ -18,29 +18,16 @@ use radroots_nostr::prelude::{
     RadrootsNostrKind, RadrootsNostrTimestamp, radroots_event_from_nostr,
     radroots_nostr_build_event, radroots_nostr_fetch_event_by_id, radroots_nostr_filter_tag,
 };
-use radroots_sp1_guest_trade::{
-    RADROOTS_SP1_TRADE_ORDER_ACCEPTANCE_PROOF_TARGET, RADROOTS_SP1_TRADE_PROTOCOL_VERSION,
-    RADROOTS_SP1_TRADE_REDUCER_PROGRAM_HASH, RADROOTS_SP1_TRADE_WITNESS_VERSION,
-    RadrootsSp1TradeCanonicalEventEvidence, RadrootsSp1TradeEventEvidenceRole,
-    RadrootsSp1TradeEventWorkflowPosition, RadrootsSp1TradeInventoryBinWitness,
-    RadrootsSp1TradeInventoryCommitmentWitness, RadrootsSp1TradeOrderAcceptanceWitness,
-    RadrootsSp1TradeOrderDecisionEventWitness, RadrootsSp1TradeOrderDecisionWitness,
-    RadrootsSp1TradeOrderItemWitness, RadrootsSp1TradeOrderRequestWitness,
-};
-use radroots_sp1_host_trade::{
-    RadrootsSp1TradeHostError, RadrootsSp1TradeProofBundle, RadrootsSp1TradeProofMode,
-    generate_order_acceptance_proof, validation_receipt_for_order_acceptance_proof,
-    verify_order_acceptance_proof_artifact_structure,
-};
 use radroots_trade::dvm::{
+    RadrootsOrderDecisionEventWitnessDto, RadrootsOrderDecisionWitnessDto,
+    RadrootsOrderItemWitnessDto, RadrootsOrderRequestWitnessDto,
     RadrootsTradeCanonicalEventEvidenceDto, RadrootsTradeCanonicalEventEvidenceRole,
     RadrootsTradeCanonicalEventWorkflowPosition, RadrootsTradeDvmError,
     RadrootsTradeInventoryBinWitnessDto, RadrootsTradeInventoryCommitmentWitnessDto,
-    RadrootsTradeOrderDecisionEventWitnessDto, RadrootsTradeOrderDecisionWitnessDto,
-    RadrootsTradeOrderItemWitnessDto, RadrootsTradeOrderRequestWitnessDto, RadrootsTradeProofMode,
-    RadrootsTradeTransitionProofRequestEnvelope, RadrootsTradeTransitionProofRequestV1,
-    RadrootsTradeTransitionProofResultBinding, build_transition_proof_request_tags,
-    build_transition_proof_result_tags, parse_transition_proof_request_event,
+    RadrootsTradeProofMode, RadrootsTradeTransitionProofRequestEnvelope,
+    RadrootsTradeTransitionProofRequestV1, RadrootsTradeTransitionProofResultBinding,
+    build_transition_proof_request_tags, build_transition_proof_result_tags,
+    parse_transition_proof_request_event,
 };
 use radroots_trade::validation_receipt::{
     RadrootsTradeCommitmentConfidence, RadrootsTradeValidationAuthority,
@@ -57,6 +44,20 @@ use radroots_trade::{
         RadrootsTradeWorkflowRecords, RadrootsTradeWorkflowState, reduce_trade_workflow_records,
     },
 };
+use radroots_trade_sp1_guest::{
+    RADROOTS_SP1_TRADE_ORDER_ACCEPTANCE_PROOF_TARGET, RADROOTS_SP1_TRADE_PROTOCOL_VERSION,
+    RADROOTS_SP1_TRADE_REDUCER_PROGRAM_HASH, RADROOTS_SP1_TRADE_WITNESS_VERSION,
+    RadrootsSp1TradeCanonicalEventEvidence, RadrootsSp1TradeEventEvidenceRole,
+    RadrootsSp1TradeEventWorkflowPosition, RadrootsSp1TradeInventoryBinWitness,
+    RadrootsSp1TradeInventoryCommitmentWitness, RadrootsSp1TradeOrderAcceptanceWitness,
+    RadrootsSp1TradeOrderDecisionEventWitness, RadrootsSp1TradeOrderDecisionWitness,
+    RadrootsSp1TradeOrderItemWitness, RadrootsSp1TradeOrderRequestWitness,
+};
+use radroots_trade_sp1_host::{
+    RadrootsSp1TradeHostError, RadrootsSp1TradeProofBundle, RadrootsSp1TradeProofMode,
+    generate_order_acceptance_proof, validation_receipt_for_order_acceptance_proof,
+    verify_order_acceptance_proof_artifact_structure,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, time::Duration};
@@ -68,7 +69,7 @@ use crate::features::trade_listing::processed_jobs::{
 use crate::features::trade_listing::state::{TradeListingRuntime, TradeListingRuntimeError};
 
 #[cfg(feature = "sp1_verify")]
-use radroots_sp1_host_trade::{
+use radroots_trade_sp1_host::{
     RADROOTS_SP1_TRADE_REMOTE_PROVER_SCHEMA_VERSION, RADROOTS_SP1_TRADE_SP1_VERSION_LINE,
     RadrootsSp1TradeRemoteProverRequest, RadrootsSp1TradeRemoteProverResponse,
     RadrootsSp1TradeRemoteProverStatus, RadrootsSp1TradeResolvedProofArtifact,
@@ -688,7 +689,7 @@ pub fn build_trade_validation_receipt_job_request_event(
             .map_err(|_| TradeValidationReceiptJobError::EventSetMismatch)?,
         decision_event_id: RadrootsEventId::parse(order_decision_event.id.to_hex())
             .map_err(|_| TradeValidationReceiptJobError::EventSetMismatch)?,
-        event_evidence: canonical_dvm_event_evidence_from_events(
+        event_evidence: canonical_dvm_event_evidence_from_event(
             listing_event,
             order_request_event,
             order_decision_event,
@@ -705,7 +706,7 @@ pub fn build_trade_validation_receipt_job_request_event(
         sp1_verifying_key_hash: prover_policy.expected_sp1_verifying_key_hash.clone(),
     };
     let worker_pubkey =
-        radroots_events::ids::RadrootsPublicKey::parse(worker_keys.public_key().to_hex())
+        radroots_event::ids::RadrootsPublicKey::parse(worker_keys.public_key().to_hex())
             .map_err(|_| TradeValidationReceiptJobError::EventSetMismatch)?;
     let builder = radroots_nostr_build_event(
         KIND_TRADE_TRANSITION_PROOF_REQUEST,
@@ -957,7 +958,7 @@ async fn process_trade_validation_receipt_job_request(
         return Err(TradeValidationReceiptJobError::EventSetMismatch);
     }
 
-    let expected_evidence = canonical_dvm_event_evidence_from_events(
+    let expected_evidence = canonical_dvm_event_evidence_from_event(
         &listing_event,
         &order_request_event,
         &order_decision_event,
@@ -981,7 +982,7 @@ async fn process_trade_validation_receipt_job_request(
     let receipt = validation_receipt_for_order_acceptance_proof(&proof_outcome.bundle)?;
     let receipt_parts = validation_receipt_event_build(&witness.request.order_id, &receipt)?;
     let verified_receipt = verify_validation_receipt_event(
-        &radroots_events::RadrootsNostrEvent {
+        &radroots_event::RadrootsEventEnvelope {
             id: zero_event_id(),
             author: keys.public_key().to_string(),
             created_at: 0,
@@ -1079,7 +1080,7 @@ enum ResultPublicationAction {
 fn processed_job_for_request(
     event: &RadrootsNostrEvent,
     request_kind: u32,
-    request_event: &radroots_events::RadrootsNostrEvent,
+    request_event: &radroots_event::RadrootsEventEnvelope,
 ) -> Result<RhiProcessedJobState, TradeValidationReceiptJobError> {
     let request_id = event.id.to_hex();
     let customer_pubkey = event.pubkey.to_hex();
@@ -1233,7 +1234,7 @@ enum TradeValidationReceiptJobIo<'a> {
     },
     Local {
         keys: &'a RadrootsNostrKeys,
-        events_by_id: BTreeMap<String, RadrootsNostrEvent>,
+        event_by_id: BTreeMap<String, RadrootsNostrEvent>,
         published_events: Vec<RadrootsNostrEvent>,
         publish_created_at_secs: Option<u64>,
     },
@@ -1244,20 +1245,20 @@ impl<'a> TradeValidationReceiptJobIo<'a> {
         keys: &'a RadrootsNostrKeys,
         request: &TradeValidationReceiptLocalWorkerRequest,
     ) -> Self {
-        let mut events_by_id = BTreeMap::new();
+        let mut event_by_id = BTreeMap::new();
         for event in [
             request.listing_event.clone(),
             request.order_request_event.clone(),
             request.order_decision_event.clone(),
         ] {
-            events_by_id.insert(event.id.to_hex(), event);
+            event_by_id.insert(event.id.to_hex(), event);
         }
         for event in request.existing_receipt_events.iter().cloned() {
-            events_by_id.insert(event.id.to_hex(), event);
+            event_by_id.insert(event.id.to_hex(), event);
         }
         Self::Local {
             keys,
-            events_by_id,
+            event_by_id,
             published_events: Vec::new(),
             publish_created_at_secs: request.publish_created_at_secs,
         }
@@ -1269,7 +1270,7 @@ impl<'a> TradeValidationReceiptJobIo<'a> {
     ) -> Result<RadrootsNostrEvent, TradeValidationReceiptJobError> {
         match self {
             Self::Nostr { client } => fetch_event_by_id_io(client, event_id).await,
-            Self::Local { events_by_id, .. } => events_by_id
+            Self::Local { event_by_id, .. } => event_by_id
                 .get(event_id)
                 .cloned()
                 .ok_or(TradeValidationReceiptJobError::EventSetMismatch),
@@ -1295,7 +1296,7 @@ impl<'a> TradeValidationReceiptJobIo<'a> {
                 )?;
                 fetch_events_io(client, filter, Duration::from_secs(10)).await
             }
-            Self::Local { events_by_id, .. } => Ok(events_by_id
+            Self::Local { event_by_id, .. } => Ok(event_by_id
                 .values()
                 .filter(|event| {
                     event.pubkey == keys.public_key()
@@ -1345,12 +1346,12 @@ impl<'a> TradeValidationReceiptJobIo<'a> {
         match self {
             Self::Nostr { client } => publish_signed_event_io(client, event).await,
             Self::Local {
-                events_by_id,
+                event_by_id,
                 published_events,
                 ..
             } => {
                 let event_id = event.id.to_hex();
-                events_by_id.insert(event_id.clone(), event.clone());
+                event_by_id.insert(event_id.clone(), event.clone());
                 published_events.push(event);
                 Ok(event_id)
             }
@@ -1376,9 +1377,9 @@ async fn find_existing_receipt_event(
     Option<(RadrootsNostrEvent, RadrootsVerifiedValidationReceipt)>,
     TradeValidationReceiptJobError,
 > {
-    let events = io.fetch_candidate_receipts(keys, request).await?;
+    let event = io.fetch_candidate_receipts(keys, request).await?;
     let mut matches = Vec::new();
-    for event in events {
+    for event in event {
         if let Ok(verified) = verify_existing_receipt_event(&event, request, prover_policy) {
             matches.push((event, verified));
         }
@@ -1818,7 +1819,7 @@ fn result_tags_from_dvm(
                 .map_err(|_| TradeValidationReceiptJobError::EventSetMismatch)?,
         ),
     };
-    let customer_pubkey = radroots_events::ids::RadrootsPublicKey::parse(request.author.as_str())
+    let customer_pubkey = radroots_event::ids::RadrootsPublicKey::parse(request.author.as_str())
         .map_err(|_| TradeValidationReceiptJobError::EventSetMismatch)?;
     build_transition_proof_result_tags(&request, &customer_pubkey, inputs, &binding)
         .map_err(TradeValidationReceiptJobError::from)
@@ -1912,7 +1913,7 @@ fn sp1_event_evidence_from_dvm(
 }
 
 fn sp1_order_request_witness_from_dvm(
-    request: &RadrootsTradeOrderRequestWitnessDto,
+    request: &RadrootsOrderRequestWitnessDto,
 ) -> RadrootsSp1TradeOrderRequestWitness {
     RadrootsSp1TradeOrderRequestWitness {
         order_id: request.order_id.as_str().to_string(),
@@ -1931,7 +1932,7 @@ fn sp1_order_request_witness_from_dvm(
 }
 
 fn sp1_order_decision_witness_from_dvm(
-    decision: &RadrootsTradeOrderDecisionEventWitnessDto,
+    decision: &RadrootsOrderDecisionEventWitnessDto,
 ) -> RadrootsSp1TradeOrderDecisionEventWitness {
     RadrootsSp1TradeOrderDecisionEventWitness {
         order_id: decision.order_id.as_str().to_string(),
@@ -1939,7 +1940,7 @@ fn sp1_order_decision_witness_from_dvm(
         buyer_pubkey: decision.buyer_pubkey.as_str().to_string(),
         seller_pubkey: decision.seller_pubkey.as_str().to_string(),
         decision: match &decision.decision {
-            RadrootsTradeOrderDecisionWitnessDto::Accepted {
+            RadrootsOrderDecisionWitnessDto::Accepted {
                 inventory_commitments,
             } => RadrootsSp1TradeOrderDecisionWitness::Accepted {
                 inventory_commitments: inventory_commitments
@@ -1950,7 +1951,7 @@ fn sp1_order_decision_witness_from_dvm(
                     })
                     .collect(),
             },
-            RadrootsTradeOrderDecisionWitnessDto::Declined { reason } => {
+            RadrootsOrderDecisionWitnessDto::Declined { reason } => {
                 RadrootsSp1TradeOrderDecisionWitness::Declined {
                     reason: reason.clone(),
                 }
@@ -1971,8 +1972,8 @@ fn sp1_inventory_bin_witness_from_dvm(
 
 fn dvm_order_request_witness_from_payload(
     payload: &RadrootsOrderRequest,
-) -> RadrootsTradeOrderRequestWitnessDto {
-    RadrootsTradeOrderRequestWitnessDto {
+) -> RadrootsOrderRequestWitnessDto {
+    RadrootsOrderRequestWitnessDto {
         order_id: payload.order_id.clone(),
         listing_addr: payload.listing_addr.clone(),
         buyer_pubkey: payload.buyer_pubkey.clone(),
@@ -1980,7 +1981,7 @@ fn dvm_order_request_witness_from_payload(
         items: payload
             .items
             .iter()
-            .map(|item| RadrootsTradeOrderItemWitnessDto {
+            .map(|item| RadrootsOrderItemWitnessDto {
                 bin_id: item.bin_id.clone(),
                 bin_count: item.bin_count,
             })
@@ -1990,8 +1991,8 @@ fn dvm_order_request_witness_from_payload(
 
 fn dvm_order_decision_witness_from_payload(
     payload: &RadrootsOrderDecision,
-) -> RadrootsTradeOrderDecisionEventWitnessDto {
-    RadrootsTradeOrderDecisionEventWitnessDto {
+) -> RadrootsOrderDecisionEventWitnessDto {
+    RadrootsOrderDecisionEventWitnessDto {
         order_id: payload.order_id.clone(),
         listing_addr: payload.listing_addr.clone(),
         buyer_pubkey: payload.buyer_pubkey.clone(),
@@ -1999,7 +2000,7 @@ fn dvm_order_decision_witness_from_payload(
         decision: match &payload.decision {
             RadrootsOrderDecisionOutcome::Accepted {
                 inventory_commitments,
-            } => RadrootsTradeOrderDecisionWitnessDto::Accepted {
+            } => RadrootsOrderDecisionWitnessDto::Accepted {
                 inventory_commitments: inventory_commitments
                     .iter()
                     .map(|commitment| RadrootsTradeInventoryCommitmentWitnessDto {
@@ -2009,7 +2010,7 @@ fn dvm_order_decision_witness_from_payload(
                     .collect(),
             },
             RadrootsOrderDecisionOutcome::Declined { reason } => {
-                RadrootsTradeOrderDecisionWitnessDto::Declined {
+                RadrootsOrderDecisionWitnessDto::Declined {
                     reason: reason.clone(),
                 }
             }
@@ -2017,7 +2018,7 @@ fn dvm_order_decision_witness_from_payload(
     }
 }
 
-fn canonical_dvm_event_evidence_from_events(
+fn canonical_dvm_event_evidence_from_event(
     listing_event: &RadrootsNostrEvent,
     order_request_event: &RadrootsNostrEvent,
     order_decision_event: &RadrootsNostrEvent,
@@ -2058,7 +2059,7 @@ fn canonical_dvm_event_evidence(
     Ok(RadrootsTradeCanonicalEventEvidenceDto {
         event_id: RadrootsEventId::parse(event.id.to_hex())
             .map_err(|_| TradeValidationReceiptJobError::EventSetMismatch)?,
-        signer_pubkey: radroots_events::ids::RadrootsPublicKey::parse(event.pubkey.to_hex())
+        signer_pubkey: radroots_event::ids::RadrootsPublicKey::parse(event.pubkey.to_hex())
             .map_err(|_| TradeValidationReceiptJobError::EventSetMismatch)?,
         kind: event_kind_u32(event)?,
         canonical_event_hash: hash_bytes(
@@ -2099,7 +2100,7 @@ fn dvm_proof_mode_from_sp1(mode: RadrootsSp1TradeProofMode) -> RadrootsTradeProo
 }
 
 fn request_event_hash(
-    request_event: &radroots_events::RadrootsNostrEvent,
+    request_event: &radroots_event::RadrootsEventEnvelope,
 ) -> Result<String, TradeValidationReceiptJobError> {
     Ok(hash_bytes(
         "radroots:rhi-dvm-request-event:v1",
@@ -2143,8 +2144,8 @@ fn processed_job_store_error(error: RhiProcessedJobStoreError) -> TradeValidatio
 
 fn validate_shared_workflow_pending_agreement(
     listing_event_id: &str,
-    request_event: &radroots_events::RadrootsNostrEvent,
-    decision_event: &radroots_events::RadrootsNostrEvent,
+    request_event: &radroots_event::RadrootsEventEnvelope,
+    decision_event: &radroots_event::RadrootsEventEnvelope,
 ) -> Result<(), TradeValidationReceiptJobError> {
     let request_record = match order_event_record_from_event(request_event).map_err(|error| {
         TradeValidationReceiptJobError::InvalidActiveTradeEvent(error.to_string())
@@ -2274,7 +2275,7 @@ async fn run_local_execute_backend(
     proof_mode: RadrootsSp1TradeProofMode,
 ) -> Result<TradeValidationReceiptProofOutcome, TradeValidationReceiptJobError> {
     let sp1_execution =
-        radroots_sp1_host_trade::execute_order_acceptance_sp1_public_values(witness).await?;
+        radroots_trade_sp1_host::execute_order_acceptance_sp1_public_values(witness).await?;
     let bundle = generate_order_acceptance_proof(witness, proof_mode)?;
     Ok(TradeValidationReceiptProofOutcome {
         bundle,
@@ -2301,8 +2302,8 @@ async fn run_local_cpu_prove_backend(
     proof_mode: RadrootsSp1TradeProofMode,
 ) -> Result<TradeValidationReceiptProofOutcome, TradeValidationReceiptJobError> {
     let bundle =
-        radroots_sp1_host_trade::generate_order_acceptance_sp1_proof(witness, proof_mode).await?;
-    radroots_sp1_host_trade::verify_order_acceptance_resolved_sp1_proof_artifact(
+        radroots_trade_sp1_host::generate_order_acceptance_sp1_proof(witness, proof_mode).await?;
+    radroots_trade_sp1_host::verify_order_acceptance_resolved_sp1_proof_artifact(
         &bundle.execution,
         &RadrootsSp1TradeResolvedProofArtifact::inline(bundle.proof.clone()),
     )
@@ -2333,7 +2334,7 @@ async fn run_remote_http_prove_backend(
         .expected_sp1_verifying_key_hash
         .as_deref()
         .ok_or(TradeValidationReceiptJobError::Sp1IdentityPolicyRequired)?;
-    let execution = radroots_sp1_host_trade::execute_order_acceptance_public_values(witness)?;
+    let execution = radroots_trade_sp1_host::execute_order_acceptance_public_values(witness)?;
     let request = RadrootsSp1TradeRemoteProverRequest {
         schema_version: RADROOTS_SP1_TRADE_REMOTE_PROVER_SCHEMA_VERSION,
         request_id: remote_http_request_id(witness)?,
@@ -2463,13 +2464,13 @@ fn remote_http_terminal_error(
 
 #[cfg(feature = "sp1_verify")]
 async fn remote_http_verified_artifact(
-    execution: &radroots_sp1_guest_trade::RadrootsSp1TradePublicValuesExecution,
+    execution: &radroots_trade_sp1_guest::RadrootsSp1TradePublicValuesExecution,
     policy: &TradeValidationReceiptProverPolicy,
     expected_sp1_program_hash: &str,
     expected_sp1_verifying_key_hash: &str,
     request: &RadrootsSp1TradeRemoteProverRequest,
     response: RadrootsSp1TradeRemoteProverResponse,
-) -> Result<radroots_sp1_host_trade::RadrootsSp1TradeProofArtifact, TradeValidationReceiptJobError>
+) -> Result<radroots_trade_sp1_host::RadrootsSp1TradeProofArtifact, TradeValidationReceiptJobError>
 {
     if response.schema_version != RADROOTS_SP1_TRADE_REMOTE_PROVER_SCHEMA_VERSION {
         return Err(TradeValidationReceiptJobError::RemoteHttpInvalidResponse(
@@ -2519,7 +2520,7 @@ async fn remote_http_verified_artifact(
 
 #[cfg(feature = "sp1_verify")]
 async fn verify_remote_proof_artifact_io(
-    execution: &radroots_sp1_guest_trade::RadrootsSp1TradePublicValuesExecution,
+    execution: &radroots_trade_sp1_guest::RadrootsSp1TradePublicValuesExecution,
     resolved: &RadrootsSp1TradeResolvedProofArtifact,
 ) -> Result<(), TradeValidationReceiptJobError> {
     #[cfg(test)]
@@ -2527,7 +2528,7 @@ async fn verify_remote_proof_artifact_io(
         return result;
     }
 
-    radroots_sp1_host_trade::verify_order_acceptance_resolved_sp1_proof_artifact(
+    radroots_trade_sp1_host::verify_order_acceptance_resolved_sp1_proof_artifact(
         execution, resolved,
     )
     .await?;
@@ -2914,9 +2915,9 @@ fn remote_http_test_response_for_request(
         && response.proof_artifact.is_none()
     {
         let execution =
-            radroots_sp1_host_trade::execute_order_acceptance_public_values(&request.witness)?;
+            radroots_trade_sp1_host::execute_order_acceptance_public_values(&request.witness)?;
         let artifact =
-            radroots_sp1_host_trade::referenced_order_acceptance_proof_artifact_for_execution(
+            radroots_trade_sp1_host::referenced_order_acceptance_proof_artifact_for_execution(
                 &execution,
                 request.proof_mode,
                 format!("radroots-proof://sha256/{}", "1".repeat(64)),
@@ -2971,38 +2972,27 @@ mod tests {
     use radroots_core::{
         RadrootsCoreCurrency, RadrootsCoreDecimal, RadrootsCoreMoney, RadrootsCoreUnit,
     };
-    use radroots_events::RadrootsNostrEventPtr;
-    use radroots_events::ids::{
+    use radroots_event::RadrootsEventPtr;
+    use radroots_event::ids::{
         RadrootsEventId, RadrootsInventoryBinId, RadrootsListingAddress, RadrootsOrderId,
         RadrootsOrderQuoteId, RadrootsPublicKey,
     };
-    use radroots_events::kinds::{
+    use radroots_event::kinds::{
         KIND_LISTING, KIND_TRADE_TRANSITION_PROOF_REQUEST, KIND_TRADE_TRANSITION_PROOF_RESULT,
         KIND_TRADE_VALIDATION_RECEIPT,
     };
-    use radroots_events::order::{
+    use radroots_event::order::{
         RadrootsOrderDecision, RadrootsOrderDecisionOutcome, RadrootsOrderEconomicItem,
         RadrootsOrderEconomicLine, RadrootsOrderEconomics, RadrootsOrderInventoryCommitment,
         RadrootsOrderItem, RadrootsOrderPricingBasis, RadrootsOrderRequest,
     };
-    use radroots_events_codec::order::{
+    use radroots_event_codec::order::{
         order_decision_event_build, order_decision_from_event, order_request_event_build,
         order_request_from_event,
     };
     use radroots_nostr::prelude::{
         RadrootsNostrClient, RadrootsNostrEvent, RadrootsNostrKeys, radroots_event_from_nostr,
         radroots_nostr_build_event,
-    };
-    use radroots_sp1_guest_trade::{
-        RADROOTS_SP1_TRADE_PROTOCOL_VERSION, RADROOTS_SP1_TRADE_REDUCER_PROGRAM_HASH,
-    };
-    #[cfg(feature = "sp1_verify")]
-    use radroots_sp1_host_trade::RadrootsSp1TradeHostError;
-    use radroots_sp1_host_trade::RadrootsSp1TradeProofMode;
-    #[cfg(feature = "sp1_verify")]
-    use radroots_sp1_host_trade::{
-        RADROOTS_SP1_TRADE_REMOTE_PROVER_SCHEMA_VERSION, RadrootsSp1TradeRemoteProverRequest,
-        RadrootsSp1TradeRemoteProverResponse, RadrootsSp1TradeRemoteProverStatus,
     };
     use radroots_trade::dvm::{
         RadrootsTradeInventoryBinWitnessDto, RadrootsTradeProofMode,
@@ -3016,6 +3006,17 @@ mod tests {
         RadrootsValidationReceiptResult, RadrootsValidationReceiptStatement,
         RadrootsValidationReceiptTags, RadrootsValidationReceiptType,
         RadrootsVerifiedValidationReceipt, verify_validation_receipt_event,
+    };
+    use radroots_trade_sp1_guest::{
+        RADROOTS_SP1_TRADE_PROTOCOL_VERSION, RADROOTS_SP1_TRADE_REDUCER_PROGRAM_HASH,
+    };
+    #[cfg(feature = "sp1_verify")]
+    use radroots_trade_sp1_host::RadrootsSp1TradeHostError;
+    use radroots_trade_sp1_host::RadrootsSp1TradeProofMode;
+    #[cfg(feature = "sp1_verify")]
+    use radroots_trade_sp1_host::{
+        RADROOTS_SP1_TRADE_REMOTE_PROVER_SCHEMA_VERSION, RadrootsSp1TradeRemoteProverRequest,
+        RadrootsSp1TradeRemoteProverResponse, RadrootsSp1TradeRemoteProverStatus,
     };
     use std::sync::{Mutex, MutexGuard};
 
@@ -3192,7 +3193,7 @@ mod tests {
     ) -> (RadrootsNostrEvent, RadrootsNostrEvent) {
         let listing_addr = listing_addr_for_seller(seller);
         let order_id = "order-1";
-        let listing_ptr = RadrootsNostrEventPtr {
+        let listing_ptr = RadrootsEventPtr {
             id: listing_event.id.to_hex(),
             relays: None,
         };
@@ -3229,7 +3230,7 @@ mod tests {
     ) -> (RadrootsNostrEvent, RadrootsNostrEvent) {
         let listing_addr = listing_addr_for_seller(seller);
         let order_id = "order-1";
-        let listing_ptr = RadrootsNostrEventPtr {
+        let listing_ptr = RadrootsEventPtr {
             id: listing_event.id.to_hex(),
             relays: None,
         };
@@ -3274,14 +3275,14 @@ mod tests {
         let request_envelope = order_request_from_event(&request_rr).expect("request envelope");
         let decision_envelope = order_decision_from_event(&decision_rr).expect("decision envelope");
         let request = RadrootsTradeTransitionProofRequestV1 {
-            witness_version: radroots_sp1_guest_trade::RADROOTS_SP1_TRADE_WITNESS_VERSION,
+            witness_version: radroots_trade_sp1_guest::RADROOTS_SP1_TRADE_WITNESS_VERSION,
             proof_target:
-                radroots_sp1_guest_trade::RADROOTS_SP1_TRADE_ORDER_ACCEPTANCE_PROOF_TARGET
+                radroots_trade_sp1_guest::RADROOTS_SP1_TRADE_ORDER_ACCEPTANCE_PROOF_TARGET
                     .to_string(),
             listing_event_id: typed_event_id(listing_event),
             request_event_id: typed_event_id(request_event),
             decision_event_id: typed_event_id(decision_event),
-            event_evidence: super::canonical_dvm_event_evidence_from_events(
+            event_evidence: super::canonical_dvm_event_evidence_from_event(
                 listing_event,
                 request_event,
                 decision_event,
@@ -3325,9 +3326,9 @@ mod tests {
         let seller = RadrootsNostrKeys::generate();
         let listing_addr = typed_listing_addr(&listing_addr_for_seller(&seller));
         RadrootsTradeTransitionProofRequestV1 {
-            witness_version: radroots_sp1_guest_trade::RADROOTS_SP1_TRADE_WITNESS_VERSION,
+            witness_version: radroots_trade_sp1_guest::RADROOTS_SP1_TRADE_WITNESS_VERSION,
             proof_target:
-                radroots_sp1_guest_trade::RADROOTS_SP1_TRADE_ORDER_ACCEPTANCE_PROOF_TARGET
+                radroots_trade_sp1_guest::RADROOTS_SP1_TRADE_ORDER_ACCEPTANCE_PROOF_TARGET
                     .to_string(),
             listing_event_id: RadrootsEventId::parse(
                 "1111111111111111111111111111111111111111111111111111111111111111",
@@ -3342,22 +3343,22 @@ mod tests {
             )
             .expect("decision event id"),
             event_evidence: Vec::new(),
-            request: radroots_trade::dvm::RadrootsTradeOrderRequestWitnessDto {
+            request: radroots_trade::dvm::RadrootsOrderRequestWitnessDto {
                 order_id: typed_order_id("order-1"),
                 listing_addr: listing_addr.clone(),
                 buyer_pubkey: typed_pubkey(&buyer),
                 seller_pubkey: typed_pubkey(&seller),
-                items: vec![radroots_trade::dvm::RadrootsTradeOrderItemWitnessDto {
+                items: vec![radroots_trade::dvm::RadrootsOrderItemWitnessDto {
                     bin_id: typed_bin_id(),
                     bin_count: 2,
                 }],
             },
-            decision: radroots_trade::dvm::RadrootsTradeOrderDecisionEventWitnessDto {
+            decision: radroots_trade::dvm::RadrootsOrderDecisionEventWitnessDto {
                 order_id: typed_order_id("order-1"),
                 listing_addr,
                 buyer_pubkey: typed_pubkey(&buyer),
                 seller_pubkey: typed_pubkey(&seller),
-                decision: radroots_trade::dvm::RadrootsTradeOrderDecisionWitnessDto::Accepted {
+                decision: radroots_trade::dvm::RadrootsOrderDecisionWitnessDto::Accepted {
                     inventory_commitments: vec![
                         radroots_trade::dvm::RadrootsTradeInventoryCommitmentWitnessDto {
                             bin_id: typed_bin_id(),
@@ -5608,16 +5609,16 @@ mod tests {
         .await
         .expect("first proof job");
 
-        let published_events = trade_validation_receipt_test_hooks()
+        let published_event = trade_validation_receipt_test_hooks()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .published_events
             .clone();
-        let receipt_event_id = published_events[0]
+        let receipt_event_id = published_event[0]
             .event_id
             .clone()
             .expect("signed receipt event id");
-        let result_event_id = published_events[1]
+        let result_event_id = published_event[1]
             .event_id
             .clone()
             .expect("signed result event id");
@@ -7192,7 +7193,7 @@ mod tests {
         let decision_rr = radroots_event_from_nostr(&decision_event);
         assert!(
             order_request_event_build(
-                &RadrootsNostrEventPtr {
+                &RadrootsEventPtr {
                     id: listing_event.id.to_hex(),
                     relays: None,
                 },

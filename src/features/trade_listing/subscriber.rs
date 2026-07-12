@@ -5,7 +5,7 @@ use std::convert::TryFrom;
 use std::time::Duration;
 
 use anyhow::{Result, anyhow};
-use radroots_events::kinds::{
+use radroots_event::kinds::{
     KIND_LISTING, KIND_LISTING_DRAFT, ORDER_EVENT_KINDS, TRADE_VALIDATION_EVENT_KINDS,
     is_trade_validation_service_event_kind,
 };
