@@ -1096,12 +1096,15 @@ fn u32_from_i64(value: i64, field: &'static str) -> Result<u32, RhiProcessedJobS
     u32::try_from(value).map_err(|_| RhiProcessedJobStoreError::InvalidStoredValue(field))
 }
 
-async fn query_i64(pool: &SqlitePool, sql: &str) -> Result<i64, RhiProcessedJobStoreError> {
+async fn query_i64(pool: &SqlitePool, sql: &'static str) -> Result<i64, RhiProcessedJobStoreError> {
     let row = sqlx::query(sql).fetch_one(pool).await?;
     Ok(row.try_get(0)?)
 }
 
-async fn query_string(pool: &SqlitePool, sql: &str) -> Result<String, RhiProcessedJobStoreError> {
+async fn query_string(
+    pool: &SqlitePool,
+    sql: &'static str,
+) -> Result<String, RhiProcessedJobStoreError> {
     let row = sqlx::query(sql).fetch_one(pool).await?;
     Ok(row.try_get(0)?)
 }
@@ -1159,7 +1162,11 @@ mod tests {
             .expect("enable check constraints");
     }
 
-    async fn corrupt_job(store: &RhiProcessedJobStore, job: &RhiProcessedJobState, sql: &str) {
+    async fn corrupt_job(
+        store: &RhiProcessedJobStore,
+        job: &RhiProcessedJobState,
+        sql: &'static str,
+    ) {
         disable_store_constraints(store).await;
         sqlx::query(sql)
             .bind(job.request_id.as_str())
