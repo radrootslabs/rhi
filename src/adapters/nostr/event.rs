@@ -57,8 +57,8 @@ impl JobEventLike for NostrEventAdapter<'_> {
     fn raw_author(&self) -> String {
         self.author_hex.clone()
     }
-    fn raw_published_at(&self) -> u32 {
-        self.evt.created_at.as_secs() as u32
+    fn raw_published_at(&self) -> u64 {
+        self.evt.created_at.as_secs()
     }
     fn raw_kind(&self) -> u32 {
         match self.evt.kind {
@@ -139,7 +139,7 @@ mod tests {
         assert_eq!(JobEventLike::raw_kind(&adapter), 0);
         assert_eq!(
             JobEventLike::raw_published_at(&adapter),
-            event.created_at.as_secs() as u32
+            event.created_at.as_secs()
         );
     }
 }

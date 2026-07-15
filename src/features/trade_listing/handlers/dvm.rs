@@ -352,7 +352,7 @@ fn ensure_service_recipient(
     event: &RadrootsNostrEvent,
     keys: &RadrootsNostrKeys,
 ) -> Result<(), TradeListingDvmError> {
-    let tags = radroots_event_from_nostr(event).tags;
+    let tags = radroots_event_from_nostr(event).tags_as_vec();
     if tag_has_value(&tags, "p", &keys.public_key().to_string()) {
         Ok(())
     } else {
@@ -394,7 +394,8 @@ async fn handle_listing_validate_request(
         }
     }
     let rr_event = radroots_event_from_nostr(event);
-    let listing_addr = required_tag_value(&rr_event.tags, "a")?;
+    let rr_tags = rr_event.tags_as_vec();
+    let listing_addr = required_tag_value(&rr_tags, "a")?;
     parse_listing_address(&listing_addr).map_err(|_| TradeListingDvmError::InvalidListingAddr)?;
     let payload: TradeListingValidateRequest = serde_json::from_str(&event.content)?;
     let listing_event = resolve_listing_event(client, &listing_addr, payload.listing_event).await;
@@ -511,7 +512,8 @@ async fn handle_order_request(
     if request.payload.seller_pubkey != listing_addr.seller_pubkey {
         return Err(TradeListingDvmError::InvalidListingAddr);
     }
-    let listing_event = parse_order_listing_event_tag(&rr_event.tags)
+    let rr_tags = rr_event.tags_as_vec();
+    let listing_event = parse_order_listing_event_tag(&rr_tags)
         .map_err(|error| TradeListingDvmError::InvalidPayload(error.to_string()))?
         .ok_or(TradeListingDvmError::MissingTag("listing_event"))?;
     let listing_snapshot_event_id =
@@ -736,7 +738,7 @@ async fn validate_farm_dependencies(
     let has_profile = profile_event
         .map(|event| {
             let rr_event = radroots_event_from_nostr(&event);
-            tag_has_value(&rr_event.tags, "t", "radroots:type:farm")
+            tag_has_value(&rr_event.tags_as_vec(), "t", "radroots:type:farm")
         })
         .unwrap_or(false);
     if !has_profile {

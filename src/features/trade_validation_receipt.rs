@@ -9,6 +9,7 @@ use radroots_event::kinds::{
 use radroots_event::order::{
     RadrootsOrderDecision, RadrootsOrderDecisionOutcome, RadrootsOrderRequest,
 };
+use radroots_event::{RadrootsEventEnvelope, RadrootsEventEnvelopeParts};
 use radroots_event_codec::order::{
     order_decision_from_event, order_request_from_event, parse_order_listing_event_tag,
     parse_order_prev_tag, parse_order_root_tag,
@@ -930,7 +931,10 @@ async fn process_trade_validation_receipt_job_request(
         TradeValidationReceiptJobError::InvalidActiveTradeEvent(error.to_string())
     })?;
 
-    let listing_event_ptr = parse_order_listing_event_tag(&request_rr.tags)
+    let request_tags = request_rr.tags_as_vec();
+    let decision_tags = decision_rr.tags_as_vec();
+
+    let listing_event_ptr = parse_order_listing_event_tag(&request_tags)
         .map_err(|error| {
             TradeValidationReceiptJobError::InvalidActiveTradeEvent(error.to_string())
         })?
@@ -939,10 +943,10 @@ async fn process_trade_validation_receipt_job_request(
         return Err(TradeValidationReceiptJobError::EventSetMismatch);
     }
 
-    let root_event_id = parse_order_root_tag(&decision_rr.tags).map_err(|error| {
+    let root_event_id = parse_order_root_tag(&decision_tags).map_err(|error| {
         TradeValidationReceiptJobError::InvalidActiveTradeEvent(error.to_string())
     })?;
-    let prev_event_id = parse_order_prev_tag(&decision_rr.tags).map_err(|error| {
+    let prev_event_id = parse_order_prev_tag(&decision_tags).map_err(|error| {
         TradeValidationReceiptJobError::InvalidActiveTradeEvent(error.to_string())
     })?;
     if root_event_id.as_deref() != Some(request.request_event_id.as_str())
@@ -982,7 +986,7 @@ async fn process_trade_validation_receipt_job_request(
     let receipt = validation_receipt_for_order_acceptance_proof(&proof_outcome.bundle)?;
     let receipt_parts = validation_receipt_event_build(&witness.request.order_id, &receipt)?;
     let verified_receipt = verify_validation_receipt_event(
-        &radroots_event::RadrootsEventEnvelope {
+        &RadrootsEventEnvelope::new(RadrootsEventEnvelopeParts {
             id: zero_event_id(),
             author: keys.public_key().to_string(),
             created_at: 0,
@@ -990,7 +994,8 @@ async fn process_trade_validation_receipt_job_request(
             tags: receipt_parts.tags.clone(),
             content: receipt_parts.content.clone(),
             sig: zero_signature(),
-        },
+        })
+        .map_err(|_| TradeValidationReceiptJobError::InvalidSignedEvent)?,
         expected_receipt_binding(
             request,
             prover_policy,
@@ -1819,7 +1824,7 @@ fn result_tags_from_dvm(
                 .map_err(|_| TradeValidationReceiptJobError::EventSetMismatch)?,
         ),
     };
-    let customer_pubkey = radroots_event::ids::RadrootsPublicKey::parse(request.author.as_str())
+    let customer_pubkey = radroots_event::ids::RadrootsPublicKey::parse(request.author_str())
         .map_err(|_| TradeValidationReceiptJobError::EventSetMismatch)?;
     build_transition_proof_result_tags(&request, &customer_pubkey, inputs, &binding)
         .map_err(TradeValidationReceiptJobError::from)
@@ -6891,7 +6896,7 @@ mod tests {
         let mut request_json: serde_json::Value =
             serde_json::from_str(&job.content).expect("request json");
         request_json["prover_backend"] = serde_json::Value::String("local_cpu_prove".to_string());
-        let tags = radroots_event_from_nostr(&job).tags;
+        let tags = radroots_event_from_nostr(&job).tags_as_vec();
         let job = signed_event(
             &requester,
             KIND_TRADE_TRANSITION_PROOF_REQUEST,
@@ -7206,7 +7211,7 @@ mod tests {
             )
             .is_ok()
         );
-        assert_eq!(request_rr.kind, 3422);
-        assert_eq!(decision_rr.kind, 3423);
+        assert_eq!(request_rr.kind_u32(), 3422);
+        assert_eq!(decision_rr.kind_u32(), 3423);
     }
 }
