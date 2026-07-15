@@ -47,7 +47,7 @@ pub enum RhiProofSmokeOperation {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RhiProofSmokeBackend {
-    DeterministicNone,
+    ValidatorSetDeterministic,
     LocalExecute,
 }
 
@@ -114,7 +114,7 @@ pub async fn handle_request_bytes(bytes: &[u8]) -> RhiProofSmokeResponse {
         Ok(request) => response_for_request(request, started).await,
         Err(error) => response_for_error(
             RhiProofSmokeOperation::Health,
-            RhiProofSmokeBackend::DeterministicNone,
+            RhiProofSmokeBackend::ValidatorSetDeterministic,
             started,
             error.to_string(),
         ),
@@ -189,7 +189,7 @@ async fn run_proof_smoke(
 
     let witness = order_acceptance_tiny_witness();
     match backend {
-        RhiProofSmokeBackend::DeterministicNone => deterministic_smoke(&witness),
+        RhiProofSmokeBackend::ValidatorSetDeterministic => deterministic_smoke(&witness),
         RhiProofSmokeBackend::LocalExecute => local_execute_smoke(&witness).await,
     }
 }
@@ -320,7 +320,7 @@ fn capabilities() -> Vec<String> {
     let mut values = vec![
         "health".to_string(),
         "proof_smoke".to_string(),
-        "deterministic_none".to_string(),
+        "validator_set_deterministic".to_string(),
     ];
     if cfg!(feature = "sp1_proving")
         && radroots_trade_sp1_host::order_acceptance_sp1_guest_elf_available()
@@ -339,6 +339,11 @@ pub(crate) fn order_acceptance_tiny_witness() -> RadrootsSp1TradeOrderAcceptance
         request_event_id: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
             .to_string(),
         decision_event_id: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            .to_string(),
+        validator_set_addr:
+            "30381:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd:018f3d99-7d35-7c0c-8a0f-7f3b645abcde"
+                .to_string(),
+        validator_set_event_id: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
             .to_string(),
         event_evidence: order_acceptance_tiny_event_evidence(),
         request: RadrootsSp1TradeOrderRequestWitness {
@@ -494,7 +499,7 @@ mod tests {
         let bytes = serde_json::to_vec(&RhiProofSmokeRequest {
             protocol_version: PROTOCOL_VERSION.to_string(),
             operation: RhiProofSmokeOperation::Health,
-            backend: RhiProofSmokeBackend::DeterministicNone,
+            backend: RhiProofSmokeBackend::ValidatorSetDeterministic,
             fixture: None,
         })
         .expect("request json");
@@ -509,7 +514,7 @@ mod tests {
     async fn deterministic_proof_smoke_returns_public_values() {
         let response = handle_request_bytes(&request(
             RhiProofSmokeOperation::ProofSmoke,
-            RhiProofSmokeBackend::DeterministicNone,
+            RhiProofSmokeBackend::ValidatorSetDeterministic,
         ))
         .await;
         assert!(response.ok, "{:?}", response.error);
@@ -538,7 +543,7 @@ mod tests {
             &serde_json::to_vec(&RhiProofSmokeRequest {
                 protocol_version: PROTOCOL_VERSION.to_string(),
                 operation: RhiProofSmokeOperation::ProofSmoke,
-                backend: RhiProofSmokeBackend::DeterministicNone,
+                backend: RhiProofSmokeBackend::ValidatorSetDeterministic,
                 fixture: Some("other".to_string()),
             })
             .expect("request json"),
@@ -554,7 +559,7 @@ mod tests {
     #[tokio::test]
     async fn proof_smoke_rejects_full_proof_request_fields() {
         let response = handle_request_bytes(
-            br#"{"protocol_version":"radroots.rhi.proof_smoke.v0","operation":"proof_smoke","backend":"deterministic_none","fixture":"order_acceptance_tiny_v1","proof_mode":"core"}"#,
+            br#"{"protocol_version":"radroots.rhi.proof_smoke.v0","operation":"proof_smoke","backend":"validator_set_deterministic","fixture":"order_acceptance_tiny_v1","proof_mode":"core"}"#,
         )
         .await;
         assert!(!response.ok);
@@ -586,7 +591,7 @@ mod tests {
     async fn local_execute_returns_sp1_public_values_without_proof_generation() {
         let deterministic = handle_request_bytes(&request(
             RhiProofSmokeOperation::ProofSmoke,
-            RhiProofSmokeBackend::DeterministicNone,
+            RhiProofSmokeBackend::ValidatorSetDeterministic,
         ))
         .await;
         let response = handle_request_bytes(&request(

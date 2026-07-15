@@ -25,5 +25,7 @@ replay_window_secs = 86400
 replay_overlap_secs = 300
 
 [trade_validation_receipt]
-backend = "disabled"
+backend = "local_execute"
 proof_mode = "none"
+validator_set_addr = "30381:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd:018f3d99-7d35-7c0c-8a0f-7f3b645abcde"
+validator_set_event_id = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"

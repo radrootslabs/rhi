@@ -4,10 +4,7 @@ use radroots_runtime::{BackoffConfig, RadrootsNostrServiceConfig};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use crate::features::trade_validation_receipt::{
-    TradeValidationReceiptProverBackend, TradeValidationReceiptProverPolicy,
-    TradeValidationReceiptRuntimePolicy,
-};
+use crate::features::trade_validation_receipt::TradeValidationReceiptProverPolicy;
 use crate::paths::{
     RhiRuntimePaths, default_subscriber_state_path_for_process, resolve_runtime_paths_with_resolver,
 };
@@ -222,34 +219,6 @@ impl RawSettings {
     }
 }
 
-fn validate_trade_validation_receipt_runtime_profile(
-    policy: &TradeValidationReceiptProverPolicy,
-    profile: radroots_runtime_paths::RadrootsPathProfile,
-) -> Result<()> {
-    if policy.runtime_policy == TradeValidationReceiptRuntimePolicy::RepoLocalDevelopment
-        && policy.backend != TradeValidationReceiptProverBackend::DeterministicNone
-    {
-        bail!(
-            "trade_validation_receipt.runtime_policy repo_local_development requires backend deterministic_none"
-        );
-    }
-    if policy.backend == TradeValidationReceiptProverBackend::DeterministicNone
-        && policy.runtime_policy != TradeValidationReceiptRuntimePolicy::RepoLocalDevelopment
-    {
-        bail!(
-            "trade_validation_receipt.backend deterministic_none requires runtime_policy repo_local_development"
-        );
-    }
-    if policy.backend == TradeValidationReceiptProverBackend::DeterministicNone
-        && profile != radroots_runtime_paths::RadrootsPathProfile::RepoLocal
-    {
-        bail!(
-            "trade_validation_receipt.backend deterministic_none requires runtime profile repo_local"
-        );
-    }
-    Ok(())
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
     pub metadata: RadrootsNostrMetadata,
@@ -268,10 +237,7 @@ fn load_settings_from_path_with_resolver(
     let settings: RawSettings =
         toml::from_str(&raw).with_context(|| format!("parse configuration {}", path.display()))?;
     let settings = settings.into_settings(&paths)?;
-    validate_trade_validation_receipt_runtime_profile(
-        &settings.config.trade_validation_receipt,
-        profile,
-    )?;
+    settings.config.trade_validation_receipt.validate()?;
     Ok(settings)
 }
 
@@ -288,9 +254,7 @@ pub fn load_settings_from_path(path: &Path) -> Result<Settings> {
 #[cfg(test)]
 mod tests {
     use super::load_settings_from_path_with_resolver;
-    use crate::features::trade_validation_receipt::{
-        TradeValidationReceiptProverBackend, TradeValidationReceiptRuntimePolicy,
-    };
+    use crate::features::trade_validation_receipt::TradeValidationReceiptProverBackend;
     use crate::paths::{
         default_subscriber_state_path_for_process, resolve_runtime_paths_with_resolver,
         runtime_contract_with_resolver,
@@ -476,7 +440,7 @@ replay_overlap_secs = 45
         assert_eq!(settings.config.subscriber.state.replay_overlap_secs, 45);
         assert_eq!(
             settings.config.trade_validation_receipt.backend,
-            TradeValidationReceiptProverBackend::Disabled
+            TradeValidationReceiptProverBackend::LocalExecute
         );
         assert_eq!(
             settings.config.trade_validation_receipt.proof_mode,
@@ -516,19 +480,19 @@ jitter_ms = 5
 path = "state/trade-listing.json"
 
 [trade_validation_receipt]
-backend = "deterministic_none"
+backend = "local_execute"
 proof_mode = "none"
-runtime_policy = "repo_local_development"
+validator_set_addr = "30381:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd:018f3d99-7d35-7c0c-8a0f-7f3b645abcde"
+validator_set_event_id = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 "#,
         )
         .expect("write config");
 
-        let repo_local_root = temp.path().join("repo-local-runtime");
         let settings = load_settings_from_path_with_resolver(
             &config_path,
             &linux_resolver(),
-            RadrootsPathProfile::RepoLocal,
-            Some(repo_local_root.as_path()),
+            RadrootsPathProfile::InteractiveUser,
+            None,
         )
         .expect("load settings");
 
@@ -561,20 +525,34 @@ runtime_policy = "repo_local_development"
         );
         assert_eq!(
             settings.config.trade_validation_receipt.backend,
-            TradeValidationReceiptProverBackend::DeterministicNone
+            TradeValidationReceiptProverBackend::LocalExecute
         );
         assert_eq!(
             settings.config.trade_validation_receipt.proof_mode,
             RadrootsSp1TradeProofMode::None
         );
         assert_eq!(
-            settings.config.trade_validation_receipt.runtime_policy,
-            TradeValidationReceiptRuntimePolicy::RepoLocalDevelopment
+            settings
+                .config
+                .trade_validation_receipt
+                .validator_set_addr
+                .as_deref(),
+            Some(
+                "30381:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd:018f3d99-7d35-7c0c-8a0f-7f3b645abcde"
+            )
+        );
+        assert_eq!(
+            settings
+                .config
+                .trade_validation_receipt
+                .validator_set_event_id
+                .as_deref(),
+            Some("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
         );
     }
 
     #[test]
-    fn load_settings_rejects_deterministic_policy_without_repo_local_runtime_policy() {
+    fn load_settings_rejects_sp1_identity_hash_without_sp1_mode() {
         let temp = tempfile::tempdir().expect("tempdir");
         let config_path = temp.path().join("config.toml");
         std::fs::write(
@@ -584,31 +562,29 @@ runtime_policy = "repo_local_development"
 name = "rhi-test"
 
 [trade_validation_receipt]
-backend = "deterministic_none"
+backend = "local_execute"
 proof_mode = "none"
+expected_sp1_program_hash = "0x1111111111111111111111111111111111111111111111111111111111111111"
 "#,
         )
         .expect("write config");
 
-        let repo_local_root = temp.path().join("repo-local-runtime");
         let error = load_settings_from_path_with_resolver(
             &config_path,
             &linux_resolver(),
-            RadrootsPathProfile::RepoLocal,
-            Some(repo_local_root.as_path()),
+            RadrootsPathProfile::InteractiveUser,
+            None,
         )
-        .expect_err("deterministic_none without runtime policy must fail");
+        .expect_err("sp1 identity without sp1 proof mode must fail");
         let message = format!("{error:#}");
         assert!(
-            message.contains(
-                "trade_validation_receipt.backend deterministic_none requires runtime_policy repo_local_development"
-            ),
+            message.contains("SP1 identity constraints require an SP1 proof mode"),
             "{message}"
         );
     }
 
     #[test]
-    fn load_settings_rejects_deterministic_policy_outside_repo_local_profile() {
+    fn load_settings_rejects_sp1_backend_without_identity_hashes() {
         let temp = tempfile::tempdir().expect("tempdir");
         let config_path = temp.path().join("config.toml");
         std::fs::write(
@@ -618,32 +594,26 @@ proof_mode = "none"
 name = "rhi-test"
 
 [trade_validation_receipt]
-backend = "deterministic_none"
-proof_mode = "none"
-runtime_policy = "repo_local_development"
+backend = "local_cpu_prove"
+proof_mode = "core"
 "#,
         )
         .expect("write config");
 
-        for profile in [
+        let error = load_settings_from_path_with_resolver(
+            &config_path,
+            &linux_resolver(),
             RadrootsPathProfile::InteractiveUser,
-            RadrootsPathProfile::ServiceHost,
-        ] {
-            let error = load_settings_from_path_with_resolver(
-                &config_path,
-                &linux_resolver(),
-                profile,
-                None,
-            )
-            .expect_err("production-capable profiles must reject deterministic_none");
-            let message = format!("{error:#}");
-            assert!(
-                message.contains(
-                    "trade_validation_receipt.backend deterministic_none requires runtime profile repo_local"
-                ),
-                "{message}"
-            );
-        }
+            None,
+        )
+        .expect_err("sp1 backend without identity hashes must fail");
+        let message = format!("{error:#}");
+        assert!(
+            message.contains(
+                "trade validation receipt policy requires SP1 program and verifying-key hashes"
+            ),
+            "{message}"
+        );
     }
 
     #[test]
@@ -690,7 +660,7 @@ replay_window_secs = 10
 name = "rhi-test"
 
 [config.trade_validation_receipt]
-backend = "deterministic_none"
+backend = "local_execute"
 proof_mode = "none"
 "#,
                 "unknown field `config`",

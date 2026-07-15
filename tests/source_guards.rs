@@ -12,54 +12,48 @@ fn rhi_manifest_has_no_sdk_dependency() {
 }
 
 #[test]
-fn rhi_dvm_transition_and_feedback_paths_use_trade_dvm_contract() {
-    let listing_dvm = read_repo_file("src/features/trade_listing/handlers/dvm.rs");
+fn rhi_validation_receipt_paths_use_validator_set_contract() {
+    let listing_events = read_repo_file("src/features/trade_listing/handlers/events.rs");
     let receipt_worker = read_repo_file("src/features/trade_validation_receipt.rs");
-    let listing_feedback_segment = source_segment(
-        &listing_dvm,
-        "pub async fn handle_error(",
-        "\n#[cfg(test)]\n#[cfg_attr(coverage_nightly, coverage(off))]\nmod tests",
-    );
 
     assert!(
-        listing_dvm.contains(
-            "use radroots_trade::dvm::{RadrootsTradeDvmFeedbackStatus, build_job_feedback_tags};"
-        ),
-        "trade listing DVM handler must import radroots_trade::dvm feedback contract"
+        listing_events.contains("publish_validation_receipt("),
+        "trade listing event handler must publish V1 validation receipts from accepted orders"
     );
     assert!(
-        listing_feedback_segment.contains("build_job_feedback_tags("),
-        "trade listing DVM handler must build feedback tags through radroots_trade::dvm"
+        !listing_events.contains("radroots_trade::dvm"),
+        "trade listing handler must not import the removed DVM contract"
     );
 
     for required in [
-        "RadrootsTradeTransitionProofRequestEnvelope",
-        "RadrootsTradeTransitionProofResultBinding",
+        "validator_set_addr",
+        "validator_set_event_id",
+        "validator_set_address_from_str",
+        "validation_receipt_event_build",
+        "verify_validation_receipt_event",
+        "MissingValidatorSetBinding",
+        "mark_receipt_completed",
     ] {
         assert!(
             receipt_worker.contains(required),
-            "trade validation receipt worker must use radroots_trade::dvm transition contract `{required}`"
+            "trade validation receipt worker must retain validator-set receipt contract `{required}`"
         );
     }
 
-    let result_segment = source_segment(
-        &receipt_worker,
-        "fn result_tags_from_dvm(",
-        "fn expected_receipt_binding",
-    );
-    for required in [
-        "parse_transition_proof_request_event(",
-        "build_transition_proof_result_tags(",
+    for forbidden in [
+        "radroots_trade::dvm",
+        "KIND_TRADE_TRANSITION_PROOF_REQUEST",
+        "KIND_TRADE_TRANSITION_PROOF_RESULT",
+        "RadrootsTradeTransitionProofRequest",
+        "build_transition_proof_result_tags",
+        "deterministic_none",
+        "DeterministicNone",
     ] {
         assert!(
-            result_segment.contains(required),
-            "trade validation receipt worker must delegate result tags through radroots_trade::dvm `{required}`"
+            !receipt_worker.contains(forbidden),
+            "trade validation receipt worker must not retain retired contract `{forbidden}`"
         );
     }
-    assert!(
-        !result_segment.contains("vec!["),
-        "transition proof result tags must be delegated to radroots_trade::dvm"
-    );
 }
 
 #[test]
@@ -71,7 +65,13 @@ fn rhi_sources_do_not_import_removed_sdk_or_protocol_bypasses() {
             "SdkDvmInventoryBinWitness",
             "TradeProtocolClient",
             "KIND_TRADE_LISTING_VALIDATE_REQ",
+            "KIND_TRADE_LISTING_VALIDATION_REQUEST",
             "KIND_WORKER_TRADE_TRANSITION_PROOF_REQ",
+            "KIND_TRADE_TRANSITION_PROOF_REQUEST",
+            "KIND_TRADE_TRANSITION_PROOF_RESULT",
+            "radroots_trade::dvm",
+            "deterministic_none",
+            "DeterministicNone",
         ] {
             assert!(
                 !source.contains(forbidden),
@@ -106,10 +106,12 @@ fn rhi_processed_job_state_is_durable_workflow_authority() {
         "pub async fn mark_receipt_published(",
         "pub async fn mark_result_publishing(",
         "pub async fn mark_completed(",
+        "pub async fn mark_receipt_completed(",
         "RhiProcessedJobClaim::InProgress",
         "RhiProcessedJobClaim::RecoverReceipt",
         "RhiProcessedJobStatus::ReceiptPublishing",
         "RhiProcessedJobStatus::ResultPublishing",
+        "RhiProcessedJobStatus::Completed",
         "receipt_event_json",
         "result_event_json",
         "proof_metadata_json",
@@ -122,12 +124,11 @@ fn rhi_processed_job_state_is_durable_workflow_authority() {
     }
 
     for required in [
-        "fn processed_job_for_request(",
-        "async fn processed_job_action(",
-        "claim_job_result_publication(",
-        "publish_signed_event(",
-        "mark_job_completed(",
-        "RhiProcessedJobStatus::Completed",
+        "fn processed_job_for_receipt(",
+        "async fn publish_receipt_with_processed_job(",
+        "publish_signed_event_io(",
+        "mark_receipt_completed(",
+        "RhiProcessedJobClaim::Completed",
     ] {
         assert!(
             receipt_worker.contains(required),
@@ -137,37 +138,36 @@ fn rhi_processed_job_state_is_durable_workflow_authority() {
 }
 
 #[test]
-fn rhi_deterministic_prover_is_repo_local_only() {
+fn rhi_validation_receipt_policy_is_enabled_and_validator_set_bound() {
     let config = read_repo_file("src/config.rs");
     let receipt_worker = read_repo_file("src/features/trade_validation_receipt.rs");
 
     for required in [
-        "TradeValidationReceiptRuntimePolicy",
-        "RepoLocalDevelopment",
-        "repo_local_deterministic_none",
-        "DeterministicNoneRequiresRepoLocalDevelopment",
-        "RepoLocalDevelopmentPolicyRequiresDeterministicNone",
+        "TradeValidationReceiptProverBackend::LocalExecute",
+        "validator_binding(",
+        "MissingValidatorSetBinding",
+        "validator_set_addr",
+        "validator_set_event_id",
+        "ProverBackendRequiresNone",
     ] {
         assert!(
             receipt_worker.contains(required),
-            "trade validation receipt policy must retain deterministic backend governance `{required}`"
+            "trade validation receipt policy must retain enabled validator-set governance `{required}`"
         );
     }
 
     assert!(
-        !receipt_worker.contains("pub fn deterministic_none("),
-        "RHI must not expose an ambiguous deterministic_none constructor"
+        !receipt_worker.contains("Disabled") && !receipt_worker.contains("DeterministicNone"),
+        "RHI must not expose disabled or deterministic-none validation receipt backends"
     );
 
     for required in [
-        "validate_trade_validation_receipt_runtime_profile",
-        "RadrootsPathProfile::RepoLocal",
-        "runtime_policy repo_local_development",
-        "runtime profile repo_local",
+        "settings.config.trade_validation_receipt.validate()?",
+        "TradeValidationReceiptProverBackend::LocalExecute",
     ] {
         assert!(
             config.contains(required),
-            "RHI config loading must retain repo-local deterministic governance `{required}`"
+            "RHI config loading must retain enabled validator-set policy validation `{required}`"
         );
     }
 }
@@ -176,15 +176,6 @@ fn read_repo_file(relative_path: &str) -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(relative_path);
     fs::read_to_string(path.as_path())
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
-}
-
-fn source_segment<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
-    let start_index = source.find(start).expect("source segment start");
-    let end_index = source[start_index..]
-        .find(end)
-        .map(|index| start_index + index)
-        .expect("source segment end");
-    &source[start_index..end_index]
 }
 
 fn rust_sources_under(relative_root: &str) -> Vec<(String, String)> {

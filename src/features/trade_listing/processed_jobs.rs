@@ -234,6 +234,48 @@ impl RhiProcessedJobStore {
         Ok(existing)
     }
 
+    pub async fn mark_receipt_completed(
+        &self,
+        job: &RhiProcessedJobState,
+        receipt_event_id: &str,
+        receipt_event_json: &str,
+        completed_timestamp: u32,
+        now_ms: i64,
+    ) -> Result<RhiProcessedJobState, RhiProcessedJobStoreError> {
+        self.ensure_schema().await?;
+        let mut tx = self.pool.begin().await?;
+        let Some(mut existing) = select_job(&mut tx, job.request_id.as_str()).await? else {
+            return Err(RhiProcessedJobStoreError::MissingProcessedJobClaim(
+                job.request_id.clone(),
+            ));
+        };
+        ensure_processed_job_matches(&existing, job)?;
+        ensure_receipt_matches(&existing, receipt_event_id)?;
+        ensure_receipt_event_json_matches(&existing, receipt_event_json)?;
+        ensure_result_matches(&existing, receipt_event_id)?;
+        ensure_result_event_json_matches(&existing, receipt_event_json)?;
+        if existing.status == RhiProcessedJobStatus::Completed {
+            tx.commit().await?;
+            return Ok(existing);
+        }
+        if !matches!(
+            existing.status,
+            RhiProcessedJobStatus::ReceiptPublished | RhiProcessedJobStatus::ResultPublishing
+        ) || existing.receipt_event_id.is_none()
+        {
+            return Err(RhiProcessedJobStoreError::ReceiptPublicationNotClaimed);
+        }
+        existing.status = RhiProcessedJobStatus::Completed;
+        existing.receipt_event_id = Some(receipt_event_id.to_owned());
+        existing.receipt_event_json = Some(receipt_event_json.to_owned());
+        existing.result_event_id = Some(receipt_event_id.to_owned());
+        existing.result_event_json = Some(receipt_event_json.to_owned());
+        existing.completed_timestamp = Some(completed_timestamp);
+        update_job(&mut tx, &existing, now_ms, None).await?;
+        tx.commit().await?;
+        Ok(existing)
+    }
+
     pub async fn mark_completed(
         &self,
         job: &RhiProcessedJobState,

@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 use radroots_event::kinds::{
-    KIND_LISTING, KIND_LISTING_DRAFT, ORDER_EVENT_KINDS, TRADE_VALIDATION_EVENT_KINDS,
+    KIND_LISTING, ORDER_EVENT_KINDS, TRADE_VALIDATION_EVENT_KINDS,
     is_trade_validation_service_event_kind,
 };
 use radroots_nostr::prelude::{
@@ -19,7 +19,7 @@ use tokio::time::sleep;
 use tracing::{info, warn};
 
 use crate::features::trade_listing::{
-    handlers::dvm::{TradeListingDvmError, handle_error, handle_event_with_policy},
+    handlers::events::{TradeListingEventError, handle_error, handle_event_with_policy},
     state::TradeListingRuntime,
 };
 use crate::features::trade_validation_receipt::TradeValidationReceiptProverPolicy;
@@ -34,8 +34,8 @@ struct SubscriberTestHooks {
     resolve_tags_results: std::collections::VecDeque<
         Result<Vec<RadrootsNostrTag>, radroots_nostr::error::RadrootsNostrTagsResolveError>,
     >,
-    handle_event_results: std::collections::VecDeque<Result<(), TradeListingDvmError>>,
-    handle_error_results: std::collections::VecDeque<Result<(), TradeListingDvmError>>,
+    handle_event_results: std::collections::VecDeque<Result<(), TradeListingEventError>>,
+    handle_error_results: std::collections::VecDeque<Result<(), TradeListingEventError>>,
 }
 
 #[cfg(test)]
@@ -118,7 +118,7 @@ fn take_resolve_tags_hook()
 }
 
 #[cfg(test)]
-fn pop_handle_event_hook() -> Option<Result<(), TradeListingDvmError>> {
+fn pop_handle_event_hook() -> Option<Result<(), TradeListingEventError>> {
     subscriber_test_hooks()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -127,18 +127,18 @@ fn pop_handle_event_hook() -> Option<Result<(), TradeListingDvmError>> {
 }
 
 #[cfg(test)]
-fn take_handle_event_hook() -> Option<Result<(), TradeListingDvmError>> {
+fn take_handle_event_hook() -> Option<Result<(), TradeListingEventError>> {
     pop_handle_event_hook()
 }
 
 #[cfg(not(test))]
 #[cfg_attr(coverage_nightly, coverage(off))]
-fn take_handle_event_hook() -> Option<Result<(), TradeListingDvmError>> {
+fn take_handle_event_hook() -> Option<Result<(), TradeListingEventError>> {
     None
 }
 
 #[cfg(test)]
-fn pop_handle_error_hook() -> Option<Result<(), TradeListingDvmError>> {
+fn pop_handle_error_hook() -> Option<Result<(), TradeListingEventError>> {
     subscriber_test_hooks()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -147,13 +147,13 @@ fn pop_handle_error_hook() -> Option<Result<(), TradeListingDvmError>> {
 }
 
 #[cfg(test)]
-fn take_handle_error_hook() -> Option<Result<(), TradeListingDvmError>> {
+fn take_handle_error_hook() -> Option<Result<(), TradeListingEventError>> {
     pop_handle_error_hook()
 }
 
 #[cfg(not(test))]
 #[cfg_attr(coverage_nightly, coverage(off))]
-fn take_handle_error_hook() -> Option<Result<(), TradeListingDvmError>> {
+fn take_handle_error_hook() -> Option<Result<(), TradeListingEventError>> {
     None
 }
 
@@ -204,7 +204,7 @@ async fn handle_event_io(
     client: RadrootsNostrClient,
     runtime: TradeListingRuntime,
     proof_policy: TradeValidationReceiptProverPolicy,
-) -> Result<(), TradeListingDvmError> {
+) -> Result<(), TradeListingEventError> {
     let result = match take_handle_event_hook() {
         Some(result) => result,
         None => {
@@ -217,10 +217,10 @@ async fn handle_event_io(
 }
 
 async fn handle_error_io(
-    err: TradeListingDvmError,
+    err: TradeListingEventError,
     event: &RadrootsNostrEvent,
     client: &RadrootsNostrClient,
-) -> Result<(), TradeListingDvmError> {
+) -> Result<(), TradeListingEventError> {
     let result = match take_handle_error_hook() {
         Some(result) => result,
         None => handle_error(err, event, client).await,
@@ -272,7 +272,7 @@ async fn process_event_notification(
     .await
     {
         match err {
-            TradeListingDvmError::MissingRecipient | TradeListingDvmError::UnsupportedKind => {}
+            TradeListingEventError::MissingRecipient | TradeListingEventError::UnsupportedKind => {}
             other => {
                 if event_kind.is_some_and(is_trade_validation_service_event_kind) {
                     if let Err(err) = handle_error_io(other, &event, &client).await {
@@ -308,7 +308,7 @@ pub async fn subscriber(
     proof_policy: TradeValidationReceiptProverPolicy,
     mut stop_rx: watch::Receiver<bool>,
 ) -> Result<()> {
-    let subscribed_kinds = [KIND_LISTING, KIND_LISTING_DRAFT]
+    let subscribed_kinds = [KIND_LISTING]
         .into_iter()
         .chain(ORDER_EVENT_KINDS)
         .chain(TRADE_VALIDATION_EVENT_KINDS)
@@ -380,7 +380,7 @@ mod tests {
         SubscriberTestHooks, handle_error_io, handle_event_io, map_notification_recv_result,
         process_event_notification, resolve_tags_io, subscriber, subscriber_test_hooks,
     };
-    use crate::features::trade_listing::handlers::dvm::TradeListingDvmError;
+    use crate::features::trade_listing::handlers::events::TradeListingEventError;
     use crate::features::trade_listing::state::TradeListingRuntime;
     use crate::features::trade_validation_receipt::TradeValidationReceiptProverPolicy;
     use radroots_nostr::error::RadrootsNostrTagsResolveError;
@@ -472,7 +472,7 @@ mod tests {
                 proof_policy()
             )
             .await,
-            Err(TradeListingDvmError::UnsupportedKind)
+            Err(TradeListingEventError::UnsupportedKind)
         ));
         subscriber_test_hooks()
             .lock()
@@ -492,14 +492,14 @@ mod tests {
             .is_ok()
         );
 
-        let _ = handle_error_io(TradeListingDvmError::InvalidOrder, &event, &client).await;
+        let _ = handle_error_io(TradeListingEventError::InvalidOrder, &event, &client).await;
         subscriber_test_hooks()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .handle_error_results
             .push_back(Ok(()));
         assert!(
-            handle_error_io(TradeListingDvmError::InvalidOrder, &event, &client)
+            handle_error_io(TradeListingEventError::InvalidOrder, &event, &client)
                 .await
                 .is_ok()
         );
@@ -682,13 +682,13 @@ mod tests {
         hooks.resolve_tags_results.push_back(Ok(Vec::new()));
         hooks
             .handle_event_results
-            .push_back(Err(TradeListingDvmError::MissingRecipient));
+            .push_back(Err(TradeListingEventError::MissingRecipient));
         hooks
             .handle_event_results
-            .push_back(Err(TradeListingDvmError::InvalidOrder));
+            .push_back(Err(TradeListingEventError::InvalidOrder));
         hooks
             .handle_error_results
-            .push_back(Err(TradeListingDvmError::InvalidOrder));
+            .push_back(Err(TradeListingEventError::InvalidOrder));
         drop(hooks);
 
         let (tx, rx) = watch::channel(false);
@@ -722,10 +722,10 @@ mod tests {
         hooks.resolve_tags_results.push_back(Ok(Vec::new()));
         hooks
             .handle_event_results
-            .push_back(Err(TradeListingDvmError::InvalidOrder));
+            .push_back(Err(TradeListingEventError::InvalidOrder));
         hooks
             .handle_error_results
-            .push_back(Err(TradeListingDvmError::InvalidOrder));
+            .push_back(Err(TradeListingEventError::InvalidOrder));
         drop(hooks);
 
         let (_tx, rx) = watch::channel(false);
@@ -753,7 +753,7 @@ mod tests {
         hooks.resolve_tags_results.push_back(Ok(Vec::new()));
         hooks
             .handle_event_results
-            .push_back(Err(TradeListingDvmError::InvalidOrder));
+            .push_back(Err(TradeListingEventError::InvalidOrder));
         hooks.handle_error_results.push_back(Ok(()));
         drop(hooks);
 
@@ -783,10 +783,10 @@ mod tests {
         hooks.resolve_tags_results.push_back(Ok(Vec::new()));
         hooks
             .handle_event_results
-            .push_back(Err(TradeListingDvmError::InvalidOrder));
+            .push_back(Err(TradeListingEventError::InvalidOrder));
         hooks
             .handle_error_results
-            .push_back(Err(TradeListingDvmError::InvalidOrder));
+            .push_back(Err(TradeListingEventError::InvalidOrder));
         drop(hooks);
 
         process_event_notification(event, keys, client, runtime, proof_policy())
@@ -815,7 +815,7 @@ mod tests {
         hooks.resolve_tags_results.push_back(Ok(Vec::new()));
         hooks
             .handle_event_results
-            .push_back(Err(TradeListingDvmError::InvalidOrder));
+            .push_back(Err(TradeListingEventError::InvalidOrder));
         hooks.handle_error_results.push_back(Ok(()));
         drop(hooks);
 
