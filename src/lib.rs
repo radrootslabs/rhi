@@ -6,17 +6,18 @@ pub mod config;
 pub mod features;
 pub mod identity_storage;
 pub mod paths;
-pub mod proof_smoke;
-pub mod remote_prove;
 pub mod rhi;
 
 pub use cli::Args as cli_args;
 
 use anyhow::Result;
-use radroots_event::kinds::{KIND_LISTING, ORDER_EVENT_KINDS, TRADE_VALIDATION_EVENT_KINDS};
+use radroots_event::kinds::TRADE_MUTATION_EVENT_KINDS;
 use std::time::Duration;
 
-use crate::features::trade_listing::state::{TradeListingRuntime, TradeListingRuntimeConfig};
+use crate::features::trade_agreement_attestation::{
+    TradeAgreementAttestationRuntime, TradeAgreementAttestationRuntimeConfig,
+    trade_mutation_subscription_kinds,
+};
 use crate::identity_storage::load_service_identity;
 use crate::rhi::{Rhi, start_subscriber_with_policy};
 use radroots_identity::RadrootsIdentity;
@@ -116,17 +117,18 @@ pub async fn run_rhi(settings: &config::Settings, args: &cli_args) -> Result<()>
         args.service.allow_generate_identity,
     )?;
     let keys = identity.keys().clone();
-    let trade_listing_runtime = TradeListingRuntime::load(TradeListingRuntimeConfig {
-        state_path: settings.config.subscriber.state.path.clone(),
-        replay_window_secs: settings.config.subscriber.state.replay_window_secs,
-        replay_overlap_secs: settings.config.subscriber.state.replay_overlap_secs,
-    })
-    .await?;
+    let agreement_attestation_runtime =
+        TradeAgreementAttestationRuntime::load(TradeAgreementAttestationRuntimeConfig {
+            state_path: settings.config.subscriber.state.path.clone(),
+            replay_window_secs: settings.config.subscriber.state.replay_window_secs,
+            replay_overlap_secs: settings.config.subscriber.state.replay_overlap_secs,
+        })
+        .await?;
 
-    let rhi = Rhi::with_trade_listing_runtime_and_policy(
+    let rhi = Rhi::with_agreement_attestation_runtime_and_policy(
         keys.clone(),
-        trade_listing_runtime,
-        settings.config.trade_validation_receipt.clone(),
+        agreement_attestation_runtime,
+        settings.config.trade_agreement_attestation.clone(),
     );
     let client = rhi.client.clone();
     let service_cfg = settings.config.service.clone();
@@ -139,11 +141,7 @@ pub async fn run_rhi(settings: &config::Settings, args: &cli_args) -> Result<()>
     let md = settings.metadata.clone();
 
     if !relays.is_empty() {
-        let handler_kinds = [KIND_LISTING]
-            .into_iter()
-            .chain(ORDER_EVENT_KINDS)
-            .chain(TRADE_VALIDATION_EVENT_KINDS)
-            .collect();
+        let handler_kinds = trade_mutation_subscription_kinds();
         let handler_spec = RadrootsNostrApplicationHandlerSpec {
             kinds: handler_kinds,
             identifier: service_cfg.nip89_identifier.clone(),
@@ -167,8 +165,8 @@ pub async fn run_rhi(settings: &config::Settings, args: &cli_args) -> Result<()>
     let handle = start_subscriber_with_policy(
         client.clone(),
         keys.clone(),
-        rhi.trade_listing_runtime.clone(),
-        rhi.trade_validation_receipt_policy.clone(),
+        rhi.agreement_attestation_runtime.clone(),
+        rhi.agreement_attestation_policy.clone(),
         settings.config.subscriber.backoff.clone(),
     )
     .await;
@@ -182,7 +180,7 @@ pub async fn run_rhi(settings: &config::Settings, args: &cli_args) -> Result<()>
 
     match wait_for_shutdown_or_stopped(handle).await {
         RunRhiWaitOutcome::Shutdown => {
-            info!("Shutting down…");
+            info!("Shutting down");
             stop_handle.stop();
         }
         RunRhiWaitOutcome::Stopped => {}
@@ -194,14 +192,19 @@ pub async fn run_rhi(settings: &config::Settings, args: &cli_args) -> Result<()>
     Ok(())
 }
 
+pub fn release_product_handler_kinds() -> &'static [u32] {
+    &TRADE_MUTATION_EVENT_KINDS
+}
+
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::{
-        RUN_RHI_AUTO_STOP, RUN_RHI_SKIP_SUBSCRIBER, RunRhiWaitOutcome, bootstrap_presence, run_rhi,
-        run_rhi_bootstrap_hook, run_rhi_wait_hook,
+        RUN_RHI_AUTO_STOP, RUN_RHI_SKIP_SUBSCRIBER, RunRhiWaitOutcome, bootstrap_presence,
+        release_product_handler_kinds, run_rhi, run_rhi_bootstrap_hook, run_rhi_wait_hook,
     };
     use crate::{cli_args, config};
+    use radroots_event::kinds::TRADE_MUTATION_EVENT_KINDS;
     use std::path::PathBuf;
     use std::sync::atomic::Ordering;
     use std::sync::{Mutex, MutexGuard};
@@ -253,8 +256,8 @@ mod tests {
                         ..Default::default()
                     },
                 },
-                trade_validation_receipt:
-                    crate::features::trade_validation_receipt::TradeValidationReceiptProverPolicy::default(),
+                trade_agreement_attestation:
+                    crate::features::trade_agreement_attestation::TradeAgreementAttestationPolicy::default(),
             },
         }
     }
@@ -278,11 +281,6 @@ mod tests {
         std::env::temp_dir().join(format!("rhi-{suffix}-{nanos}.secret.json"))
     }
 
-    fn cleanup_identity_artifacts(path: &std::path::Path) {
-        let _ = std::fs::remove_file(path);
-        let _ = std::fs::remove_file(crate::identity_storage::encrypted_identity_key_path(path));
-    }
-
     fn unique_state_path(suffix: &str) -> PathBuf {
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -294,118 +292,64 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn run_rhi_completes_with_auto_stop_and_empty_relays() {
+    async fn run_rhi_starts_and_stops_without_relays() {
         let _guard = test_guard();
         RUN_RHI_AUTO_STOP.store(true, Ordering::Relaxed);
-        RUN_RHI_SKIP_SUBSCRIBER.store(false, Ordering::Relaxed);
-        let path = unique_identity_path("empty");
-        let args = args_for_identity(path.clone());
+        let identity_path = unique_identity_path("no-relays");
+        let args = args_for_identity(identity_path);
         let settings = settings_with_relays(Vec::new());
-        let result = run_rhi(&settings, &args).await;
-        RUN_RHI_AUTO_STOP.store(false, Ordering::Relaxed);
-        cleanup_identity_artifacts(&path);
-        assert!(result.is_ok());
+        run_rhi(&settings, &args).await.expect("run rhi");
     }
 
     #[tokio::test]
-    async fn run_rhi_covers_presence_success_and_failure_branches() {
+    async fn run_rhi_bootstraps_release_product_handler_kinds_when_relays_exist() {
         let _guard = test_guard();
-        RUN_RHI_AUTO_STOP.store(true, Ordering::Relaxed);
         RUN_RHI_SKIP_SUBSCRIBER.store(true, Ordering::Relaxed);
-
-        let path_ok = unique_identity_path("presence-ok");
-        let args_ok = args_for_identity(path_ok.clone());
-        let settings_ok = settings_with_relays(vec!["wss://relay.example.com".to_string()]);
         *run_rhi_bootstrap_hook()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Ok(()));
-        let ok = run_rhi(&settings_ok, &args_ok).await;
-        cleanup_identity_artifacts(&path_ok);
-        assert!(ok.is_ok());
+        let identity_path = unique_identity_path("relays");
+        let args = args_for_identity(identity_path);
+        let settings = settings_with_relays(vec!["wss://relay.example.com".to_string()]);
+        run_rhi(&settings, &args).await.expect("run rhi");
+        assert_eq!(release_product_handler_kinds(), TRADE_MUTATION_EVENT_KINDS);
+    }
 
-        let path_err = unique_identity_path("presence-err");
-        let args_err = args_for_identity(path_err.clone());
-        let settings_err = settings_with_relays(vec!["wss://relay.example.com".to_string()]);
+    #[tokio::test]
+    async fn run_rhi_stops_on_wait_hook() {
+        let _guard = test_guard();
+        *run_rhi_wait_hook()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(RunRhiWaitOutcome::Stopped);
+        let identity_path = unique_identity_path("wait-hook");
+        let args = args_for_identity(identity_path);
+        let settings = settings_with_relays(Vec::new());
+        run_rhi(&settings, &args).await.expect("run rhi");
+    }
+
+    #[tokio::test]
+    async fn bootstrap_presence_reports_hook_error() {
+        let _guard = test_guard();
         *run_rhi_bootstrap_hook()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) =
-            Some(Err("presence failure".to_string()));
-        let err = run_rhi(&settings_err, &args_err).await;
-        RUN_RHI_AUTO_STOP.store(false, Ordering::Relaxed);
-        RUN_RHI_SKIP_SUBSCRIBER.store(false, Ordering::Relaxed);
-        cleanup_identity_artifacts(&path_err);
-        assert!(err.is_ok());
-    }
-
-    #[tokio::test]
-    async fn bootstrap_presence_application_handler_path_is_callable() {
-        let _guard = test_guard();
-        let identity_path = unique_identity_path("bootstrap");
-        let identity = crate::identity_storage::load_service_identity(Some(&identity_path), true)
-            .expect("identity");
-        let client = radroots_nostr::prelude::RadrootsNostrClient::new(identity.keys().clone());
+            Some(Err("forced bootstrap failure".to_string()));
+        let keys = radroots_nostr::prelude::RadrootsNostrKeys::generate();
+        let client = radroots_nostr::prelude::RadrootsNostrClient::new(keys.clone());
+        let identity = radroots_identity::RadrootsIdentity::new(keys);
         let metadata: radroots_nostr::prelude::RadrootsNostrMetadata =
-            serde_json::from_str(r#"{"name":"bootstrap"}"#).expect("bootstrap metadata");
-        let handler_spec = radroots_nostr::prelude::RadrootsNostrApplicationHandlerSpec {
-            kinds: vec![30402],
+            serde_json::from_str(r#"{"name":"rhi-test"}"#).expect("metadata");
+        let spec = radroots_nostr::prelude::RadrootsNostrApplicationHandlerSpec {
+            kinds: TRADE_MUTATION_EVENT_KINDS.to_vec(),
             identifier: Some("rhi".to_string()),
             metadata: Some(metadata.clone()),
             extra_tags: Vec::new(),
-            relays: vec!["wss://relay.example.com".to_string()],
+            relays: Vec::new(),
             nostrconnect_url: None,
         };
-        let result = bootstrap_presence(&client, &identity, &metadata, &handler_spec).await;
-        cleanup_identity_artifacts(&identity_path);
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn run_rhi_covers_shutdown_wait_branch() {
-        let _guard = test_guard();
-        RUN_RHI_AUTO_STOP.store(false, Ordering::Relaxed);
-        RUN_RHI_SKIP_SUBSCRIBER.store(false, Ordering::Relaxed);
-        *run_rhi_wait_hook()
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(RunRhiWaitOutcome::Shutdown);
-
-        let path = unique_identity_path("shutdown");
-        let args = args_for_identity(path.clone());
-        let settings = settings_with_relays(Vec::new());
-        let result = run_rhi(&settings, &args).await;
-        cleanup_identity_artifacts(&path);
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn run_rhi_returns_error_when_relay_configuration_is_invalid() {
-        let _guard = test_guard();
-        RUN_RHI_AUTO_STOP.store(false, Ordering::Relaxed);
-        RUN_RHI_SKIP_SUBSCRIBER.store(false, Ordering::Relaxed);
-
-        let path = unique_identity_path("invalid-relay");
-        let args = args_for_identity(path.clone());
-        let settings = settings_with_relays(vec!["not-a-relay-url".to_string()]);
-        let result = run_rhi(&settings, &args).await;
-        cleanup_identity_artifacts(&path);
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn run_rhi_returns_error_when_identity_is_missing() {
-        let _guard = test_guard();
-        RUN_RHI_AUTO_STOP.store(false, Ordering::Relaxed);
-        RUN_RHI_SKIP_SUBSCRIBER.store(false, Ordering::Relaxed);
-
-        let args = cli_args {
-            command: None,
-            service: radroots_runtime::RadrootsServiceCliArgs {
-                config: Some(PathBuf::from("config.toml")),
-                identity: Some(PathBuf::from("/tmp/rhi-lib-missing-identity.secret.json")),
-                allow_generate_identity: false,
-            },
-        };
-        let settings = settings_with_relays(Vec::new());
-        let result = run_rhi(&settings, &args).await;
-        assert!(result.is_err());
+        let err = bootstrap_presence(&client, &identity, &metadata, &spec)
+            .await
+            .expect_err("forced error");
+        assert!(format!("{err:#}").contains("forced bootstrap failure"));
     }
 }

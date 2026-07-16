@@ -9,9 +9,9 @@ use clap::Parser;
 use radroots_log::{LogFileLayout, LoggingOptions};
 #[cfg(not(test))]
 use rhi::cli::Command;
-use rhi::{cli_args, config, paths, run_rhi};
 #[cfg(not(test))]
-use rhi::{proof_smoke, remote_prove};
+use rhi::features::trade_agreement_attestation::run_smoke_cli_command;
+use rhi::{cli_args, config, paths, run_rhi};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use tracing::info;
@@ -217,8 +217,7 @@ async fn run() -> Result<()> {
         let args = cli_args::try_parse().map_err(radroots_runtime::RuntimeCliError::from)?;
         if let Some(command) = args.command {
             return match command {
-                Command::ProofSmoke { .. } => proof_smoke::run_cli_command(command).await,
-                Command::RemoteProve { .. } => remote_prove::run_cli_command(command).await,
+                Command::AttestationSmoke { .. } => run_smoke_cli_command(command).await,
             };
         }
     }
@@ -245,7 +244,7 @@ mod tests {
         runtime_startup_report,
     };
     use radroots_nostr::prelude::{RadrootsNostrClient, RadrootsNostrKeys};
-    use rhi::features::trade_listing::state::TradeListingRuntime;
+    use rhi::features::trade_agreement_attestation::TradeAgreementAttestationRuntime;
     use rhi::{cli_args, config, paths};
     use std::path::PathBuf;
     use std::process::ExitCode;
@@ -276,8 +275,8 @@ mod tests {
                     stdout: true,
                 },
                 subscriber: config::SubscriberConfig::default(),
-                trade_validation_receipt:
-                    rhi::features::trade_validation_receipt::TradeValidationReceiptProverPolicy::default(),
+                trade_agreement_attestation:
+                    rhi::features::trade_agreement_attestation::TradeAgreementAttestationPolicy::default(),
             },
         }
     }
@@ -311,7 +310,7 @@ mod tests {
                 "/home/treesap/.radroots/secrets/workers/rhi/identity.secret.json",
             ),
             canonical_subscriber_state_path: PathBuf::from(
-                "/home/treesap/.radroots/data/workers/rhi/trade-listing/state.json",
+                "/home/treesap/.radroots/data/workers/rhi/trade-agreement-attestation/state.json",
             ),
         }
     }
@@ -392,7 +391,7 @@ mod tests {
         let handle = rhi::rhi::start_subscriber(
             client,
             keys,
-            TradeListingRuntime::new(),
+            TradeAgreementAttestationRuntime::new(),
             radroots_runtime::BackoffConfig {
                 base_ms: 1,
                 max_ms: 2,
@@ -444,7 +443,7 @@ mod tests {
                 subscriber_state_path: PathBuf::from("/tmp/rhi/state.json"),
                 subscriber_state_path_source: "config_artifact".to_string(),
                 canonical_subscriber_state_path: PathBuf::from(
-                    "/home/treesap/.radroots/data/workers/rhi/trade-listing/state.json"
+                    "/home/treesap/.radroots/data/workers/rhi/trade-agreement-attestation/state.json"
                 ),
                 path_overrides: sample_runtime_contract().path_overrides,
                 default_shared_secret_backend: "encrypted_file".to_string(),

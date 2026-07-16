@@ -4,7 +4,7 @@ use radroots_runtime::{BackoffConfig, RadrootsNostrServiceConfig};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use crate::features::trade_validation_receipt::TradeValidationReceiptProverPolicy;
+use crate::features::trade_agreement_attestation::TradeAgreementAttestationPolicy;
 use crate::paths::{
     RhiRuntimePaths, default_subscriber_state_path_for_process, resolve_runtime_paths_with_resolver,
 };
@@ -101,7 +101,7 @@ pub struct Configuration {
     #[serde(default)]
     pub subscriber: SubscriberConfig,
     #[serde(default)]
-    pub trade_validation_receipt: TradeValidationReceiptProverPolicy,
+    pub trade_agreement_attestation: TradeAgreementAttestationPolicy,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -194,7 +194,7 @@ struct RawSettings {
     #[serde(default)]
     pub subscriber: RawSubscriberConfig,
     #[serde(default)]
-    pub trade_validation_receipt: TradeValidationReceiptProverPolicy,
+    pub trade_agreement_attestation: TradeAgreementAttestationPolicy,
 }
 
 impl RawSettings {
@@ -213,7 +213,7 @@ impl RawSettings {
                 service,
                 logging,
                 subscriber: self.subscriber.into_subscriber_config(paths),
-                trade_validation_receipt: self.trade_validation_receipt,
+                trade_agreement_attestation: self.trade_agreement_attestation,
             },
         })
     }
@@ -237,7 +237,7 @@ fn load_settings_from_path_with_resolver(
     let settings: RawSettings =
         toml::from_str(&raw).with_context(|| format!("parse configuration {}", path.display()))?;
     let settings = settings.into_settings(&paths)?;
-    settings.config.trade_validation_receipt.validate()?;
+    settings.config.trade_agreement_attestation.validate()?;
     Ok(settings)
 }
 
@@ -254,7 +254,7 @@ pub fn load_settings_from_path(path: &Path) -> Result<Settings> {
 #[cfg(test)]
 mod tests {
     use super::load_settings_from_path_with_resolver;
-    use crate::features::trade_validation_receipt::TradeValidationReceiptProverBackend;
+    use crate::features::trade_agreement_attestation::TradeAgreementAttestationBackend;
     use crate::paths::{
         default_subscriber_state_path_for_process, resolve_runtime_paths_with_resolver,
         runtime_contract_with_resolver,
@@ -263,7 +263,6 @@ mod tests {
         RadrootsHostEnvironment, RadrootsPathOverrides, RadrootsPathProfile, RadrootsPathResolver,
         RadrootsPlatform, RadrootsRuntimeNamespace,
     };
-    use radroots_trade_sp1_host::RadrootsSp1TradeProofMode;
     use std::path::PathBuf;
 
     fn linux_resolver() -> RadrootsPathResolver {
@@ -328,7 +327,9 @@ mod tests {
         );
         assert_eq!(
             paths.subscriber_state_path,
-            PathBuf::from("/home/treesap/.radroots/data/workers/rhi/trade-listing/state.json")
+            PathBuf::from(
+                "/home/treesap/.radroots/data/workers/rhi/trade-agreement-attestation/state.json"
+            )
         );
     }
 
@@ -354,7 +355,7 @@ mod tests {
         );
         assert_eq!(
             paths.subscriber_state_path,
-            PathBuf::from("/var/lib/radroots/workers/rhi/trade-listing/state.json")
+            PathBuf::from("/var/lib/radroots/workers/rhi/trade-agreement-attestation/state.json")
         );
     }
 
@@ -379,7 +380,7 @@ mod tests {
         );
         assert_eq!(
             paths.subscriber_state_path,
-            repo_local_root.join("data/workers/rhi/trade-listing/state.json")
+            repo_local_root.join("data/workers/rhi/trade-agreement-attestation/state.json")
         );
     }
 
@@ -434,22 +435,20 @@ replay_overlap_secs = 45
         );
         assert_eq!(
             settings.config.subscriber.state.path,
-            PathBuf::from("/home/treesap/.radroots/data/workers/rhi/trade-listing/state.json")
+            PathBuf::from(
+                "/home/treesap/.radroots/data/workers/rhi/trade-agreement-attestation/state.json"
+            )
         );
         assert_eq!(settings.config.subscriber.state.replay_window_secs, 123);
         assert_eq!(settings.config.subscriber.state.replay_overlap_secs, 45);
         assert_eq!(
-            settings.config.trade_validation_receipt.backend,
-            TradeValidationReceiptProverBackend::LocalExecute
-        );
-        assert_eq!(
-            settings.config.trade_validation_receipt.proof_mode,
-            RadrootsSp1TradeProofMode::None
+            settings.config.trade_agreement_attestation.backend,
+            TradeAgreementAttestationBackend::LocalStatementHash
         );
     }
 
     #[test]
-    fn load_settings_parses_trade_validation_receipt_policy() {
+    fn load_settings_parses_trade_agreement_attestation_policy() {
         let temp = tempfile::tempdir().expect("tempdir");
         let config_path = temp.path().join("config.toml");
         std::fs::write(
@@ -477,11 +476,11 @@ factor = 3
 jitter_ms = 5
 
 [subscriber.state]
-path = "state/trade-listing.json"
+path = "state/trade-agreement-attestation.json"
 
-[trade_validation_receipt]
-backend = "local_execute"
-proof_mode = "none"
+[trade_agreement_attestation]
+backend = "local_statement_hash"
+expected_statement_contract_hash = "0x1111111111111111111111111111111111111111111111111111111111111111"
 validator_set_addr = "30381:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd:018f3d99-7d35-7c0c-8a0f-7f3b645abcde"
 validator_set_event_id = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 "#,
@@ -521,20 +520,24 @@ validator_set_event_id = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
         assert_eq!(settings.config.subscriber.backoff.jitter_ms, 5);
         assert_eq!(
             settings.config.subscriber.state.path,
-            PathBuf::from("state/trade-listing.json")
+            PathBuf::from("state/trade-agreement-attestation.json")
         );
         assert_eq!(
-            settings.config.trade_validation_receipt.backend,
-            TradeValidationReceiptProverBackend::LocalExecute
-        );
-        assert_eq!(
-            settings.config.trade_validation_receipt.proof_mode,
-            RadrootsSp1TradeProofMode::None
+            settings.config.trade_agreement_attestation.backend,
+            TradeAgreementAttestationBackend::LocalStatementHash
         );
         assert_eq!(
             settings
                 .config
-                .trade_validation_receipt
+                .trade_agreement_attestation
+                .expected_statement_contract_hash
+                .as_deref(),
+            Some("0x1111111111111111111111111111111111111111111111111111111111111111")
+        );
+        assert_eq!(
+            settings
+                .config
+                .trade_agreement_attestation
                 .validator_set_addr
                 .as_deref(),
             Some(
@@ -544,7 +547,7 @@ validator_set_event_id = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
         assert_eq!(
             settings
                 .config
-                .trade_validation_receipt
+                .trade_agreement_attestation
                 .validator_set_event_id
                 .as_deref(),
             Some("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
@@ -552,7 +555,7 @@ validator_set_event_id = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
     }
 
     #[test]
-    fn load_settings_rejects_sp1_identity_hash_without_sp1_mode() {
+    fn load_settings_rejects_invalid_statement_contract_hash() {
         let temp = tempfile::tempdir().expect("tempdir");
         let config_path = temp.path().join("config.toml");
         std::fs::write(
@@ -561,10 +564,9 @@ validator_set_event_id = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 [metadata]
 name = "rhi-test"
 
-[trade_validation_receipt]
-backend = "local_execute"
-proof_mode = "none"
-expected_sp1_program_hash = "0x1111111111111111111111111111111111111111111111111111111111111111"
+[trade_agreement_attestation]
+backend = "local_statement_hash"
+expected_statement_contract_hash = "not-a-hash"
 "#,
         )
         .expect("write config");
@@ -575,16 +577,16 @@ expected_sp1_program_hash = "0x1111111111111111111111111111111111111111111111111
             RadrootsPathProfile::InteractiveUser,
             None,
         )
-        .expect_err("sp1 identity without sp1 proof mode must fail");
+        .expect_err("invalid statement contract hash must fail");
         let message = format!("{error:#}");
         assert!(
-            message.contains("SP1 identity constraints require an SP1 proof mode"),
+            message.contains("invalid configured hash field"),
             "{message}"
         );
     }
 
     #[test]
-    fn load_settings_rejects_sp1_backend_without_identity_hashes() {
+    fn load_settings_rejects_partial_validator_set_binding() {
         let temp = tempfile::tempdir().expect("tempdir");
         let config_path = temp.path().join("config.toml");
         std::fs::write(
@@ -593,9 +595,9 @@ expected_sp1_program_hash = "0x1111111111111111111111111111111111111111111111111
 [metadata]
 name = "rhi-test"
 
-[trade_validation_receipt]
-backend = "local_cpu_prove"
-proof_mode = "core"
+[trade_agreement_attestation]
+backend = "local_statement_hash"
+validator_set_addr = "30381:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd:018f3d99-7d35-7c0c-8a0f-7f3b645abcde"
 "#,
         )
         .expect("write config");
@@ -606,12 +608,10 @@ proof_mode = "core"
             RadrootsPathProfile::InteractiveUser,
             None,
         )
-        .expect_err("sp1 backend without identity hashes must fail");
+        .expect_err("partial validator-set binding must fail");
         let message = format!("{error:#}");
         assert!(
-            message.contains(
-                "trade validation receipt policy requires SP1 program and verifying-key hashes"
-            ),
+            message.contains("attestation policy is missing validator_set_event_id"),
             "{message}"
         );
     }
@@ -654,14 +654,13 @@ replay_window_secs = 10
                 "unknown field `config`",
             ),
             (
-                "config-trade-validation-receipt",
+                "config-trade-agreement-attestation",
                 r#"
 [metadata]
 name = "rhi-test"
 
-[config.trade_validation_receipt]
-backend = "local_execute"
-proof_mode = "none"
+[config.trade_agreement_attestation]
+backend = "local_statement_hash"
 "#,
                 "unknown field `config`",
             ),
@@ -685,7 +684,7 @@ proof_mode = "none"
     fn default_subscriber_state_path_is_canonical_for_current_process() {
         let path =
             default_subscriber_state_path_for_process().expect("resolve current process defaults");
-        assert!(path.ends_with("trade-listing/state.json"));
+        assert!(path.ends_with("trade-agreement-attestation/state.json"));
     }
 
     #[test]
@@ -740,7 +739,9 @@ proof_mode = "none"
         );
         assert_eq!(
             contract.canonical_subscriber_state_path,
-            PathBuf::from("/home/treesap/.radroots/data/workers/rhi/trade-listing/state.json")
+            PathBuf::from(
+                "/home/treesap/.radroots/data/workers/rhi/trade-agreement-attestation/state.json"
+            )
         );
     }
 
@@ -767,7 +768,7 @@ proof_mode = "none"
         );
         assert_eq!(
             contract.canonical_subscriber_state_path,
-            PathBuf::from("/var/lib/radroots/workers/rhi/trade-listing/state.json")
+            PathBuf::from("/var/lib/radroots/workers/rhi/trade-agreement-attestation/state.json")
         );
     }
 }

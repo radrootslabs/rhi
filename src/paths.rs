@@ -8,7 +8,7 @@ use radroots_runtime_paths::{
 use serde::Serialize;
 
 const RHI_RUNTIME_ID: &str = "rhi";
-const SUBSCRIBER_STATE_DIR_NAME: &str = "trade-listing";
+const SUBSCRIBER_STATE_DIR_NAME: &str = "trade-agreement-attestation";
 const SUBSCRIBER_STATE_FILE_NAME: &str = "state.json";
 const RHI_PATHS_PROFILE_ENV: &str = "RHI_PATHS_PROFILE";
 const RHI_PATHS_REPO_LOCAL_ROOT_ENV: &str = "RHI_PATHS_REPO_LOCAL_ROOT";

@@ -18,25 +18,13 @@ pub struct Args {
 #[derive(clap::Subcommand, Debug, Clone)]
 pub enum Command {
     #[command(
-        name = "proof-smoke",
-        about = "Run a provider-neutral proof smoke request"
+        name = "attestation-smoke",
+        about = "Run a release-product agreement attestation smoke request"
     )]
-    ProofSmoke {
+    AttestationSmoke {
         #[arg(long)]
         input: Option<PathBuf>,
         #[arg(long)]
         output: Option<PathBuf>,
-    },
-    #[command(
-        name = "remote-prove",
-        about = "Run a provider-neutral remote proof request"
-    )]
-    RemoteProve {
-        #[arg(long)]
-        input: Option<PathBuf>,
-        #[arg(long)]
-        output: Option<PathBuf>,
-        #[arg(long, default_value = "cpu", value_parser = ["cpu", "cuda"])]
-        proof_engine: String,
     },
 }

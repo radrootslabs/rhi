@@ -2,172 +2,132 @@ use std::fs;
 use std::path::Path;
 
 #[test]
-fn rhi_manifest_has_no_sdk_dependency() {
+fn rhi_manifest_has_no_sdk_or_legacy_proof_dependency() {
     let manifest = read_repo_file("Cargo.toml");
 
-    assert!(
-        !manifest.contains("radroots_sdk"),
-        "RHI must not depend on radroots_sdk"
-    );
-}
-
-#[test]
-fn rhi_validation_receipt_paths_use_validator_set_contract() {
-    let listing_events = read_repo_file("src/features/trade_listing/handlers/events.rs");
-    let receipt_worker = read_repo_file("src/features/trade_validation_receipt.rs");
-
-    assert!(
-        listing_events.contains("publish_validation_receipt("),
-        "trade listing event handler must publish V1 validation receipts from accepted orders"
-    );
-    assert!(
-        !listing_events.contains("radroots_trade::dvm"),
-        "trade listing handler must not import the removed DVM contract"
-    );
-
-    for required in [
-        "validator_set_addr",
-        "validator_set_event_id",
-        "validator_set_address_from_str",
-        "validation_receipt_event_build",
-        "verify_validation_receipt_event",
-        "MissingValidatorSetBinding",
-        "mark_receipt_completed",
-    ] {
-        assert!(
-            receipt_worker.contains(required),
-            "trade validation receipt worker must retain validator-set receipt contract `{required}`"
-        );
-    }
-
     for forbidden in [
-        "radroots_trade::dvm",
-        "KIND_TRADE_TRANSITION_PROOF_REQUEST",
-        "KIND_TRADE_TRANSITION_PROOF_RESULT",
-        "RadrootsTradeTransitionProofRequest",
-        "build_transition_proof_result_tags",
-        "deterministic_none",
-        "DeterministicNone",
+        "radroots_sdk",
+        "radroots_trade_sp1_guest",
+        "radroots_trade_sp1_host",
+        "sp1_verify",
+        "sp1_proving",
+        "sp1_cuda_proving",
+        "reqwest",
+        "sqlx",
+        "libsqlite3-sys",
     ] {
         assert!(
-            !receipt_worker.contains(forbidden),
-            "trade validation receipt worker must not retain retired contract `{forbidden}`"
+            !manifest.contains(forbidden),
+            "RHI manifest must not retain retired dependency `{forbidden}`"
         );
     }
 }
 
 #[test]
-fn rhi_sources_do_not_import_removed_sdk_or_protocol_bypasses() {
+fn rhi_release_product_surface_has_no_order_or_receipt_modules() {
+    for forbidden_path in [
+        "src/features/trade_listing/mod.rs",
+        "src/features/trade_validation_receipt.rs",
+        "src/proof_smoke.rs",
+        "src/remote_prove.rs",
+    ] {
+        assert!(
+            !Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(forbidden_path)
+                .exists(),
+            "RHI must not retain retired source path `{forbidden_path}`"
+        );
+    }
+
     for (path, source) in rust_sources_under("src") {
         for forbidden in [
-            "radroots_sdk",
-            "radroots_sdk::protocol::order",
-            "SdkDvmInventoryBinWitness",
-            "TradeProtocolClient",
-            "KIND_TRADE_LISTING_VALIDATE_REQ",
-            "KIND_TRADE_LISTING_VALIDATION_REQUEST",
-            "KIND_WORKER_TRADE_TRANSITION_PROOF_REQ",
-            "KIND_TRADE_TRANSITION_PROOF_REQUEST",
-            "KIND_TRADE_TRANSITION_PROOF_RESULT",
-            "radroots_trade::dvm",
-            "deterministic_none",
-            "DeterministicNone",
+            "trade_listing",
+            "trade_validation_receipt",
+            "proof_smoke",
+            "remote_prove",
+            "KIND_ORDER",
+            "RadrootsOrder",
+            "radroots_trade::order",
+            "radroots_event_codec::order",
+            "AgreedPendingValidation",
+            "ValidationExpired",
+            "order_acceptance",
+            "KIND_TRADE_VALIDATION_RECEIPT",
+            "validation_receipt_event_build",
+            "verify_validation_receipt_event",
+            "radroots_trade_sp1",
+            "proof_mode",
+            "LocalExecute",
+            "local_execute",
         ] {
             assert!(
                 !source.contains(forbidden),
-                "{path} contains forbidden SDK adoption bypass `{forbidden}`"
+                "{path} retains retired order or proof surface `{forbidden}`"
             );
         }
     }
 }
 
 #[test]
-fn rhi_processed_job_state_is_durable_workflow_authority() {
-    let state = read_repo_file("src/features/trade_listing/state.rs");
-    let processed_jobs = read_repo_file("src/features/trade_listing/processed_jobs.rs");
-    let receipt_worker = read_repo_file("src/features/trade_validation_receipt.rs");
-
-    assert!(
-        !state.contains("rhi_processed_jobs: HashMap"),
-        "RHI JSON subscriber state must not be the processed-job authority"
-    );
-    assert!(
-        state.contains("processed_jobs: Arc<RhiProcessedJobStore>"),
-        "TradeListingRuntime must own the processed-job SQLite store"
-    );
+fn rhi_agreement_attestation_is_release_product_optional_infrastructure() {
+    let worker = read_repo_file("src/features/trade_agreement_attestation.rs");
+    let lib = read_repo_file("src/lib.rs");
+    let cli = read_repo_file("src/cli.rs");
+    let config = read_repo_file("src/config.rs");
 
     for required in [
-        "CREATE TABLE IF NOT EXISTS rhi_processed_jobs",
-        "request_id TEXT PRIMARY KEY",
-        "CREATE UNIQUE INDEX IF NOT EXISTS rhi_processed_jobs_receipt_event_idx",
-        "CREATE UNIQUE INDEX IF NOT EXISTS rhi_processed_jobs_result_event_idx",
-        "pub async fn claim_job(",
-        "pub async fn mark_receipt_publishing(",
-        "pub async fn mark_receipt_published(",
-        "pub async fn mark_result_publishing(",
-        "pub async fn mark_completed(",
-        "pub async fn mark_receipt_completed(",
-        "RhiProcessedJobClaim::InProgress",
-        "RhiProcessedJobClaim::RecoverReceipt",
-        "RhiProcessedJobStatus::ReceiptPublishing",
-        "RhiProcessedJobStatus::ResultPublishing",
-        "RhiProcessedJobStatus::Completed",
-        "receipt_event_json",
-        "result_event_json",
-        "proof_metadata_json",
-        "DuplicateConflictingResult",
+        "RHI_AGREEMENT_ATTESTATION_PROTOCOL_ID",
+        "TradeAgreementAttestationPolicy",
+        "LocalStatementHash",
+        "TradeAgreementAttestationRuntime",
+        "handle_trade_mutation_event",
+        "attest_projection_claim",
+        "claim_mutation_id",
+        "projection_digest",
+        "RadrootsTradeAttestationResultV1::Valid",
+        "RadrootsTradeAttestationResultV1::Invalid",
+        "TRADE_MUTATION_EVENT_KINDS",
+        "is_trade_mutation_event_kind",
+        "no_agreement_authority",
+        "expected_statement_contract_hash",
     ] {
         assert!(
-            processed_jobs.contains(required),
-            "RHI processed-job store must retain SQLite workflow authority `{required}`"
+            worker.contains(required),
+            "agreement attestation worker must retain release-product requirement `{required}`"
         );
     }
 
-    for required in [
-        "fn processed_job_for_receipt(",
-        "async fn publish_receipt_with_processed_job(",
-        "publish_signed_event_io(",
-        "mark_receipt_completed(",
-        "RhiProcessedJobClaim::Completed",
-    ] {
-        assert!(
-            receipt_worker.contains(required),
-            "RHI receipt worker must retain processed-job workflow guard `{required}`"
-        );
-    }
+    assert!(
+        lib.contains("trade_mutation_subscription_kinds()")
+            && lib.contains("&TRADE_MUTATION_EVENT_KINDS"),
+        "RHI service presence must advertise canonical release-product trade mutation kinds"
+    );
+    assert!(
+        cli.contains("attestation-smoke")
+            && !cli.contains("proof-smoke")
+            && !cli.contains("remote-prove"),
+        "RHI CLI must expose only release-product agreement attestation smoke command"
+    );
+    assert!(
+        config.contains("settings.config.trade_agreement_attestation.validate()?"),
+        "RHI config loading must validate the canonical attestation policy"
+    );
 }
 
 #[test]
-fn rhi_validation_receipt_policy_is_enabled_and_validator_set_bound() {
+fn rhi_state_paths_are_named_for_agreement_attestation() {
+    let paths = read_repo_file("src/paths.rs");
     let config = read_repo_file("src/config.rs");
-    let receipt_worker = read_repo_file("src/features/trade_validation_receipt.rs");
+    let main = read_repo_file("src/main.rs");
 
-    for required in [
-        "TradeValidationReceiptProverBackend::LocalExecute",
-        "validator_binding(",
-        "MissingValidatorSetBinding",
-        "validator_set_addr",
-        "validator_set_event_id",
-        "ProverBackendRequiresNone",
-    ] {
+    for source in [paths.as_str(), config.as_str(), main.as_str()] {
         assert!(
-            receipt_worker.contains(required),
-            "trade validation receipt policy must retain enabled validator-set governance `{required}`"
+            source.contains("trade-agreement-attestation"),
+            "RHI runtime state paths must use agreement-attestation naming"
         );
-    }
-
-    assert!(
-        !receipt_worker.contains("Disabled") && !receipt_worker.contains("DeterministicNone"),
-        "RHI must not expose disabled or deterministic-none validation receipt backends"
-    );
-
-    for required in [
-        "settings.config.trade_validation_receipt.validate()?",
-        "TradeValidationReceiptProverBackend::LocalExecute",
-    ] {
         assert!(
-            config.contains(required),
-            "RHI config loading must retain enabled validator-set policy validation `{required}`"
+            !source.contains("trade-listing"),
+            "RHI runtime state paths must not retain trade-listing naming"
         );
     }
 }

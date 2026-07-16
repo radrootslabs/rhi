@@ -1,12 +1,15 @@
 #![cfg_attr(coverage_nightly, coverage(off))]
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use radroots_nostr::prelude::{RadrootsNostrClient, RadrootsNostrKeys};
 use radroots_runtime::{Backoff, BackoffConfig};
+use tokio::sync::Mutex;
 
-use crate::features::trade_listing::state::TradeListingRuntime;
-use crate::features::trade_validation_receipt::TradeValidationReceiptProverPolicy;
+use crate::features::trade_agreement_attestation::{
+    TradeAgreementAttestationPolicy, TradeAgreementAttestationRuntime,
+};
 
 #[cfg(not(test))]
 fn connection_wait_timeout() -> Duration {
@@ -32,8 +35,8 @@ fn subscriber_result_hook()
 async fn run_subscriber_once(
     client: RadrootsNostrClient,
     keys: RadrootsNostrKeys,
-    runtime: TradeListingRuntime,
-    proof_policy: TradeValidationReceiptProverPolicy,
+    runtime: TradeAgreementAttestationRuntime,
+    policy: TradeAgreementAttestationPolicy,
     stop_rx: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), anyhow::Error> {
     #[cfg(test)]
@@ -45,14 +48,8 @@ async fn run_subscriber_once(
         return result;
     }
 
-    crate::features::trade_listing::subscriber::subscriber(
-        client,
-        keys,
-        runtime,
-        proof_policy,
-        stop_rx,
-    )
-    .await
+    crate::features::trade_agreement_attestation::subscriber(client, keys, runtime, policy, stop_rx)
+        .await
 }
 
 async fn wait_for_connection_or_stop(
@@ -71,43 +68,40 @@ async fn wait_for_connection_or_stop(
 pub struct Rhi {
     pub(crate) _started: Instant,
     pub client: RadrootsNostrClient,
-    pub(crate) trade_listing_runtime: TradeListingRuntime,
-    pub(crate) trade_validation_receipt_policy: TradeValidationReceiptProverPolicy,
+    pub(crate) agreement_attestation_runtime: TradeAgreementAttestationRuntime,
+    pub(crate) agreement_attestation_policy: TradeAgreementAttestationPolicy,
 }
 
 impl Rhi {
     pub fn new(keys: RadrootsNostrKeys) -> Self {
-        Self::with_trade_listing_runtime(keys, TradeListingRuntime::new())
+        Self::with_agreement_attestation_runtime(keys, TradeAgreementAttestationRuntime::new())
     }
 
-    pub fn with_trade_listing_runtime(
+    pub fn with_agreement_attestation_runtime(
         keys: RadrootsNostrKeys,
-        trade_listing_runtime: TradeListingRuntime,
+        agreement_attestation_runtime: TradeAgreementAttestationRuntime,
     ) -> Self {
-        Self::with_trade_listing_runtime_and_policy(
+        Self::with_agreement_attestation_runtime_and_policy(
             keys,
-            trade_listing_runtime,
-            TradeValidationReceiptProverPolicy::default(),
+            agreement_attestation_runtime,
+            TradeAgreementAttestationPolicy::default(),
         )
     }
 
-    pub fn with_trade_listing_runtime_and_policy(
+    pub fn with_agreement_attestation_runtime_and_policy(
         keys: RadrootsNostrKeys,
-        trade_listing_runtime: TradeListingRuntime,
-        trade_validation_receipt_policy: TradeValidationReceiptProverPolicy,
+        agreement_attestation_runtime: TradeAgreementAttestationRuntime,
+        agreement_attestation_policy: TradeAgreementAttestationPolicy,
     ) -> Self {
         let client = RadrootsNostrClient::new(keys);
         Self {
             _started: Instant::now(),
             client,
-            trade_listing_runtime,
-            trade_validation_receipt_policy,
+            agreement_attestation_runtime,
+            agreement_attestation_policy,
         }
     }
 }
-
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 pub struct RhiHandle {
     stop_tx: Arc<Mutex<Option<tokio::sync::watch::Sender<bool>>>>,
@@ -118,7 +112,7 @@ impl Clone for RhiHandle {
     fn clone(&self) -> Self {
         Self {
             stop_tx: Arc::clone(&self.stop_tx),
-            join: None, // don’t clone the JoinHandle!
+            join: None,
         }
     }
 }
@@ -140,14 +134,14 @@ impl RhiHandle {
 pub async fn start_subscriber(
     client: RadrootsNostrClient,
     keys: RadrootsNostrKeys,
-    runtime: TradeListingRuntime,
+    runtime: TradeAgreementAttestationRuntime,
     backoff_cfg: BackoffConfig,
 ) -> RhiHandle {
     start_subscriber_with_policy(
         client,
         keys,
         runtime,
-        TradeValidationReceiptProverPolicy::default(),
+        TradeAgreementAttestationPolicy::default(),
         backoff_cfg,
     )
     .await
@@ -156,8 +150,8 @@ pub async fn start_subscriber(
 pub async fn start_subscriber_with_policy(
     client: RadrootsNostrClient,
     keys: RadrootsNostrKeys,
-    runtime: TradeListingRuntime,
-    proof_policy: TradeValidationReceiptProverPolicy,
+    runtime: TradeAgreementAttestationRuntime,
+    policy: TradeAgreementAttestationPolicy,
     backoff_cfg: BackoffConfig,
 ) -> RhiHandle {
     let (stop_tx, mut stop_rx) = tokio::sync::watch::channel(false);
@@ -178,7 +172,7 @@ pub async fn start_subscriber_with_policy(
                 client.clone(),
                 keys.clone(),
                 runtime.clone(),
-                proof_policy.clone(),
+                policy.clone(),
                 stop_rx.clone(),
             )
             .await;
@@ -186,7 +180,7 @@ pub async fn start_subscriber_with_policy(
             let failed = res.is_err();
 
             if let Err(e) = res {
-                tracing::error!("Error on job request subscription: {e}");
+                tracing::error!("Error on agreement attestation subscription: {e}");
             } else {
                 backoff.reset();
             }
@@ -217,7 +211,7 @@ mod tests {
     use super::{
         Rhi, RhiHandle, start_subscriber, subscriber_result_hook, wait_for_connection_or_stop,
     };
-    use crate::features::trade_listing::state::TradeListingRuntime;
+    use crate::features::trade_agreement_attestation::TradeAgreementAttestationRuntime;
     use anyhow::anyhow;
     use radroots_nostr::prelude::{RadrootsNostrClient, RadrootsNostrKeys};
     use radroots_runtime::BackoffConfig;
@@ -229,18 +223,7 @@ mod tests {
         let keys = RadrootsNostrKeys::generate();
         let rhi = Rhi::new(keys);
         let _ = rhi.client.clone();
-        let state = rhi.trade_listing_runtime.state();
-        state
-            .lock()
-            .await
-            .mark_listing_validated("addr", "evt-listing-1");
-        assert!(
-            rhi.trade_listing_runtime
-                .state()
-                .lock()
-                .await
-                .is_listing_validated("addr")
-        );
+        assert!(rhi.agreement_attestation_runtime.reports().await.is_empty());
     }
 
     #[tokio::test]
@@ -271,7 +254,7 @@ mod tests {
         let handle_err = start_subscriber(
             client_err,
             keys.clone(),
-            TradeListingRuntime::new(),
+            TradeAgreementAttestationRuntime::new(),
             cfg.clone(),
         )
         .await;
@@ -285,7 +268,13 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push_back(Ok(()));
-        let handle_ok = start_subscriber(client_ok, keys, TradeListingRuntime::new(), cfg).await;
+        let handle_ok = start_subscriber(
+            client_ok,
+            keys,
+            TradeAgreementAttestationRuntime::new(),
+            cfg,
+        )
+        .await;
         tokio::time::sleep(std::time::Duration::from_millis(30)).await;
         handle_ok.stop();
         handle_ok.stopped().await;
@@ -298,7 +287,7 @@ mod tests {
         let handle = start_subscriber(
             client,
             keys,
-            TradeListingRuntime::new(),
+            TradeAgreementAttestationRuntime::new(),
             BackoffConfig {
                 base_ms: 25,
                 max_ms: 50,
@@ -324,7 +313,7 @@ mod tests {
         let handle = start_subscriber(
             client,
             keys,
-            TradeListingRuntime::new(),
+            TradeAgreementAttestationRuntime::new(),
             BackoffConfig {
                 base_ms: 200,
                 max_ms: 200,

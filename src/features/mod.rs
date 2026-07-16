@@ -1,2 +1,1 @@
-pub mod trade_listing;
-pub mod trade_validation_receipt;
+pub mod trade_agreement_attestation;
