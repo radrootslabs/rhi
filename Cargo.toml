@@ -11,15 +11,15 @@ description = "Radroots trade agreement attestation worker"
 resolver = "2"
 
 [workspace.dependencies]
-radroots_core = { path = "../lib/crates/core" }
-radroots_event = { path = "../lib/crates/event" }
-radroots_event_codec = { path = "../lib/crates/event_codec" }
-radroots_identity = { path = "../lib/crates/identity" }
-radroots_log = { path = "../lib/crates/log" }
-radroots_nostr = { path = "../lib/crates/nostr" }
-radroots_runtime = { path = "../lib/crates/runtime" }
-radroots_runtime_paths = { path = "../lib/crates/runtime_paths" }
-radroots_trade = { path = "../lib/crates/trade" }
+radroots_core = { version = "=1.0.0-alpha.1", path = "../lib/crates/core" }
+radroots_event = { version = "=1.0.0-alpha.1", path = "../lib/crates/event" }
+radroots_event_codec = { version = "=1.0.0-alpha.1", path = "../lib/crates/event_codec" }
+radroots_identity = { version = "=1.0.0-alpha.1", path = "../lib/crates/identity" }
+radroots_log = { version = "=1.0.0-alpha.1", path = "../lib/crates/log" }
+radroots_nostr = { version = "=1.0.0-alpha.1", path = "../lib/crates/nostr" }
+radroots_runtime = { version = "=1.0.0-alpha.1", path = "../lib/crates/runtime" }
+radroots_runtime_paths = { version = "=1.0.0-alpha.1", path = "../lib/crates/runtime_paths" }
+radroots_trade = { version = "=1.0.0-alpha.1", path = "../lib/crates/trade" }
 
 [features]
 default = []
@@ -30,7 +30,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 [dependencies]
 radroots_core = { workspace = true, features = ["std", "serde"] }
 radroots_event = { workspace = true, features = ["serde"] }
-radroots_event_codec = { workspace = true, features = ["nostr"] }
+radroots_event_codec = { workspace = true, features = ["nostr", "serde_json"] }
 radroots_identity = { workspace = true }
 radroots_log = { workspace = true }
 radroots_nostr = { workspace = true, features = ["client", "codec", "events", "http"] }

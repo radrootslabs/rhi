@@ -10,8 +10,12 @@ pub mod rhi;
 
 pub use cli::Args as cli_args;
 
-use anyhow::Result;
-use radroots_event::kinds::TRADE_MUTATION_EVENT_KINDS;
+use anyhow::{Context, Result, anyhow, bail};
+use radroots_event::{
+    kinds::TRADE_MUTATION_EVENT_KINDS,
+    profile::{RadrootsAuthoredProfile, RadrootsNip05Identifier},
+};
+use radroots_event_codec::profile::authored::authored_profile_to_wire_parts;
 use std::time::Duration;
 
 use crate::features::trade_agreement_attestation::{
@@ -20,9 +24,9 @@ use crate::features::trade_agreement_attestation::{
 };
 use crate::identity_storage::load_service_identity;
 use crate::rhi::{Rhi, start_subscriber_with_policy};
-use radroots_identity::RadrootsIdentity;
 use radroots_nostr::prelude::{
-    RadrootsNostrApplicationHandlerSpec, radroots_nostr_bootstrap_service_presence,
+    RadrootsNostrApplicationHandlerSpec, RadrootsNostrEventBuilder, RadrootsNostrMetadata,
+    radroots_nostr_build_event, radroots_nostr_publish_application_handler,
 };
 use tracing::{info, warn};
 
@@ -72,26 +76,80 @@ fn take_bootstrap_hook_result() -> Option<Result<(), String>> {
 
 async fn bootstrap_presence(
     client: &radroots_nostr::prelude::RadrootsNostrClient,
-    identity: &RadrootsIdentity,
-    metadata: &radroots_nostr::prelude::RadrootsNostrMetadata,
+    metadata: &RadrootsNostrMetadata,
     handler_spec: &RadrootsNostrApplicationHandlerSpec,
 ) -> Result<()> {
-    let bootstrap_result: Result<()> = match take_bootstrap_hook_result() {
-        Some(result) => result.map_err(anyhow::Error::msg),
-        None => radroots_nostr_bootstrap_service_presence(
-            client,
-            identity,
-            None,
-            metadata,
-            handler_spec,
-            Duration::from_secs(5),
-        )
+    if let Some(result) = take_bootstrap_hook_result() {
+        return result.map_err(anyhow::Error::msg);
+    }
+
+    client.connect().await;
+    client.wait_for_connection(Duration::from_secs(5)).await;
+
+    let builder = build_authored_service_profile_event(metadata)?;
+    client
+        .send_event_builder(builder)
         .await
-        .map(|_| ())
-        .map_err(anyhow::Error::from),
-    };
-    bootstrap_result?;
+        .context("publish strict RHI service Profile")?;
+
+    radroots_nostr_publish_application_handler(client, handler_spec)
+        .await
+        .context("publish RHI application-handler event")?;
     Ok(())
+}
+
+fn build_authored_service_profile_event(
+    metadata: &RadrootsNostrMetadata,
+) -> Result<RadrootsNostrEventBuilder> {
+    let profile = authored_service_profile(metadata)?;
+    let wire =
+        authored_profile_to_wire_parts(&profile).context("encode strict RHI service Profile")?;
+    radroots_nostr_build_event(wire.kind, wire.content, wire.tags)
+        .context("build strict RHI service Profile event")
+}
+
+fn authored_service_profile(metadata: &RadrootsNostrMetadata) -> Result<RadrootsAuthoredProfile> {
+    if metadata.picture.is_some() || metadata.banner.is_some() {
+        bail!(
+            "RHI service Profile media requires byte-verified Blossom descriptors and proven BUD-02 upload completion"
+        );
+    }
+    if metadata.website.is_some() || metadata.lud06.is_some() || metadata.lud16.is_some() {
+        bail!("RHI service Profile contains fields outside the strict authored contract");
+    }
+
+    let name = metadata
+        .name
+        .clone()
+        .ok_or_else(|| anyhow!("RHI service Profile requires metadata.name"))?;
+    let mut profile =
+        RadrootsAuthoredProfile::new(name).context("validate strict RHI service Profile name")?;
+    if let Some(display_name) = metadata.display_name.as_ref() {
+        profile = profile.with_display_name(display_name.clone());
+    }
+    if let Some(about) = metadata.about.as_ref() {
+        profile = profile.with_about(about.clone());
+    }
+    if let Some(nip05) = metadata.nip05.as_deref() {
+        profile = profile.with_nip05(
+            RadrootsNip05Identifier::parse(nip05)
+                .context("validate strict RHI service Profile NIP-05 identifier")?,
+        );
+    }
+
+    for key in metadata.custom.keys() {
+        if key != "bot" {
+            bail!("RHI service Profile contains unsupported metadata field `{key}`");
+        }
+    }
+    if let Some(bot) = metadata.custom.get("bot") {
+        profile = profile.with_bot(
+            bot.as_bool()
+                .ok_or_else(|| anyhow!("RHI service Profile `bot` field must be a Boolean"))?,
+        );
+    }
+
+    Ok(profile)
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
@@ -150,7 +208,7 @@ pub async fn run_rhi(settings: &config::Settings, args: &cli_args) -> Result<()>
             relays: relays.clone(),
             nostrconnect_url: None,
         };
-        if let Err(e) = bootstrap_presence(&client, &identity, &md, &handler_spec).await {
+        if let Err(e) = bootstrap_presence(&client, &md, &handler_spec).await {
             warn!("Failed to publish service presence on startup: {e}");
         } else {
             info!("Published service presence on startup");
@@ -186,8 +244,9 @@ pub async fn run_rhi(settings: &config::Settings, args: &cli_args) -> Result<()>
         RunRhiWaitOutcome::Stopped => {}
     }
 
-    client.unsubscribe_all().await;
-    client.disconnect().await;
+    let sdk_client = client.into_inner();
+    sdk_client.unsubscribe_all().await;
+    sdk_client.disconnect().await;
 
     Ok(())
 }
@@ -200,8 +259,9 @@ pub fn release_product_handler_kinds() -> &'static [u32] {
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::{
-        RUN_RHI_AUTO_STOP, RUN_RHI_SKIP_SUBSCRIBER, RunRhiWaitOutcome, bootstrap_presence,
-        release_product_handler_kinds, run_rhi, run_rhi_bootstrap_hook, run_rhi_wait_hook,
+        RUN_RHI_AUTO_STOP, RUN_RHI_SKIP_SUBSCRIBER, RunRhiWaitOutcome, authored_service_profile,
+        bootstrap_presence, build_authored_service_profile_event, release_product_handler_kinds,
+        run_rhi, run_rhi_bootstrap_hook, run_rhi_wait_hook,
     };
     use crate::{cli_args, config};
     use radroots_event::kinds::TRADE_MUTATION_EVENT_KINDS;
@@ -336,7 +396,6 @@ mod tests {
             Some(Err("forced bootstrap failure".to_string()));
         let keys = radroots_nostr::prelude::RadrootsNostrKeys::generate();
         let client = radroots_nostr::prelude::RadrootsNostrClient::new(keys.clone());
-        let identity = radroots_identity::RadrootsIdentity::new(keys);
         let metadata: radroots_nostr::prelude::RadrootsNostrMetadata =
             serde_json::from_str(r#"{"name":"rhi-test"}"#).expect("metadata");
         let spec = radroots_nostr::prelude::RadrootsNostrApplicationHandlerSpec {
@@ -347,9 +406,81 @@ mod tests {
             relays: Vec::new(),
             nostrconnect_url: None,
         };
-        let err = bootstrap_presence(&client, &identity, &metadata, &spec)
+        let err = bootstrap_presence(&client, &metadata, &spec)
             .await
             .expect_err("forced error");
         assert!(format!("{err:#}").contains("forced bootstrap failure"));
+    }
+
+    #[test]
+    fn service_profile_uses_only_strict_authored_fields() {
+        let metadata: radroots_nostr::prelude::RadrootsNostrMetadata = serde_json::from_str(
+            r#"{
+                "name":"rhi",
+                "display_name":"Radroots agreement attestation",
+                "about":"Attests trade agreement projections",
+                "nip05":"rhi@EXAMPLE.COM",
+                "bot":true
+            }"#,
+        )
+        .expect("metadata");
+
+        let profile = authored_service_profile(&metadata).expect("strict profile");
+
+        assert_eq!(profile.name(), "rhi");
+        assert_eq!(
+            profile.display_name(),
+            Some("Radroots agreement attestation")
+        );
+        assert_eq!(profile.about(), Some("Attests trade agreement projections"));
+        assert_eq!(
+            profile.nip05().map(|identifier| identifier.as_str()),
+            Some("rhi@example.com")
+        );
+        assert_eq!(profile.bot(), Some(true));
+        assert!(profile.picture().is_none());
+        assert!(profile.banner().is_none());
+
+        let keys = radroots_nostr::prelude::RadrootsNostrKeys::generate();
+        let event = build_authored_service_profile_event(&metadata)
+            .expect("strict Profile event")
+            .build(keys.public_key());
+        assert_eq!(event.kind.as_u16(), 0);
+        assert!(event.tags.is_empty());
+        assert_eq!(
+            event.content,
+            r#"{"name":"rhi","display_name":"Radroots agreement attestation","about":"Attests trade agreement projections","nip05":"rhi@example.com","bot":true}"#
+        );
+    }
+
+    #[test]
+    fn service_profile_rejects_unverified_media_and_unsupported_fields() {
+        for (metadata, expected) in [
+            (
+                r#"{"name":"rhi","picture":"https://cdn.example/rhi.png"}"#,
+                "byte-verified Blossom descriptors",
+            ),
+            (
+                r#"{"name":"rhi","website":"https://radroots.org"}"#,
+                "outside the strict authored contract",
+            ),
+            (
+                r#"{"name":"rhi","bot":"yes"}"#,
+                "`bot` field must be a Boolean",
+            ),
+            (
+                r#"{"name":"rhi","legacy_role":"worker"}"#,
+                "unsupported metadata field `legacy_role`",
+            ),
+            (r#"{}"#, "requires metadata.name"),
+            (
+                r#"{"name":"rhi","nip05":"RHI@example.com"}"#,
+                "validate strict RHI service Profile NIP-05 identifier",
+            ),
+        ] {
+            let metadata = serde_json::from_str(metadata).expect("metadata");
+            let error = authored_service_profile(&metadata).expect_err("must fail closed");
+            assert!(format!("{error:#}").contains(expected), "{error:#}");
+        }
     }
 }

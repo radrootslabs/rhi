@@ -105,6 +105,7 @@ fn init_rhi_logging(settings: &config::Settings) -> Result<()> {
         stdout: settings.config.logging.stdout,
         default_level: Some(settings.config.logging.filter.clone()),
         file_layout: LogFileLayout::PrefixedDate,
+        ..LoggingOptions::default()
     })
     .context("initialize logging")
 }

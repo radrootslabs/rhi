@@ -24,6 +24,25 @@ fn rhi_manifest_has_no_sdk_or_legacy_proof_dependency() {
 }
 
 #[test]
+fn rhi_manifest_exact_pins_radroots_contract() {
+    let manifest: toml::Value = toml::from_str(&read_repo_file("Cargo.toml")).expect("manifest");
+    let dependencies = manifest["workspace"]["dependencies"]
+        .as_table()
+        .expect("workspace dependencies");
+
+    for (name, dependency) in dependencies {
+        if !name.starts_with("radroots_") {
+            continue;
+        }
+        assert_eq!(
+            dependency["version"].as_str(),
+            Some("=1.0.0-alpha.1"),
+            "RHI must exact-pin {name} to the governed event contract release"
+        );
+    }
+}
+
+#[test]
 fn rhi_release_product_surface_has_no_order_or_receipt_modules() {
     for forbidden_path in [
         "src/features/trade_listing/mod.rs",
@@ -99,7 +118,13 @@ fn rhi_agreement_attestation_is_release_product_optional_infrastructure() {
 
     assert!(
         lib.contains("trade_mutation_subscription_kinds()")
-            && lib.contains("&TRADE_MUTATION_EVENT_KINDS"),
+            && lib.contains("&TRADE_MUTATION_EVENT_KINDS")
+            && lib.contains("RadrootsAuthoredProfile")
+            && lib.contains("authored_profile_to_wire_parts")
+            && lib.contains("radroots_nostr_publish_application_handler")
+            && !lib.contains("radroots_nostr_bootstrap_service_presence")
+            && !lib.contains("RadrootsProfileType")
+            && lib.contains("client.into_inner()"),
         "RHI service presence must advertise canonical release-product trade mutation kinds"
     );
     assert!(

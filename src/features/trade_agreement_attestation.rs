@@ -722,7 +722,8 @@ pub async fn subscriber(
     }
 
     let subscription_id = subscribe_io(&client, filter).await?;
-    let mut notifications = client.notifications();
+    let sdk_client = client.clone().into_inner();
+    let mut notifications = sdk_client.notifications();
     let mut notifications_closed = false;
 
     loop {
