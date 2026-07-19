@@ -15,7 +15,6 @@ use radroots_event::{
     kinds::TRADE_MUTATION_EVENT_KINDS,
     profile::{RadrootsAuthoredProfile, RadrootsNip05Identifier},
 };
-use radroots_event_codec::profile::authored::authored_profile_to_wire_parts;
 use std::time::Duration;
 
 use crate::features::trade_agreement_attestation::{
@@ -25,8 +24,8 @@ use crate::features::trade_agreement_attestation::{
 use crate::identity_storage::load_service_identity;
 use crate::rhi::{Rhi, start_subscriber_with_policy};
 use radroots_nostr::prelude::{
-    RadrootsNostrApplicationHandlerSpec, RadrootsNostrEventBuilder, RadrootsNostrMetadata,
-    radroots_nostr_build_event, radroots_nostr_publish_application_handler,
+    RadrootsNostrApplicationHandlerSpec, RadrootsNostrMetadata, RadrootsNostrProfileEventBuilder,
+    radroots_nostr_build_profile_event, radroots_nostr_publish_application_handler,
 };
 use tracing::{info, warn};
 
@@ -88,7 +87,7 @@ async fn bootstrap_presence(
 
     let builder = build_authored_service_profile_event(metadata)?;
     client
-        .send_event_builder(builder)
+        .send_profile_event_builder(builder)
         .await
         .context("publish strict RHI service Profile")?;
 
@@ -100,12 +99,9 @@ async fn bootstrap_presence(
 
 fn build_authored_service_profile_event(
     metadata: &RadrootsNostrMetadata,
-) -> Result<RadrootsNostrEventBuilder> {
+) -> Result<RadrootsNostrProfileEventBuilder> {
     let profile = authored_service_profile(metadata)?;
-    let wire =
-        authored_profile_to_wire_parts(&profile).context("encode strict RHI service Profile")?;
-    radroots_nostr_build_event(wire.kind, wire.content, wire.tags)
-        .context("build strict RHI service Profile event")
+    radroots_nostr_build_profile_event(&profile).context("build strict RHI service Profile event")
 }
 
 fn authored_service_profile(metadata: &RadrootsNostrMetadata) -> Result<RadrootsAuthoredProfile> {
@@ -444,7 +440,8 @@ mod tests {
         let keys = radroots_nostr::prelude::RadrootsNostrKeys::generate();
         let event = build_authored_service_profile_event(&metadata)
             .expect("strict Profile event")
-            .build(keys.public_key());
+            .sign_with_keys(&keys)
+            .expect("sign strict Profile event");
         assert_eq!(event.kind.as_u16(), 0);
         assert!(event.tags.is_empty());
         assert_eq!(

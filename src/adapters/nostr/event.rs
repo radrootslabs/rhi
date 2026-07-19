@@ -83,7 +83,7 @@ mod tests {
     use super::NostrEventAdapter;
     use radroots_event_codec::job::traits::{JobEventBorrow, JobEventLike};
     use radroots_nostr::prelude::{
-        RadrootsNostrEvent, RadrootsNostrEventBuilder, RadrootsNostrKeys, RadrootsNostrKind,
+        RadrootsNostrEvent, RadrootsNostrGenericEventBuilder, RadrootsNostrKeys, RadrootsNostrKind,
         RadrootsNostrTag, RadrootsNostrTagKind,
     };
 
@@ -92,7 +92,7 @@ mod tests {
         kind: RadrootsNostrKind,
         tags: Vec<RadrootsNostrTag>,
     ) -> RadrootsNostrEvent {
-        RadrootsNostrEventBuilder::new(kind, "content")
+        RadrootsNostrGenericEventBuilder::new(kind, "content")
             .tags(tags)
             .sign_with_keys(keys)
             .expect("event must sign")
@@ -132,7 +132,7 @@ mod tests {
     #[test]
     fn adapter_maps_non_custom_kind_to_zero() {
         let keys = RadrootsNostrKeys::generate();
-        let event = build_event(&keys, RadrootsNostrKind::TextNote, Vec::new());
+        let event = build_event(&keys, RadrootsNostrKind::Repost, Vec::new());
         let adapter = NostrEventAdapter::new(&event);
 
         assert_eq!(JobEventBorrow::raw_kind(&adapter), 0);

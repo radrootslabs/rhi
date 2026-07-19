@@ -3,6 +3,11 @@
 This is the README for `rhi` which listens on Rad Roots networks and maintains
 a stable activity record for parties buying and selling agricultural goods.
 
+RHI publishes its service kind-0 Profile only through the sealed
+`radroots_nostr` Profile builder after constructing the strict
+`RadrootsAuthoredProfile` replacement snapshot. It does not retain a generic
+kind-0 event-authoring path.
+
 ## Copyright
 
 Except as otherwise noted, all files in the `rhi` distribution are
