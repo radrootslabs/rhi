@@ -15,5 +15,6 @@
 - do not expose secrets, private keys, credentials, tokens, invite codes, private identifiers, sensitive user data, or sensitive event content in code, logs, tests, fixtures, docs, or examples
 - prefer tests that cover worker behavior without relying on ambient network access or machine-specific state
 - use checked-in, repo-owned validation first; run the smallest documented validation that credibly covers the change
+- `.github/**` and capsule-local CI workflows are forbidden; keep validation forge-agnostic and leave any monorepo orchestration to the parent repository's root `.act/**` authority
 - if validation cannot run, report exactly what was skipped and why; never claim validation passed unless it actually ran
 - keep commits focused and reviewable, using `<scope>: <imperative summary>` unless a repo convention overrides it
