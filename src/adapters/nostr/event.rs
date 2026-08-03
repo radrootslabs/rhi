@@ -1,16 +1,16 @@
+use crate::host_nostr::{Event, Kind};
 use radroots_event_codec::job::traits::{JobEventBorrow, JobEventLike};
-use radroots_nostr::prelude::{RadrootsNostrEvent, RadrootsNostrKind};
 
 #[derive(Clone, Debug)]
 pub struct NostrEventAdapter<'a> {
-    evt: &'a RadrootsNostrEvent,
+    evt: &'a Event,
     id_hex: String,
     author_hex: String,
 }
 
 impl<'a> NostrEventAdapter<'a> {
     #[inline]
-    pub fn new(evt: &'a RadrootsNostrEvent) -> Self {
+    pub fn new(evt: &'a Event) -> Self {
         Self {
             evt,
             id_hex: evt.id.to_hex(),
@@ -30,12 +30,12 @@ impl<'a> NostrEventAdapter<'a> {
 
 impl<'a> JobEventBorrow<'a> for NostrEventAdapter<'a> {
     #[inline]
-    fn raw_id(&'a self) -> &'a str {
-        &self.id_hex
+    fn raw_id(&'a self) -> String {
+        self.id_hex.clone()
     }
     #[inline]
-    fn raw_author(&'a self) -> &'a str {
-        &self.author_hex
+    fn raw_author(&'a self) -> String {
+        self.author_hex.clone()
     }
     #[inline]
     fn raw_content(&'a self) -> &'a str {
@@ -44,7 +44,7 @@ impl<'a> JobEventBorrow<'a> for NostrEventAdapter<'a> {
     #[inline]
     fn raw_kind(&'a self) -> u32 {
         match self.evt.kind {
-            RadrootsNostrKind::Custom(v) => v as u32,
+            Kind::Custom(v) => v as u32,
             _ => 0,
         }
     }
@@ -62,7 +62,7 @@ impl JobEventLike for NostrEventAdapter<'_> {
     }
     fn raw_kind(&self) -> u32 {
         match self.evt.kind {
-            RadrootsNostrKind::Custom(v) => v as u32,
+            Kind::Custom(v) => v as u32,
             _ => 0,
         }
     }
@@ -81,18 +81,11 @@ impl JobEventLike for NostrEventAdapter<'_> {
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::NostrEventAdapter;
+    use crate::host_nostr::{Event, GenericBuilder, Keys, Kind, Tag, TagKind};
     use radroots_event_codec::job::traits::{JobEventBorrow, JobEventLike};
-    use radroots_nostr::prelude::{
-        RadrootsNostrEvent, RadrootsNostrGenericEventBuilder, RadrootsNostrKeys, RadrootsNostrKind,
-        RadrootsNostrTag, RadrootsNostrTagKind,
-    };
 
-    fn build_event(
-        keys: &RadrootsNostrKeys,
-        kind: RadrootsNostrKind,
-        tags: Vec<RadrootsNostrTag>,
-    ) -> RadrootsNostrEvent {
-        RadrootsNostrGenericEventBuilder::new(kind, "content")
+    fn build_event(keys: &Keys, kind: Kind, tags: Vec<Tag>) -> Event {
+        GenericBuilder::new(kind, "content")
             .tags(tags)
             .sign_with_keys(keys)
             .expect("event must sign")
@@ -100,14 +93,11 @@ mod tests {
 
     #[test]
     fn adapter_exposes_borrow_and_owned_fields_for_custom_kind() {
-        let keys = RadrootsNostrKeys::generate();
-        let recipient = RadrootsNostrKeys::generate();
+        let keys = Keys::generate();
+        let recipient = Keys::generate();
         let recipient_hex = recipient.public_key().to_hex();
-        let tags = vec![RadrootsNostrTag::custom(
-            RadrootsNostrTagKind::p(),
-            vec![recipient_hex.clone()],
-        )];
-        let event = build_event(&keys, RadrootsNostrKind::Custom(5322), tags);
+        let tags = vec![Tag::custom(TagKind::p(), vec![recipient_hex.clone()])];
+        let event = build_event(&keys, Kind::Custom(5322), tags);
         let adapter = NostrEventAdapter::new(&event);
 
         assert_eq!(JobEventBorrow::raw_id(&adapter), event.id.to_hex());
@@ -131,8 +121,8 @@ mod tests {
 
     #[test]
     fn adapter_maps_non_custom_kind_to_zero() {
-        let keys = RadrootsNostrKeys::generate();
-        let event = build_event(&keys, RadrootsNostrKind::Repost, Vec::new());
+        let keys = Keys::generate();
+        let event = build_event(&keys, Kind::Repost, Vec::new());
         let adapter = NostrEventAdapter::new(&event);
 
         assert_eq!(JobEventBorrow::raw_kind(&adapter), 0);

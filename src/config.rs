@@ -1,6 +1,6 @@
+use crate::host_nostr::Metadata;
+use crate::host_runtime::{BackoffConfig, NostrServiceConfig};
 use anyhow::{Context, Result, bail};
-use radroots_nostr::prelude::RadrootsNostrMetadata;
-use radroots_runtime::{BackoffConfig, RadrootsNostrServiceConfig};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -83,8 +83,8 @@ struct RawServiceConfig {
 }
 
 impl RawServiceConfig {
-    fn into_service_config(self) -> RadrootsNostrServiceConfig {
-        RadrootsNostrServiceConfig {
+    fn into_service_config(self) -> NostrServiceConfig {
+        NostrServiceConfig {
             logs_dir: self.logging.output_dir.display().to_string(),
             relays: self.relays.urls,
             nip89_identifier: self.nostr.nip89.identifier,
@@ -96,7 +96,7 @@ impl RawServiceConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Configuration {
     #[serde(flatten)]
-    pub service: RadrootsNostrServiceConfig,
+    pub service: NostrServiceConfig,
     pub logging: LoggingConfig,
     #[serde(default)]
     pub subscriber: SubscriberConfig,
@@ -184,7 +184,7 @@ impl Default for SubscriberStateConfig {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 struct RawSettings {
-    pub metadata: RadrootsNostrMetadata,
+    pub metadata: Metadata,
     #[serde(default)]
     pub logging: RawLoggingConfig,
     #[serde(default)]
@@ -221,14 +221,14 @@ impl RawSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
-    pub metadata: RadrootsNostrMetadata,
+    pub metadata: Metadata,
     pub config: Configuration,
 }
 
 fn load_settings_from_path_with_resolver(
     path: &Path,
-    resolver: &radroots_runtime_paths::RadrootsPathResolver,
-    profile: radroots_runtime_paths::RadrootsPathProfile,
+    resolver: &crate::host_paths::RadrootsPathResolver,
+    profile: crate::host_paths::RadrootsPathProfile,
     repo_local_root: Option<&Path>,
 ) -> Result<Settings> {
     let paths = resolve_runtime_paths_with_resolver(resolver, profile, repo_local_root)?;
@@ -245,7 +245,7 @@ pub fn load_settings_from_path(path: &Path) -> Result<Settings> {
     let (profile, repo_local_root) = crate::paths::process_path_selection()?;
     load_settings_from_path_with_resolver(
         path,
-        &radroots_runtime_paths::RadrootsPathResolver::current(),
+        &crate::host_paths::RadrootsPathResolver::current(),
         profile,
         repo_local_root.as_deref(),
     )
@@ -255,13 +255,13 @@ pub fn load_settings_from_path(path: &Path) -> Result<Settings> {
 mod tests {
     use super::load_settings_from_path_with_resolver;
     use crate::features::trade_agreement_attestation::TradeAgreementAttestationBackend;
+    use crate::host_paths::{
+        RadrootsHostEnvironment, RadrootsPathOverrides, RadrootsPathProfile, RadrootsPathResolver,
+        RadrootsPlatform, RadrootsRuntimeNamespace,
+    };
     use crate::paths::{
         default_subscriber_state_path_for_process, resolve_runtime_paths_with_resolver,
         runtime_contract_with_resolver,
-    };
-    use radroots_runtime_paths::{
-        RadrootsHostEnvironment, RadrootsPathOverrides, RadrootsPathProfile, RadrootsPathResolver,
-        RadrootsPlatform, RadrootsRuntimeNamespace,
     };
     use std::path::PathBuf;
 

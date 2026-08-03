@@ -4,6 +4,10 @@ pub mod adapters;
 pub mod cli;
 pub mod config;
 pub mod features;
+pub mod host_identity;
+pub mod host_nostr;
+pub mod host_paths;
+pub mod host_runtime;
 pub mod identity_storage;
 pub mod paths;
 pub mod rhi;
@@ -12,8 +16,8 @@ pub use cli::Args as cli_args;
 
 use anyhow::{Context, Result, anyhow, bail};
 use radroots_event::{
-    kinds::TRADE_MUTATION_EVENT_KINDS,
-    profile::{RadrootsAuthoredProfile, RadrootsNip05Identifier},
+    envelope::kind::TRADE_MUTATION_EVENT_KINDS,
+    profile::{AuthoredProfile, Nip05Identifier},
 };
 use std::time::Duration;
 
@@ -21,12 +25,10 @@ use crate::features::trade_agreement_attestation::{
     TradeAgreementAttestationRuntime, TradeAgreementAttestationRuntimeConfig,
     trade_mutation_subscription_kinds,
 };
+use crate::host_nostr::{ApplicationHandlerSpec, Metadata, ProfileBuilder};
 use crate::identity_storage::load_service_identity;
 use crate::rhi::{Rhi, start_subscriber_with_policy};
-use radroots_nostr::prelude::{
-    RadrootsNostrApplicationHandlerSpec, RadrootsNostrMetadata, RadrootsNostrProfileEventBuilder,
-    radroots_nostr_build_profile_event, radroots_nostr_publish_application_handler,
-};
+use radroots_nostr::event::{build_application_handler, build_profile};
 use tracing::{info, warn};
 
 #[cfg(test)]
@@ -74,9 +76,9 @@ fn take_bootstrap_hook_result() -> Option<Result<(), String>> {
 }
 
 async fn bootstrap_presence(
-    client: &radroots_nostr::prelude::RadrootsNostrClient,
-    metadata: &RadrootsNostrMetadata,
-    handler_spec: &RadrootsNostrApplicationHandlerSpec,
+    client: &crate::host_nostr::Client,
+    metadata: &Metadata,
+    handler_spec: &ApplicationHandlerSpec,
 ) -> Result<()> {
     if let Some(result) = take_bootstrap_hook_result() {
         return result.map_err(anyhow::Error::msg);
@@ -85,26 +87,31 @@ async fn bootstrap_presence(
     client.connect().await;
     client.wait_for_connection(Duration::from_secs(5)).await;
 
-    let builder = build_authored_service_profile_event(metadata)?;
+    let profile_event = build_authored_service_profile_event(metadata)?
+        .sign_with_keys(client.keys())
+        .context("sign strict RHI service Profile")?;
     client
-        .send_profile_event_builder(builder)
+        .send_event(&profile_event)
         .await
         .context("publish strict RHI service Profile")?;
 
-    radroots_nostr_publish_application_handler(client, handler_spec)
+    let handler_event = build_application_handler(handler_spec)
+        .context("build RHI application-handler event")?
+        .sign_with_keys(client.keys())
+        .context("sign RHI application-handler event")?;
+    client
+        .send_event(&handler_event)
         .await
         .context("publish RHI application-handler event")?;
     Ok(())
 }
 
-fn build_authored_service_profile_event(
-    metadata: &RadrootsNostrMetadata,
-) -> Result<RadrootsNostrProfileEventBuilder> {
+fn build_authored_service_profile_event(metadata: &Metadata) -> Result<ProfileBuilder> {
     let profile = authored_service_profile(metadata)?;
-    radroots_nostr_build_profile_event(&profile).context("build strict RHI service Profile event")
+    build_profile(&profile).context("build strict RHI service Profile event")
 }
 
-fn authored_service_profile(metadata: &RadrootsNostrMetadata) -> Result<RadrootsAuthoredProfile> {
+fn authored_service_profile(metadata: &Metadata) -> Result<AuthoredProfile> {
     if metadata.picture.is_some() || metadata.banner.is_some() {
         bail!(
             "RHI service Profile media requires byte-verified Blossom descriptors and proven BUD-02 upload completion"
@@ -119,7 +126,7 @@ fn authored_service_profile(metadata: &RadrootsNostrMetadata) -> Result<Radroots
         .clone()
         .ok_or_else(|| anyhow!("RHI service Profile requires metadata.name"))?;
     let mut profile =
-        RadrootsAuthoredProfile::new(name).context("validate strict RHI service Profile name")?;
+        AuthoredProfile::new(name).context("validate strict RHI service Profile name")?;
     if let Some(display_name) = metadata.display_name.as_ref() {
         profile = profile.with_display_name(display_name.clone());
     }
@@ -128,7 +135,7 @@ fn authored_service_profile(metadata: &RadrootsNostrMetadata) -> Result<Radroots
     }
     if let Some(nip05) = metadata.nip05.as_deref() {
         profile = profile.with_nip05(
-            RadrootsNip05Identifier::parse(nip05)
+            Nip05Identifier::parse(nip05)
                 .context("validate strict RHI service Profile NIP-05 identifier")?,
         );
     }
@@ -160,7 +167,7 @@ async fn wait_for_shutdown_or_stopped(handle: crate::rhi::RhiHandle) -> RunRhiWa
     }
 
     tokio::select! {
-        _ = radroots_runtime::shutdown_signal() => RunRhiWaitOutcome::Shutdown,
+        _ = crate::host_runtime::shutdown_signal() => RunRhiWaitOutcome::Shutdown,
         _ = handle.stopped() => RunRhiWaitOutcome::Stopped,
     }
 }
@@ -196,14 +203,13 @@ pub async fn run_rhi(settings: &config::Settings, args: &cli_args) -> Result<()>
 
     if !relays.is_empty() {
         let handler_kinds = trade_mutation_subscription_kinds();
-        let handler_spec = RadrootsNostrApplicationHandlerSpec {
-            kinds: handler_kinds,
-            identifier: service_cfg.nip89_identifier.clone(),
-            metadata: Some(md.clone()),
-            extra_tags: service_cfg.nip89_extra_tags.clone(),
-            relays: relays.clone(),
-            nostrconnect_url: None,
-        };
+        let mut handler_spec = ApplicationHandlerSpec::new(handler_kinds)
+            .with_metadata(md.clone())
+            .with_extra_tags(service_cfg.nip89_extra_tags.clone())
+            .with_relays(relays.clone());
+        if let Some(identifier) = service_cfg.nip89_identifier.clone() {
+            handler_spec = handler_spec.with_identifier(identifier);
+        }
         if let Err(e) = bootstrap_presence(&client, &md, &handler_spec).await {
             warn!("Failed to publish service presence on startup: {e}");
         } else {
@@ -260,17 +266,15 @@ mod tests {
         run_rhi, run_rhi_bootstrap_hook, run_rhi_wait_hook,
     };
     use crate::{cli_args, config};
-    use radroots_event::kinds::TRADE_MUTATION_EVENT_KINDS;
+    use radroots_event::envelope::kind::TRADE_MUTATION_EVENT_KINDS;
     use std::path::PathBuf;
     use std::sync::atomic::Ordering;
-    use std::sync::{Mutex, MutexGuard};
+    use tokio::sync::{Mutex, MutexGuard};
 
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
+    static TEST_LOCK: Mutex<()> = Mutex::const_new(());
 
-    fn test_guard() -> MutexGuard<'static, ()> {
-        let guard = TEST_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+    async fn test_guard() -> MutexGuard<'static, ()> {
+        let guard = TEST_LOCK.lock().await;
         RUN_RHI_AUTO_STOP.store(false, Ordering::Relaxed);
         RUN_RHI_SKIP_SUBSCRIBER.store(false, Ordering::Relaxed);
         *run_rhi_bootstrap_hook()
@@ -286,7 +290,7 @@ mod tests {
         config::Settings {
             metadata: serde_json::from_str(r#"{"name":"rhi-test"}"#).expect("metadata"),
             config: config::Configuration {
-                service: radroots_runtime::RadrootsNostrServiceConfig {
+                service: crate::host_runtime::NostrServiceConfig {
                     logs_dir: std::env::temp_dir()
                         .join("rhi-test-logs")
                         .display()
@@ -301,7 +305,7 @@ mod tests {
                     stdout: true,
                 },
                 subscriber: config::SubscriberConfig {
-                    backoff: radroots_runtime::BackoffConfig {
+                    backoff: crate::host_runtime::BackoffConfig {
                         base_ms: 1,
                         max_ms: 2,
                         factor: 1,
@@ -321,7 +325,7 @@ mod tests {
     fn args_for_identity(path: PathBuf) -> cli_args {
         cli_args {
             command: None,
-            service: radroots_runtime::RadrootsServiceCliArgs {
+            service: crate::host_runtime::ServiceCliArgs {
                 config: Some(PathBuf::from("config.toml")),
                 identity: Some(path),
                 allow_generate_identity: true,
@@ -349,7 +353,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_rhi_starts_and_stops_without_relays() {
-        let _guard = test_guard();
+        let _guard = test_guard().await;
         RUN_RHI_AUTO_STOP.store(true, Ordering::Relaxed);
         let identity_path = unique_identity_path("no-relays");
         let args = args_for_identity(identity_path);
@@ -359,7 +363,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_rhi_bootstraps_release_product_handler_kinds_when_relays_exist() {
-        let _guard = test_guard();
+        let _guard = test_guard().await;
         RUN_RHI_SKIP_SUBSCRIBER.store(true, Ordering::Relaxed);
         *run_rhi_bootstrap_hook()
             .lock()
@@ -373,7 +377,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_rhi_stops_on_wait_hook() {
-        let _guard = test_guard();
+        let _guard = test_guard().await;
         *run_rhi_wait_hook()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(RunRhiWaitOutcome::Stopped);
@@ -385,23 +389,19 @@ mod tests {
 
     #[tokio::test]
     async fn bootstrap_presence_reports_hook_error() {
-        let _guard = test_guard();
+        let _guard = test_guard().await;
         *run_rhi_bootstrap_hook()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) =
             Some(Err("forced bootstrap failure".to_string()));
-        let keys = radroots_nostr::prelude::RadrootsNostrKeys::generate();
-        let client = radroots_nostr::prelude::RadrootsNostrClient::new(keys.clone());
-        let metadata: radroots_nostr::prelude::RadrootsNostrMetadata =
+        let keys = crate::host_nostr::Keys::generate();
+        let client = crate::host_nostr::Client::new(keys.clone());
+        let metadata: crate::host_nostr::Metadata =
             serde_json::from_str(r#"{"name":"rhi-test"}"#).expect("metadata");
-        let spec = radroots_nostr::prelude::RadrootsNostrApplicationHandlerSpec {
-            kinds: TRADE_MUTATION_EVENT_KINDS.to_vec(),
-            identifier: Some("rhi".to_string()),
-            metadata: Some(metadata.clone()),
-            extra_tags: Vec::new(),
-            relays: Vec::new(),
-            nostrconnect_url: None,
-        };
+        let spec =
+            crate::host_nostr::ApplicationHandlerSpec::new(TRADE_MUTATION_EVENT_KINDS.to_vec())
+                .with_identifier("rhi")
+                .with_metadata(metadata.clone());
         let err = bootstrap_presence(&client, &metadata, &spec)
             .await
             .expect_err("forced error");
@@ -410,7 +410,7 @@ mod tests {
 
     #[test]
     fn service_profile_uses_only_strict_authored_fields() {
-        let metadata: radroots_nostr::prelude::RadrootsNostrMetadata = serde_json::from_str(
+        let metadata: crate::host_nostr::Metadata = serde_json::from_str(
             r#"{
                 "name":"rhi",
                 "display_name":"Radroots agreement attestation",
@@ -437,7 +437,7 @@ mod tests {
         assert!(profile.picture().is_none());
         assert!(profile.banner().is_none());
 
-        let keys = radroots_nostr::prelude::RadrootsNostrKeys::generate();
+        let keys = crate::host_nostr::Keys::generate();
         let event = build_authored_service_profile_event(&metadata)
             .expect("strict Profile event")
             .sign_with_keys(&keys)

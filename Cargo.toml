@@ -3,23 +3,21 @@ name = "rhi"
 version = "0.1.0"
 edition = "2024"
 authors = ["Radroots Authors"]
-rust-version = "1.97.0"
+rust-version = "1.97.1"
 license = "AGPL-3.0-or-later"
 description = "Radroots trade agreement attestation worker"
 
 [workspace]
-resolver = "2"
+resolver = "3"
 
 [workspace.dependencies]
-radroots_core = { version = "=1.0.0-alpha.1", path = "../lib/crates/core" }
-radroots_event = { version = "=1.0.0-alpha.1", path = "../lib/crates/event" }
-radroots_event_codec = { version = "=1.0.0-alpha.1", path = "../lib/crates/event_codec" }
-radroots_identity = { version = "=1.0.0-alpha.1", path = "../lib/crates/identity" }
-radroots_log = { version = "=1.0.0-alpha.1", path = "../lib/crates/log" }
-radroots_nostr = { version = "=1.0.0-alpha.1", path = "../lib/crates/nostr" }
-radroots_runtime = { version = "=1.0.0-alpha.1", path = "../lib/crates/runtime" }
-radroots_runtime_paths = { version = "=1.0.0-alpha.1", path = "../lib/crates/runtime_paths" }
-radroots_trade = { version = "=1.0.0-alpha.1", path = "../lib/crates/trade" }
+radroots_event = "=0.1.0-alpha"
+radroots_event_codec = "=0.1.0-alpha"
+radroots_identity = "=0.1.0-alpha"
+radroots_nostr = "=0.1.0-alpha"
+radroots_protocol = "=0.1.0-alpha"
+radroots_secrets = "=0.1.0-alpha"
+radroots_trade = "=0.1.0-alpha"
 
 [features]
 default = []
@@ -28,25 +26,31 @@ default = []
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 
 [dependencies]
-radroots_core = { workspace = true, features = ["std", "serde"] }
 radroots_event = { workspace = true, features = ["serde"] }
-radroots_event_codec = { workspace = true, features = ["nostr", "serde_json"] }
+radroots_event_codec = { workspace = true, features = ["json"] }
 radroots_identity = { workspace = true }
-radroots_log = { workspace = true }
-radroots_nostr = { workspace = true, features = ["client", "codec", "events", "http"] }
-radroots_runtime = { workspace = true, features = ["cli"] }
-radroots_runtime_paths = { workspace = true }
+radroots_nostr = { workspace = true, features = ["events"] }
+radroots_protocol = { workspace = true }
+radroots_secrets = { workspace = true }
 radroots_trade = { workspace = true }
 
 anyhow = { version = "1" }
+chacha20poly1305 = { version = "0.10" }
 clap = { version = "4", features = ["derive"] }
+futures-executor = { version = "0.3" }
+nostr = { version = "0.44.2", features = ["nip49"] }
+nostr-sdk = { version = "0.44.1" }
+rand = { version = "0.9" }
 serde = { version = "1", default-features = false }
 serde_json = { version = "1", default-features = false }
 sha2 = { version = "0.10" }
 tokio = { version = "1", features = ["full"] }
 thiserror = { version = "2" }
+tempfile = { version = "3" }
 toml = { version = "0.8" }
 tracing = { version = "0.1" }
+tracing-appender = { version = "0.2" }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+zeroize = { version = "1" }
 
 [dev-dependencies]
-tempfile = { version = "3" }

@@ -6,8 +6,6 @@ use anyhow::Result;
 #[cfg(not(test))]
 use clap::Parser;
 #[cfg(not(test))]
-use radroots_log::{LogFileLayout, LoggingOptions};
-#[cfg(not(test))]
 use rhi::cli::Command;
 #[cfg(not(test))]
 use rhi::features::trade_agreement_attestation::run_smoke_cli_command;
@@ -39,12 +37,14 @@ fn exit_code_from_run(result: Result<()>) -> ExitCode {
 }
 
 #[cfg(test)]
-static RUN_LOAD_HOOK: std::sync::OnceLock<
-    std::sync::Mutex<Option<Result<(cli_args, config::Settings)>>>,
-> = std::sync::OnceLock::new();
+type RunLoadHookValue = Option<Result<(cli_args, config::Settings)>>;
+#[cfg(test)]
+type RunLoadHook = std::sync::Mutex<RunLoadHookValue>;
+#[cfg(test)]
+static RUN_LOAD_HOOK: std::sync::OnceLock<RunLoadHook> = std::sync::OnceLock::new();
 
 #[cfg(test)]
-fn run_load_hook() -> &'static std::sync::Mutex<Option<Result<(cli_args, config::Settings)>>> {
+fn run_load_hook() -> &'static RunLoadHook {
     RUN_LOAD_HOOK.get_or_init(|| std::sync::Mutex::new(None))
 }
 
@@ -78,12 +78,12 @@ fn load_args_and_settings() -> Result<(cli_args, config::Settings)> {
         {
             return result;
         }
-        return Err(anyhow::anyhow!("run loader hook not set"));
+        Err(anyhow::anyhow!("run loader hook not set"))
     }
 
     #[cfg(not(test))]
     {
-        let args = cli_args::try_parse().map_err(radroots_runtime::RuntimeCliError::from)?;
+        let args = cli_args::try_parse()?;
         let config_path = args
             .service
             .config
@@ -99,15 +99,31 @@ fn load_args_and_settings() -> Result<(cli_args, config::Settings)> {
 
 #[cfg(not(test))]
 fn init_rhi_logging(settings: &config::Settings) -> Result<()> {
-    radroots_log::init_logging(LoggingOptions {
-        dir: Some(settings.config.logging.output_dir.clone()),
-        file_name: "rhi.log".to_owned(),
-        stdout: settings.config.logging.stdout,
-        default_level: Some(settings.config.logging.filter.clone()),
-        file_layout: LogFileLayout::PrefixedDate,
-        ..LoggingOptions::default()
-    })
-    .context("initialize logging")
+    use tracing_subscriber::fmt::writer::MakeWriterExt as _;
+
+    std::fs::create_dir_all(&settings.config.logging.output_dir)
+        .context("create RHI log directory")?;
+    let appender = tracing_appender::rolling::daily(&settings.config.logging.output_dir, "rhi.log");
+    let (writer, guard) = tracing_appender::non_blocking(appender);
+    static LOG_GUARD: std::sync::OnceLock<tracing_appender::non_blocking::WorkerGuard> =
+        std::sync::OnceLock::new();
+    let filter = tracing_subscriber::EnvFilter::new(&settings.config.logging.filter);
+    if settings.config.logging.stdout {
+        tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_writer(writer.and(std::io::stdout))
+            .try_init()
+            .map_err(|error| anyhow::anyhow!("initialize RHI logging: {error}"))?;
+    } else {
+        tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_writer(writer)
+            .try_init()
+            .map_err(|error| anyhow::anyhow!("initialize RHI logging: {error}"))?;
+    }
+    LOG_GUARD
+        .set(guard)
+        .map_err(|_| anyhow::anyhow!("RHI logging is already initialized"))
 }
 
 fn runtime_startup_report(
@@ -215,7 +231,7 @@ fn log_runtime_startup_report(report: &RhiRuntimeStartupReport) {
 async fn run() -> Result<()> {
     #[cfg(not(test))]
     {
-        let args = cli_args::try_parse().map_err(radroots_runtime::RuntimeCliError::from)?;
+        let args = cli_args::try_parse()?;
         if let Some(command) = args.command {
             return match command {
                 Command::AttestationSmoke { .. } => run_smoke_cli_command(command).await,
@@ -244,24 +260,23 @@ mod tests {
         RhiRuntimeStartupReport, exit_code_from_run, main, run, run_load_hook, run_rhi,
         runtime_startup_report,
     };
-    use radroots_nostr::prelude::{RadrootsNostrClient, RadrootsNostrKeys};
     use rhi::features::trade_agreement_attestation::TradeAgreementAttestationRuntime;
+    use rhi::host_nostr::{Client, Keys};
     use rhi::{cli_args, config, paths};
     use std::path::PathBuf;
     use std::process::ExitCode;
 
-    static RUN_HOOK_TEST_LOCK: std::sync::OnceLock<std::sync::Mutex<()>> =
-        std::sync::OnceLock::new();
+    static RUN_HOOK_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-    fn run_hook_test_lock() -> &'static std::sync::Mutex<()> {
-        RUN_HOOK_TEST_LOCK.get_or_init(|| std::sync::Mutex::new(()))
+    async fn run_hook_test_guard() -> tokio::sync::MutexGuard<'static, ()> {
+        RUN_HOOK_TEST_LOCK.lock().await
     }
 
     fn minimal_settings() -> config::Settings {
         config::Settings {
             metadata: serde_json::from_str(r#"{"name":"rhi-test"}"#).expect("metadata"),
             config: config::Configuration {
-                service: radroots_runtime::RadrootsNostrServiceConfig {
+                service: rhi::host_runtime::NostrServiceConfig {
                     logs_dir: std::env::temp_dir()
                         .join("rhi-test-logs")
                         .display()
@@ -329,7 +344,7 @@ mod tests {
     async fn run_rhi_returns_error_when_identity_is_missing() {
         let args = cli_args {
             command: None,
-            service: radroots_runtime::RadrootsServiceCliArgs {
+            service: rhi::host_runtime::ServiceCliArgs {
                 config: Some(PathBuf::from("config.toml")),
                 identity: Some(PathBuf::from("/tmp/rhi-missing-identity.secret.json")),
                 allow_generate_identity: false,
@@ -350,12 +365,10 @@ mod tests {
 
     #[tokio::test]
     async fn run_uses_injected_config_loader_result() {
-        let _guard = run_hook_test_lock()
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _guard = run_hook_test_guard().await;
         let args = cli_args {
             command: None,
-            service: radroots_runtime::RadrootsServiceCliArgs {
+            service: rhi::host_runtime::ServiceCliArgs {
                 config: Some(PathBuf::from("config.toml")),
                 identity: Some(PathBuf::from("/tmp/rhi-run-hook-missing.secret.json")),
                 allow_generate_identity: false,
@@ -372,9 +385,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_returns_error_when_loader_hook_is_absent() {
-        let _guard = run_hook_test_lock()
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _guard = run_hook_test_guard().await;
         *run_load_hook()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
@@ -387,13 +398,13 @@ mod tests {
 
     #[tokio::test]
     async fn non_test_start_subscriber_path_can_start_and_stop() {
-        let keys = RadrootsNostrKeys::generate();
-        let client = RadrootsNostrClient::new(keys.clone());
+        let keys = Keys::generate();
+        let client = Client::new(keys.clone());
         let handle = rhi::rhi::start_subscriber(
             client,
             keys,
             TradeAgreementAttestationRuntime::new(),
-            radroots_runtime::BackoffConfig {
+            rhi::host_runtime::BackoffConfig {
                 base_ms: 1,
                 max_ms: 2,
                 factor: 1,
@@ -409,7 +420,7 @@ mod tests {
     #[test]
     fn runtime_startup_report_prefers_explicit_cli_paths() {
         let args = cli_args {
-            service: radroots_runtime::RadrootsServiceCliArgs {
+            service: rhi::host_runtime::ServiceCliArgs {
                 config: Some(PathBuf::from("/tmp/rhi/config.toml")),
                 identity: Some(PathBuf::from("/tmp/rhi/identity.secret.json")),
                 allow_generate_identity: false,
@@ -457,7 +468,7 @@ mod tests {
     fn runtime_startup_report_falls_back_to_canonical_contract_paths() {
         let args = cli_args {
             command: None,
-            service: radroots_runtime::RadrootsServiceCliArgs {
+            service: rhi::host_runtime::ServiceCliArgs {
                 config: None,
                 identity: None,
                 allow_generate_identity: false,

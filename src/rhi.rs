@@ -3,8 +3,8 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use radroots_nostr::prelude::{RadrootsNostrClient, RadrootsNostrKeys};
-use radroots_runtime::{Backoff, BackoffConfig};
+use crate::host_nostr::{Client, Keys};
+use crate::host_runtime::{Backoff, BackoffConfig};
 use tokio::sync::Mutex;
 
 use crate::features::trade_agreement_attestation::{
@@ -33,8 +33,8 @@ fn subscriber_result_hook()
 }
 
 async fn run_subscriber_once(
-    client: RadrootsNostrClient,
-    keys: RadrootsNostrKeys,
+    client: Client,
+    keys: Keys,
     runtime: TradeAgreementAttestationRuntime,
     policy: TradeAgreementAttestationPolicy,
     stop_rx: tokio::sync::watch::Receiver<bool>,
@@ -53,7 +53,7 @@ async fn run_subscriber_once(
 }
 
 async fn wait_for_connection_or_stop(
-    client: &RadrootsNostrClient,
+    client: &Client,
     stop_rx: &mut tokio::sync::watch::Receiver<bool>,
 ) -> bool {
     if *stop_rx.borrow() {
@@ -67,18 +67,18 @@ async fn wait_for_connection_or_stop(
 
 pub struct Rhi {
     pub(crate) _started: Instant,
-    pub client: RadrootsNostrClient,
+    pub client: Client,
     pub(crate) agreement_attestation_runtime: TradeAgreementAttestationRuntime,
     pub(crate) agreement_attestation_policy: TradeAgreementAttestationPolicy,
 }
 
 impl Rhi {
-    pub fn new(keys: RadrootsNostrKeys) -> Self {
+    pub fn new(keys: Keys) -> Self {
         Self::with_agreement_attestation_runtime(keys, TradeAgreementAttestationRuntime::new())
     }
 
     pub fn with_agreement_attestation_runtime(
-        keys: RadrootsNostrKeys,
+        keys: Keys,
         agreement_attestation_runtime: TradeAgreementAttestationRuntime,
     ) -> Self {
         Self::with_agreement_attestation_runtime_and_policy(
@@ -89,11 +89,11 @@ impl Rhi {
     }
 
     pub fn with_agreement_attestation_runtime_and_policy(
-        keys: RadrootsNostrKeys,
+        keys: Keys,
         agreement_attestation_runtime: TradeAgreementAttestationRuntime,
         agreement_attestation_policy: TradeAgreementAttestationPolicy,
     ) -> Self {
-        let client = RadrootsNostrClient::new(keys);
+        let client = Client::new(keys);
         Self {
             _started: Instant::now(),
             client,
@@ -132,8 +132,8 @@ impl RhiHandle {
 }
 
 pub async fn start_subscriber(
-    client: RadrootsNostrClient,
-    keys: RadrootsNostrKeys,
+    client: Client,
+    keys: Keys,
     runtime: TradeAgreementAttestationRuntime,
     backoff_cfg: BackoffConfig,
 ) -> RhiHandle {
@@ -148,8 +148,8 @@ pub async fn start_subscriber(
 }
 
 pub async fn start_subscriber_with_policy(
-    client: RadrootsNostrClient,
-    keys: RadrootsNostrKeys,
+    client: Client,
+    keys: Keys,
     runtime: TradeAgreementAttestationRuntime,
     policy: TradeAgreementAttestationPolicy,
     backoff_cfg: BackoffConfig,
@@ -212,15 +212,15 @@ mod tests {
         Rhi, RhiHandle, start_subscriber, subscriber_result_hook, wait_for_connection_or_stop,
     };
     use crate::features::trade_agreement_attestation::TradeAgreementAttestationRuntime;
+    use crate::host_nostr::{Client, Keys};
+    use crate::host_runtime::BackoffConfig;
     use anyhow::anyhow;
-    use radroots_nostr::prelude::{RadrootsNostrClient, RadrootsNostrKeys};
-    use radroots_runtime::BackoffConfig;
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
     #[tokio::test]
     async fn rhi_new_initializes_client_and_runtime() {
-        let keys = RadrootsNostrKeys::generate();
+        let keys = Keys::generate();
         let rhi = Rhi::new(keys);
         let _ = rhi.client.clone();
         assert!(rhi.agreement_attestation_runtime.reports().await.is_empty());
@@ -242,7 +242,7 @@ mod tests {
 
     #[tokio::test]
     async fn start_subscriber_runs_with_and_without_relay() {
-        let keys = RadrootsNostrKeys::generate();
+        let keys = Keys::generate();
         let cfg = BackoffConfig {
             base_ms: 1,
             max_ms: 2,
@@ -250,7 +250,7 @@ mod tests {
             jitter_ms: 0,
         };
 
-        let client_err = RadrootsNostrClient::new(keys.clone());
+        let client_err = Client::new(keys.clone());
         let handle_err = start_subscriber(
             client_err,
             keys.clone(),
@@ -262,7 +262,7 @@ mod tests {
         handle_err.stop();
         handle_err.stopped().await;
 
-        let client_ok = RadrootsNostrClient::new(keys.clone());
+        let client_ok = Client::new(keys.clone());
         let _ = client_ok.add_relay("wss://relay.example.com").await;
         subscriber_result_hook()
             .lock()
@@ -282,8 +282,8 @@ mod tests {
 
     #[tokio::test]
     async fn start_subscriber_stops_during_connection_wait_branch() {
-        let keys = RadrootsNostrKeys::generate();
-        let client = RadrootsNostrClient::new(keys.clone());
+        let keys = Keys::generate();
+        let client = Client::new(keys.clone());
         let handle = start_subscriber(
             client,
             keys,
@@ -303,8 +303,8 @@ mod tests {
 
     #[tokio::test]
     async fn start_subscriber_stops_during_backoff_wait_branch() {
-        let keys = RadrootsNostrKeys::generate();
-        let client = RadrootsNostrClient::new(keys.clone());
+        let keys = Keys::generate();
+        let client = Client::new(keys.clone());
         let _ = client.add_relay("wss://relay.example.com").await;
         subscriber_result_hook()
             .lock()
@@ -329,15 +329,15 @@ mod tests {
 
     #[tokio::test]
     async fn wait_for_connection_or_stop_covers_both_outcomes() {
-        let keys = RadrootsNostrKeys::generate();
+        let keys = Keys::generate();
 
-        let client_stop = RadrootsNostrClient::new(keys.clone());
+        let client_stop = Client::new(keys.clone());
         let (stop_tx, mut stop_rx) = tokio::sync::watch::channel(false);
         let _ = stop_tx.send(true);
         let stop_branch = wait_for_connection_or_stop(&client_stop, &mut stop_rx).await;
         assert!(!stop_branch);
 
-        let client_wait = RadrootsNostrClient::new(keys);
+        let client_wait = Client::new(keys);
         let (_tx, mut rx) = tokio::sync::watch::channel(false);
         let wait_branch = wait_for_connection_or_stop(&client_wait, &mut rx).await;
         assert!(wait_branch);

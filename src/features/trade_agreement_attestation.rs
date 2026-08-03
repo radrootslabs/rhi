@@ -7,25 +7,25 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::host_nostr::{
+    Client, Event, Filter, Keys, Kind, RelayPoolNotification, SubscriptionId, Timestamp,
+};
 use anyhow::{Result, anyhow};
-use radroots_event::ids::{
-    RadrootsAddressableCoordinate, RadrootsEventId, RadrootsPublicKey, RadrootsTradeId,
-    RadrootsTradeMutationId,
-};
-use radroots_event::kinds::{TRADE_MUTATION_EVENT_KINDS, is_trade_mutation_event_kind};
+use radroots_event::envelope::kind::{TRADE_MUTATION_EVENT_KINDS, is_trade_mutation_event_kind};
+use radroots_event::id::{AddressableCoordinate, EventId, MutationId, TradeId};
 use radroots_event::trade::{
-    RadrootsTradeMutationEnvelopeV1, canonical_jcs_value, trade_mutation_from_canonical_content,
+    TradeMutationEnvelopeV1, canonical_jcs_value, trade_mutation_from_canonical_content,
 };
-use radroots_nostr::prelude::{
-    RadrootsNostrClient, RadrootsNostrEvent, RadrootsNostrFilter, RadrootsNostrKeys,
-    RadrootsNostrKind, RadrootsNostrRelayPoolNotification, RadrootsNostrSubscriptionId,
-    RadrootsNostrTimestamp,
+use radroots_identity::PublicKey;
+use radroots_trade::evidence::{
+    RadrootsTradeAttestationResultV1, RadrootsTradeEvidenceStateV1, RadrootsTradeMutationRecordV1,
 };
-use radroots_trade::workflow::{
+use radroots_trade::model::{
+    RadrootsTradeAgreementStateV1, RadrootsTradeAttestationStateV1, RadrootsTradeProjectionV1,
+};
+use radroots_trade::reducer::{
     RADROOTS_TRADE_REDUCER_CONTRACT_ID, RADROOTS_TRADE_REDUCER_VERSION,
-    RadrootsTradeAgreementStateV1, RadrootsTradeAttestationResultV1,
-    RadrootsTradeAttestationStateV1, RadrootsTradeEvidenceStateV1, RadrootsTradeMutationRecordV1,
-    RadrootsTradeProjectionV1, RadrootsTradeReductionInputV1, reduce_trade_records,
+    RadrootsTradeReductionInputV1, reduce_trade_records,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -76,10 +76,10 @@ impl TradeAgreementAttestationPolicy {
             self.validator_set_event_id.as_deref(),
         ) {
             (Some(addr), Some(event_id)) => {
-                RadrootsAddressableCoordinate::parse(addr).map_err(|_| {
+                AddressableCoordinate::parse(addr).map_err(|_| {
                     TradeAgreementAttestationError::InvalidValidatorSetBinding("validator_set_addr")
                 })?;
-                RadrootsEventId::parse(event_id).map_err(|_| {
+                EventId::parse(event_id).map_err(|_| {
                     TradeAgreementAttestationError::InvalidValidatorSetBinding(
                         "validator_set_event_id",
                     )
@@ -223,7 +223,7 @@ pub enum TradeAgreementAttestationError {
     #[error("invalid signed event")]
     InvalidSignedEvent,
     #[error("trade protocol error: {0}")]
-    TradeProtocol(#[from] radroots_event::trade::RadrootsTradeProtocolError),
+    TradeProtocol(#[from] radroots_event::trade::TradeProtocolError),
     #[error("serde error: {0}")]
     Serde(#[from] serde_json::Error),
     #[error("state error: {0}")]
@@ -305,18 +305,16 @@ impl TradeAgreementAttestationRuntime {
         self.persist().await
     }
 
-    pub async fn recovery_filter(&self, kinds: Vec<RadrootsNostrKind>) -> RadrootsNostrFilter {
+    pub async fn recovery_filter(&self, kinds: Vec<Kind>) -> Filter {
         let since = {
             let state = self.state.lock().await;
             state.replay_since(
-                RadrootsNostrTimestamp::now().as_secs(),
+                Timestamp::now().as_secs(),
                 self.config.replay_window_secs,
                 self.config.replay_overlap_secs,
             )
         };
-        RadrootsNostrFilter::new()
-            .kinds(kinds)
-            .since(RadrootsNostrTimestamp::from(since))
+        Filter::new().kinds(kinds).since(Timestamp::from(since))
     }
 
     pub async fn reports(&self) -> Vec<TradeAgreementAttestationReportV1> {
@@ -331,17 +329,17 @@ impl TradeAgreementAttestationRuntime {
 
     async fn observe_mutation_event(
         &self,
-        event: &RadrootsNostrEvent,
-        mutation: &RadrootsTradeMutationEnvelopeV1,
-        mutation_id: &RadrootsTradeMutationId,
+        event: &Event,
+        mutation: &TradeMutationEnvelopeV1,
+        mutation_id: &MutationId,
         kind: u32,
     ) -> Result<bool, TradeAgreementAttestationRuntimeError> {
         let observation = TradeMutationObservationV1 {
             event_id: event.id.to_hex(),
             event_kind: kind,
             event_pubkey: event.pubkey.to_hex(),
-            trade_id: mutation.trade_id.as_str().to_owned(),
-            mutation_id: mutation_id.as_str().to_owned(),
+            trade_id: mutation.trade_id.to_hex(),
+            mutation_id: mutation_id.to_hex(),
             content: event.content.clone(),
             observed_at_unix_s: event.created_at.as_secs(),
         };
@@ -357,32 +355,33 @@ impl TradeAgreementAttestationRuntime {
 
     async fn reduce_trade(
         &self,
-        trade_id: &RadrootsTradeId,
+        trade_id: &TradeId,
     ) -> Result<RadrootsTradeProjectionV1, TradeAgreementAttestationError> {
         let observations = {
             let state = self.state.lock().await;
             state
                 .mutation_events
                 .values()
-                .filter(|observation| observation.trade_id == trade_id.as_str())
+                .filter(|observation| observation.trade_id == trade_id.to_hex().as_str())
                 .cloned()
                 .collect::<Vec<_>>()
         };
-        let mut input = RadrootsTradeReductionInputV1::new(trade_id.clone());
-        input.evidence_state = RadrootsTradeEvidenceStateV1::Complete;
-        input.mutations = observations
+        let mutations = observations
             .iter()
             .map(|observation| {
                 let mutation = trade_mutation_from_canonical_content(observation.content.as_str())?;
-                let transport_event_id = RadrootsEventId::parse(observation.event_id.as_str())
+                let transport_event_id = EventId::parse(observation.event_id.as_str())
                     .map(Some)
                     .map_err(|_| TradeAgreementAttestationError::InvalidSignedEvent)?;
-                Ok(RadrootsTradeMutationRecordV1 {
+                Ok(RadrootsTradeMutationRecordV1::new(
                     transport_event_id,
                     mutation,
-                })
+                ))
             })
             .collect::<Result<Vec<_>, TradeAgreementAttestationError>>()?;
+        let input = RadrootsTradeReductionInputV1::new(*trade_id)
+            .with_evidence_state(RadrootsTradeEvidenceStateV1::Complete)
+            .with_mutations(mutations);
         Ok(reduce_trade_records(input))
     }
 
@@ -483,7 +482,7 @@ fn temp_state_path(path: &Path) -> Result<PathBuf, TradeAgreementAttestationRunt
 }
 
 pub async fn handle_trade_mutation_event(
-    event: RadrootsNostrEvent,
+    event: Event,
     runtime: TradeAgreementAttestationRuntime,
     policy: &TradeAgreementAttestationPolicy,
 ) -> Result<Option<TradeAgreementAttestationReportV1>, TradeAgreementAttestationError> {
@@ -496,14 +495,13 @@ pub async fn handle_trade_mutation_event(
     if mutation.mutation_kind().nostr_kind() != kind {
         return Err(TradeAgreementAttestationError::UnsupportedKind);
     }
-    let event_author = RadrootsPublicKey::parse(event.pubkey.to_hex())
+    let event_author = PublicKey::from_hex(&event.pubkey.to_hex())
         .map_err(|_| TradeAgreementAttestationError::InvalidSignedEvent)?;
     if event_author != mutation.author_pubkey {
         return Err(TradeAgreementAttestationError::InvalidEventAuthor);
     }
     let mutation_id = mutation
         .mutation_id
-        .clone()
         .ok_or(TradeAgreementAttestationError::MissingMutationId)?;
     if !runtime
         .observe_mutation_event(&event, &mutation, &mutation_id, kind)
@@ -513,10 +511,10 @@ pub async fn handle_trade_mutation_event(
     }
     let projection = runtime.reduce_trade(&mutation.trade_id).await?;
     let Some(claim_id) = projection
-        .active_agreement_claim_ids
+        .active_agreement_claim_ids()
         .iter()
         .find(|claim_id| **claim_id == mutation_id)
-        .or_else(|| projection.active_agreement_claim_ids.first())
+        .or_else(|| projection.active_agreement_claim_ids().first())
         .cloned()
     else {
         return Ok(None);
@@ -528,14 +526,14 @@ pub async fn handle_trade_mutation_event(
 
 pub fn attest_projection_claim(
     projection: &RadrootsTradeProjectionV1,
-    claim_mutation_id: &RadrootsTradeMutationId,
+    claim_mutation_id: &MutationId,
     policy: &TradeAgreementAttestationPolicy,
 ) -> Result<TradeAgreementAttestationReportV1, TradeAgreementAttestationError> {
     policy.validate()?;
     if !projection
-        .agreement_claims
+        .agreement_claims()
         .iter()
-        .any(|claim| claim.claim_mutation_id == *claim_mutation_id)
+        .any(|claim| claim.claim_mutation_id() == claim_mutation_id)
     {
         return Err(TradeAgreementAttestationError::MissingAgreementClaim);
     }
@@ -544,32 +542,34 @@ pub fn attest_projection_claim(
         schema_version: RHI_AGREEMENT_ATTESTATION_REPORT_VERSION,
         reducer_contract_id: RADROOTS_TRADE_REDUCER_CONTRACT_ID.to_owned(),
         reducer_version: RADROOTS_TRADE_REDUCER_VERSION,
-        trade_id: projection.trade_id.as_str().to_owned(),
-        claim_mutation_id: claim_mutation_id.as_str().to_owned(),
-        projection_digest: projection.projection_digest.clone(),
-        agreement_state: projection.agreement_state,
-        attestation_state_before_report: projection.attestation_state,
-        active_agreement_claim_ids: mutation_ids_to_strings(&projection.active_agreement_claim_ids),
-        contested_claim_ids: mutation_ids_to_strings(&projection.contested_claim_ids),
-        cancelled_claim_ids: mutation_ids_to_strings(&projection.cancelled_claim_ids),
-        evidence_state: projection.evidence_state,
+        trade_id: projection.trade_id().to_hex(),
+        claim_mutation_id: claim_mutation_id.to_hex(),
+        projection_digest: projection.projection_digest().to_owned(),
+        agreement_state: projection.agreement_state(),
+        attestation_state_before_report: projection.attestation_state(),
+        active_agreement_claim_ids: mutation_ids_to_strings(
+            projection.active_agreement_claim_ids(),
+        ),
+        contested_claim_ids: mutation_ids_to_strings(projection.contested_claim_ids()),
+        cancelled_claim_ids: mutation_ids_to_strings(projection.cancelled_claim_ids()),
+        evidence_state: projection.evidence_state(),
         validator_set: policy.validator_set_binding()?,
     };
     let statement_hash = hash_canonical_value(
         b"radroots:rhi-agreement-attestation-statement:v1\0",
         &statement,
     )?;
-    let result = if projection.agreement_state == RadrootsTradeAgreementStateV1::Agreed
+    let result = if projection.agreement_state() == RadrootsTradeAgreementStateV1::Agreed
         && projection
-            .active_agreement_claim_ids
+            .active_agreement_claim_ids()
             .iter()
             .any(|claim| claim == claim_mutation_id)
         && !projection
-            .contested_claim_ids
+            .contested_claim_ids()
             .iter()
             .any(|claim| claim == claim_mutation_id)
         && !projection
-            .cancelled_claim_ids
+            .cancelled_claim_ids()
             .iter()
             .any(|claim| claim == claim_mutation_id)
     {
@@ -609,16 +609,13 @@ pub fn trade_mutation_subscription_kinds() -> Vec<u32> {
     TRADE_MUTATION_EVENT_KINDS.to_vec()
 }
 
-fn mutation_ids_to_strings(values: &[RadrootsTradeMutationId]) -> Vec<String> {
-    values
-        .iter()
-        .map(|value| value.as_str().to_owned())
-        .collect()
+fn mutation_ids_to_strings(values: &[MutationId]) -> Vec<String> {
+    values.iter().map(MutationId::to_hex).collect()
 }
 
-fn event_kind_u32(event: &RadrootsNostrEvent) -> Result<u32, TradeAgreementAttestationError> {
+fn event_kind_u32(event: &Event) -> Result<u32, TradeAgreementAttestationError> {
     match event.kind {
-        RadrootsNostrKind::Custom(value) => Ok(u32::from(value)),
+        Kind::Custom(value) => Ok(u32::from(value)),
         _ => Err(TradeAgreementAttestationError::UnsupportedKind),
     }
 }
@@ -651,23 +648,16 @@ fn hash_canonical_value(
 }
 
 fn map_notification_recv_result(
-    result: Result<RadrootsNostrRelayPoolNotification, tokio::sync::broadcast::error::RecvError>,
-) -> Result<RadrootsNostrRelayPoolNotification, ()> {
+    result: Result<RelayPoolNotification, tokio::sync::broadcast::error::RecvError>,
+) -> Result<RelayPoolNotification, ()> {
     result.map_err(|_| ())
 }
 
-async fn subscribe_io(
-    client: &RadrootsNostrClient,
-    filter: RadrootsNostrFilter,
-) -> Result<RadrootsNostrSubscriptionId> {
-    let subscription = client.subscribe(filter, None).await?;
-    Ok(subscription.val)
+async fn subscribe_io(client: &Client, filter: Filter) -> Result<SubscriptionId> {
+    client.subscribe(filter).await.map_err(Into::into)
 }
 
-async fn unsubscribe_io(
-    client: &RadrootsNostrClient,
-    subscription_id: &RadrootsNostrSubscriptionId,
-) {
+async fn unsubscribe_io(client: &Client, subscription_id: &SubscriptionId) {
     client.unsubscribe(subscription_id).await;
 }
 
@@ -676,7 +666,7 @@ fn should_delay_before_event_handle() -> bool {
 }
 
 async fn process_event_notification(
-    event: RadrootsNostrEvent,
+    event: Event,
     runtime: TradeAgreementAttestationRuntime,
     policy: TradeAgreementAttestationPolicy,
 ) -> Result<()> {
@@ -698,8 +688,8 @@ async fn process_event_notification(
 }
 
 pub async fn subscriber(
-    client: RadrootsNostrClient,
-    _keys: RadrootsNostrKeys,
+    client: Client,
+    _keys: Keys,
     runtime: TradeAgreementAttestationRuntime,
     policy: TradeAgreementAttestationPolicy,
     mut stop_rx: watch::Receiver<bool>,
@@ -710,10 +700,10 @@ pub async fn subscriber(
         subscribed_kinds
     );
 
-    let kinds: Vec<RadrootsNostrKind> = subscribed_kinds
+    let kinds: Vec<Kind> = subscribed_kinds
         .iter()
         .map(|kind| u16::try_from(*kind).expect("trade mutation kinds fit in nostr custom range"))
-        .map(RadrootsNostrKind::Custom)
+        .map(Kind::Custom)
         .collect();
     let filter = runtime.recovery_filter(kinds).await;
 
@@ -742,7 +732,7 @@ pub async fn subscriber(
                     }
                 };
 
-                if let RadrootsNostrRelayPoolNotification::Event { event, .. } = n {
+                if let RelayPoolNotification::Event { event, .. } = n {
                     let event = (*event).clone();
                     process_event_notification(event, runtime.clone(), policy.clone()).await?;
                 }
@@ -864,83 +854,10 @@ fn write_output(path: Option<&Path>, bytes: &[u8]) -> anyhow::Result<()> {
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::{
-        RHI_AGREEMENT_ATTESTATION_PROTOCOL_ID, TradeAgreementAttestationPolicy,
-        TradeAgreementAttestationRuntime, TradeAgreementAttestationRuntimeConfig,
-        TradeAgreementAttestationSmokeOperation, TradeAgreementAttestationSmokeRequest,
-        attest_projection_claim, handle_smoke_request_bytes,
+        RHI_AGREEMENT_ATTESTATION_PROTOCOL_ID, TradeAgreementAttestationRuntime,
+        TradeAgreementAttestationRuntimeConfig, TradeAgreementAttestationSmokeOperation,
+        TradeAgreementAttestationSmokeRequest, handle_smoke_request_bytes,
     };
-    use radroots_event::ids::{RadrootsTradeId, RadrootsTradeMutationId};
-    use radroots_trade::workflow::{
-        RadrootsTradeAgreementStateV1, RadrootsTradeAttestationStateV1,
-        RadrootsTradeEvidenceStateV1, RadrootsTradeProjectionV1,
-    };
-
-    fn hex_64(ch: char) -> String {
-        std::iter::repeat_n(ch, 64).collect()
-    }
-
-    fn hex_32(ch: char) -> String {
-        std::iter::repeat_n(ch, 32).collect()
-    }
-
-    fn projection(claim_id: RadrootsTradeMutationId) -> RadrootsTradeProjectionV1 {
-        RadrootsTradeProjectionV1 {
-            reducer_contract_id: radroots_trade::workflow::RADROOTS_TRADE_REDUCER_CONTRACT_ID
-                .to_owned(),
-            reducer_version: radroots_trade::workflow::RADROOTS_TRADE_REDUCER_VERSION,
-            trade_id: RadrootsTradeId::parse(hex_32('1')).expect("trade id"),
-            root_mutation_id: None,
-            buyer_pubkey: None,
-            seller_pubkey: None,
-            farm_id: None,
-            negotiation_state: Default::default(),
-            agreement_state: RadrootsTradeAgreementStateV1::Agreed,
-            evidence_state: RadrootsTradeEvidenceStateV1::Complete,
-            conflict_state: Default::default(),
-            private_terms_state: Default::default(),
-            attestation_state: RadrootsTradeAttestationStateV1::None,
-            fulfillment_state: Default::default(),
-            payment_state: Default::default(),
-            candidate_heads: Vec::new(),
-            agreement_claims: vec![radroots_trade::workflow::RadrootsTradeAgreementClaimV1 {
-                claim_mutation_id: claim_id.clone(),
-                proposal_mutation_id: RadrootsTradeMutationId::parse(hex_64('2'))
-                    .expect("proposal id"),
-                candidate_id: radroots_event::ids::RadrootsTradeCandidateId::parse(hex_64('3'))
-                    .expect("candidate id"),
-                candidate_author_pubkey: radroots_event::ids::RadrootsPublicKey::parse(hex_64('4'))
-                    .expect("author"),
-                accepted_by_pubkey: radroots_event::ids::RadrootsPublicKey::parse(hex_64('5'))
-                    .expect("acceptor"),
-                reservation_commitment: hex_64('6'),
-            }],
-            active_agreement_claim_ids: vec![claim_id],
-            contested_claim_ids: Vec::new(),
-            cancelled_claim_ids: Vec::new(),
-            declined_candidate_ids: Vec::new(),
-            missing_parent_ids: Vec::new(),
-            missing_proposal_ids: Vec::new(),
-            unsupported_mutation_ids: Vec::new(),
-            issues: Vec::new(),
-            attestations: Vec::new(),
-            projection_digest: hex_64('7'),
-        }
-    }
-
-    #[test]
-    fn attestation_report_is_keyed_to_claim_and_projection_digest() {
-        let claim_id = RadrootsTradeMutationId::parse(hex_64('a')).expect("claim id");
-        let report = attest_projection_claim(
-            &projection(claim_id.clone()),
-            &claim_id,
-            &TradeAgreementAttestationPolicy::default(),
-        )
-        .expect("report");
-        assert_eq!(report.statement.claim_mutation_id, claim_id.as_str());
-        assert_eq!(report.statement.projection_digest, hex_64('7'));
-        assert_eq!(report.proof_system, "local_statement_hash");
-    }
-
     #[tokio::test]
     async fn runtime_persists_and_loads_attestation_state() {
         let temp = tempfile::tempdir().expect("tempdir");

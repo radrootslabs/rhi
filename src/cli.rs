@@ -1,5 +1,5 @@
+use crate::host_runtime::ServiceCliArgs;
 use clap::Parser;
-use radroots_runtime::RadrootsServiceCliArgs;
 use std::path::PathBuf;
 
 #[derive(Parser, Debug, Clone)]
@@ -12,7 +12,7 @@ pub struct Args {
     #[command(subcommand)]
     pub command: Option<Command>,
     #[command(flatten)]
-    pub service: RadrootsServiceCliArgs,
+    pub service: ServiceCliArgs,
 }
 
 #[derive(clap::Subcommand, Debug, Clone)]

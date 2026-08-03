@@ -34,9 +34,12 @@ fn rhi_manifest_exact_pins_radroots_contract() {
         if !name.starts_with("radroots_") {
             continue;
         }
+        let version = dependency
+            .as_str()
+            .or_else(|| dependency.get("version").and_then(toml::Value::as_str));
         assert_eq!(
-            dependency["version"].as_str(),
-            Some("=1.0.0-alpha.1"),
+            version,
+            Some("=0.1.0-alpha"),
             "RHI must exact-pin {name} to the governed event contract release"
         );
     }
@@ -118,15 +121,13 @@ fn rhi_agreement_attestation_is_release_product_optional_infrastructure() {
 
     assert!(
         lib.contains("trade_mutation_subscription_kinds()")
-            && lib.contains("&TRADE_MUTATION_EVENT_KINDS")
-            && lib.contains("RadrootsAuthoredProfile")
-            && lib.contains("RadrootsNostrProfileEventBuilder")
-            && lib.contains("radroots_nostr_build_profile_event")
-            && lib.contains("send_profile_event_builder")
-            && !lib.contains("radroots_nostr_build_event")
-            && lib.contains("radroots_nostr_publish_application_handler")
-            && !lib.contains("radroots_nostr_bootstrap_service_presence")
-            && !lib.contains("RadrootsProfileType")
+            && lib.contains("TRADE_MUTATION_EVENT_KINDS")
+            && lib.contains("AuthoredProfile")
+            && lib.contains("ProfileBuilder")
+            && lib.contains("build_profile")
+            && lib.contains("build_application_handler")
+            && lib.contains(".send_event(")
+            && !lib.contains("radroots_nostr::prelude")
             && lib.contains("client.into_inner()"),
         "RHI service presence must advertise canonical release-product trade mutation kinds"
     );

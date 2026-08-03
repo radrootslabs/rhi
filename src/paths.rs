@@ -1,13 +1,14 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
-use radroots_runtime_paths::{
-    DEFAULT_CONFIG_FILE_NAME, DEFAULT_SERVICE_IDENTITY_FILE_NAME, RadrootsPathOverrides,
-    RadrootsPathProfile, RadrootsPathResolver, RadrootsRuntimeNamespace,
+use crate::host_paths::{
+    RadrootsPathOverrides, RadrootsPathProfile, RadrootsPathResolver, RadrootsRuntimeNamespace,
 };
+use anyhow::{Context, Result, bail};
 use serde::Serialize;
 
 const RHI_RUNTIME_ID: &str = "rhi";
+const DEFAULT_CONFIG_FILE_NAME: &str = "config.toml";
+const DEFAULT_SERVICE_IDENTITY_FILE_NAME: &str = "identity.secret.json";
 const SUBSCRIBER_STATE_DIR_NAME: &str = "trade-agreement-attestation";
 const SUBSCRIBER_STATE_FILE_NAME: &str = "state.json";
 const RHI_PATHS_PROFILE_ENV: &str = "RHI_PATHS_PROFILE";
