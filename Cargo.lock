@@ -996,9 +996,9 @@ checksum = "f0efe882e02d206d8d279c20eb40e03baf7cb5136a1476dc084a324fbc3ec42d"
 
 [[package]]
 name = "nostr"
-version = "0.44.2"
+version = "0.44.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3aa5e3b6a278ed061835fe1ee293b71641e6bf8b401cfe4e1834bbf4ef0a34e1"
+checksum = "c7d3d987ea7078dc36947cde532637c472a229426702e4331dd7667325378bd9"
 dependencies = [
  "aes",
  "base64",
@@ -1315,7 +1315,7 @@ dependencies = [
  "radroots_identity",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1338,11 +1338,9 @@ dependencies = [
 name = "radroots_trade"
 version = "0.1.0-alpha"
 dependencies = [
- "base64",
  "hex",
  "radroots_core",
  "radroots_event",
- "radroots_event_codec",
  "radroots_identity",
  "serde",
  "serde_json",
@@ -2643,27 +2641,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
 
 [[patch.unused]]
-name = "radroots_authority"
-version = "0.1.0-alpha"
-
-[[patch.unused]]
-name = "radroots_event_store"
-version = "0.1.0-alpha"
-
-[[patch.unused]]
 name = "radroots_geonames"
-version = "0.1.0-alpha"
-
-[[patch.unused]]
-name = "radroots_log"
-version = "0.1.0-alpha"
-
-[[patch.unused]]
-name = "radroots_mesh"
-version = "0.1.0-alpha"
-
-[[patch.unused]]
-name = "radroots_nostr_accounts"
 version = "0.1.0-alpha"
 
 [[patch.unused]]
@@ -2671,63 +2649,11 @@ name = "radroots_nostr_connect"
 version = "0.1.0-alpha"
 
 [[patch.unused]]
-name = "radroots_nostr_runtime"
-version = "0.1.0-alpha"
-
-[[patch.unused]]
-name = "radroots_nostr_signer"
-version = "0.1.0-alpha"
-
-[[patch.unused]]
-name = "radroots_nostrdb"
-version = "0.1.0-alpha"
-
-[[patch.unused]]
-name = "radroots_outbox"
-version = "0.1.0-alpha"
-
-[[patch.unused]]
-name = "radroots_protected_store"
-version = "0.1.0-alpha"
-
-[[patch.unused]]
-name = "radroots_protocol_contract_v1"
-version = "0.1.0-alpha"
-
-[[patch.unused]]
 name = "radroots_replica_schema"
 version = "0.1.0-alpha"
 
 [[patch.unused]]
-name = "radroots_replica_store"
-version = "0.1.0-alpha"
-
-[[patch.unused]]
-name = "radroots_replica_sync"
-version = "0.1.0-alpha"
-
-[[patch.unused]]
-name = "radroots_runtime"
-version = "0.1.0-alpha"
-
-[[patch.unused]]
-name = "radroots_runtime_paths"
-version = "0.1.0-alpha"
-
-[[patch.unused]]
-name = "radroots_runtime_store"
-version = "0.1.0-alpha"
-
-[[patch.unused]]
-name = "radroots_secret_vault"
-version = "0.1.0-alpha"
-
-[[patch.unused]]
 name = "radroots_signing"
-version = "0.1.0-alpha"
-
-[[patch.unused]]
-name = "radroots_sql_core"
 version = "0.1.0-alpha"
 
 [[patch.unused]]
@@ -2743,21 +2669,9 @@ name = "radroots_sync"
 version = "0.1.0-alpha"
 
 [[patch.unused]]
-name = "radroots_test_fixtures"
-version = "0.1.0-alpha"
-
-[[patch.unused]]
 name = "radroots_transport"
 version = "0.1.0-alpha"
 
 [[patch.unused]]
 name = "radroots_transport_nostr"
-version = "0.1.0-alpha"
-
-[[patch.unused]]
-name = "radroots_transport_publish_protocol"
-version = "0.1.0-alpha"
-
-[[patch.unused]]
-name = "radroots_transport_reticulum"
 version = "0.1.0-alpha"
