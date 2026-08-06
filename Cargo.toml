@@ -11,13 +11,13 @@ description = "Radroots trade agreement attestation worker"
 resolver = "3"
 
 [workspace.dependencies]
-radroots_event = { git = "https://github.com/radrootslabs/lib.git", rev = "f7f456d906d91aadbb9fac4850afaa8c5723c3e9", version = "=0.1.0-alpha" }
-radroots_event_codec = { git = "https://github.com/radrootslabs/lib.git", rev = "f7f456d906d91aadbb9fac4850afaa8c5723c3e9", version = "=0.1.0-alpha" }
-radroots_identity = { git = "https://github.com/radrootslabs/lib.git", rev = "f7f456d906d91aadbb9fac4850afaa8c5723c3e9", version = "=0.1.0-alpha" }
-radroots_nostr = { git = "https://github.com/radrootslabs/lib.git", rev = "f7f456d906d91aadbb9fac4850afaa8c5723c3e9", version = "=0.1.0-alpha" }
-radroots_protocol = { git = "https://github.com/radrootslabs/lib.git", rev = "f7f456d906d91aadbb9fac4850afaa8c5723c3e9", version = "=0.1.0-alpha" }
-radroots_secrets = { git = "https://github.com/radrootslabs/lib.git", rev = "f7f456d906d91aadbb9fac4850afaa8c5723c3e9", version = "=0.1.0-alpha" }
-radroots_trade = { git = "https://github.com/radrootslabs/lib.git", rev = "f7f456d906d91aadbb9fac4850afaa8c5723c3e9", version = "=0.1.0-alpha" }
+radroots_event = { git = "https://github.com/radrootslabs/lib.git", rev = "09065a610d95e57acdc895a14c07580fa099e7c3", version = "=0.1.0-alpha" }
+radroots_event_codec = { git = "https://github.com/radrootslabs/lib.git", rev = "09065a610d95e57acdc895a14c07580fa099e7c3", version = "=0.1.0-alpha" }
+radroots_identity = { git = "https://github.com/radrootslabs/lib.git", rev = "09065a610d95e57acdc895a14c07580fa099e7c3", version = "=0.1.0-alpha" }
+radroots_nostr = { git = "https://github.com/radrootslabs/lib.git", rev = "09065a610d95e57acdc895a14c07580fa099e7c3", version = "=0.1.0-alpha" }
+radroots_protocol = { git = "https://github.com/radrootslabs/lib.git", rev = "09065a610d95e57acdc895a14c07580fa099e7c3", version = "=0.1.0-alpha" }
+radroots_secrets = { git = "https://github.com/radrootslabs/lib.git", rev = "09065a610d95e57acdc895a14c07580fa099e7c3", version = "=0.1.0-alpha" }
+radroots_trade = { git = "https://github.com/radrootslabs/lib.git", rev = "09065a610d95e57acdc895a14c07580fa099e7c3", version = "=0.1.0-alpha" }
 
 [features]
 default = []
