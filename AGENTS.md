@@ -22,6 +22,9 @@
   are not owned here; place that authority under the parent repository's
   `docs/oss/rhi/**`. Standalone machine contracts and ordinary source, test,
   build, package, and operational assets remain capsule-owned.
+- Do not add or retain tracked `docs/**`, `.github/**`, or `.act/**` content in
+  this capsule. Keep human documentation under the parent authority above and
+  machine-enforced declarations under governed standalone contract surfaces.
 - RHI does not own worldwide evidence completeness, trade agreement or
   settlement authority, relay storage/tenancy, general SDK generation, hosted
   accounts, telemetry, artifact promotion, or deployment transport.

@@ -8,6 +8,17 @@ RHI publishes its service kind-0 Profile only through the sealed
 `RadrootsAuthoredProfile` replacement snapshot. It does not retain a generic
 kind-0 event-authoring path.
 
+Use the repository-owned Nix lanes for validation:
+
+```text
+nix run .#fmt
+nix run .#check
+nix run .#test
+```
+
+Use `nix develop` to enter the repository's development shell before running
+narrower ad hoc Cargo commands from this repository root.
+
 ## Copyright
 
 Except as otherwise noted, all files in the `rhi` distribution are
