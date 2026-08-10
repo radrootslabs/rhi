@@ -1,0 +1,200 @@
+{
+  "schema": "radroots.rhi.evidence-policy-decision.v1",
+  "contract_version": 1,
+  "decision_state": "reserved_preimplementation",
+  "configuration": {
+    "group": "evidence",
+    "required_fields": ["contract", "contract_version", "policy_id", "sources"],
+    "unknown_fields": "reject",
+    "contract": "radroots.rhi.evidence-policy",
+    "contract_version": 1,
+    "policy_id": { "type": "stable_id", "minimum_utf8_bytes": 1, "maximum_utf8_bytes": 64, "pattern": "^[a-z][a-z0-9_-]*$" },
+    "sources": { "type": "array", "minimum_items": 1, "maximum_items": 16, "unique_constraints": [["source_id"], ["kind", "relay_id", "selector"]], "canonical_order": "source_id_ascending_utf8" },
+    "source": {
+      "required_fields": ["source_id", "kind", "relay_id", "required", "selector", "deadline_ms", "lookback_seconds", "overlap_seconds"],
+      "unknown_fields": "reject",
+      "source_id": { "type": "stable_id", "minimum_utf8_bytes": 1, "maximum_utf8_bytes": 64, "pattern": "^[a-z][a-z0-9_-]*$" },
+      "kind": { "type": "literal", "value": "nostr_relay" },
+      "relay_id": { "type": "stable_relay_id", "reference": "relays[].id", "canonical_url_required": true },
+      "required": { "type": "boolean" },
+      "selector": { "type": "literal", "value": "trade_mutation_lineage_v1" },
+      "deadline_ms": { "type": "integer", "minimum": 100, "maximum": 30000, "unit": "milliseconds" },
+      "lookback_seconds": { "type": "integer", "minimum": 60, "maximum": 2678400, "unit": "seconds" },
+      "overlap_seconds": { "type": "integer", "minimum": 1, "maximum": 86400, "unit": "seconds", "relationship": "overlap_seconds_less_than_or_equal_to_lookback_seconds" }
+    },
+    "implicit_source": false,
+    "implicit_relay": false,
+    "defaults": false
+  },
+  "source_kinds": {
+    "qualified_v1": ["nostr_relay"],
+    "other_source_kind": "unsupported_contract_input",
+    "adapter_without_real_source": "forbidden"
+  },
+  "selector": {
+    "id": "trade_mutation_lineage_v1",
+    "trade_event_contract": {
+      "repository": "https://github.com/radrootslabs/lib",
+      "path": "contracts/architecture/decisions/services_hardening_events.v1.json",
+      "schema": "radroots.services-hardening.event-decisions.v1",
+      "contract_family": "radroots.trade.mutation-index.v1"
+    },
+    "event_kinds": [3470, 3471, 3472, 3473, 3474],
+    "event_kind_meanings": ["proposal", "decision", "revision_proposal", "revision_decision", "cancellation"],
+    "dynamic_filter": { "tag": "#d", "value": "exact_job_trade_id" },
+    "required_structural_tags": ["contract", "d", "x:mutation", "p:buyer", "p:seller"],
+    "nonproposal_additional_tags": ["x:root", "x:parent"],
+    "author_policy": "validate_against_typed_trade_party_and_mutation_contract",
+    "filter_extra_tags": false,
+    "maximum_events_per_result": 4096,
+    "maximum_result_bytes": 8388608
+  },
+  "cursor": {
+    "scope": ["source_id", "selector_id", "policy_digest", "trade_id"],
+    "tuple": ["created_at_unix_seconds", "event_id_lowercase_hex"],
+    "ordering": ["created_at_unix_seconds_ascending", "event_id_lowercase_hex_ascending"],
+    "initial_since": "max_zero_attempt_started_at_utc_minus_lookback_seconds",
+    "resume_since": "max_zero_cursor_created_at_minus_overlap_seconds",
+    "equal_timestamp_safe": true,
+    "deduplicate_by": "verified_event_id",
+    "advance_candidate": "greatest_canonically_admitted_tuple_only",
+    "no_admitted_event": "leave_cursor_unchanged",
+    "rejected_event": "cannot_advance_cursor_or_completion_or_dirty_generation",
+    "commit": "only_with_generation_fenced_reconciliation_commit_after_source_completion"
+  },
+  "completion": {
+    "success_evidence": "nostr_eose_received_before_source_deadline",
+    "eose_scope": "exact_request_identity_and_selector",
+    "timeout": "incomplete_timeout",
+    "disconnect_before_eose": "incomplete_unavailable",
+    "relay_error_before_eose": "incomplete_unavailable",
+    "unsupported_filter_or_protocol": "unsupported",
+    "bounded_result_exceeded": "incomplete_resource_limit",
+    "invalid_events_before_eose": "completion_may_succeed_but_invalid_events_are_rejected",
+    "eose_after_deadline": "incomplete_timeout",
+    "response_without_eose": "incomplete_unknown"
+  },
+  "required_optional_semantics": {
+    "coverage_precedence": ["Unsupported", "ScopeSatisfied", "Partial", "Missing"],
+    "Unsupported": { "when": "any_required_source_is_unsupported", "allowed_outcomes": ["Indeterminate"] },
+    "ScopeSatisfied": { "when": "every_required_source_completed_and_all_required_scope_prerequisites_are_satisfied", "allowed_outcomes": ["Valid", "Invalid", "Indeterminate"] },
+    "Partial": { "when": "not_unsupported_or_scope_satisfied_and_any_required_or_optional_source_completed_or_any_relevant_evidence_was_admitted", "allowed_outcomes": ["Indeterminate"] },
+    "Missing": { "when": "not_unsupported_and_no_required_or_optional_source_completed_and_no_relevant_evidence_was_admitted", "allowed_outcomes": ["Indeterminate"] },
+    "optional_incomplete": "record_safe_source_result_without_blocking_scope_satisfied",
+    "optional_complete": "include_admitted_evidence_without_substituting_for_required_source",
+    "zero_required_sources": "invalid_configuration"
+  },
+  "policy_digest": {
+    "algorithm": "sha256",
+    "encoding": "lowercase_hex",
+    "domain": "radroots:rhi-evidence-policy:v1",
+    "preimage": "domain_utf8_then_0x00_then_rfc8785_jcs_normalized_policy_utf8",
+    "normalized_policy_fields": ["contract", "contract_version", "policy_id", "sources"],
+    "normalized_source_fields": ["source_id", "kind", "relay_id", "relay_url", "required", "selector", "deadline_ms", "lookback_seconds", "overlap_seconds", "completion"],
+    "source_order": "source_id_ascending_utf8",
+    "relay_url": "resolved_canonical_url_from_relay_id",
+    "completion_value": "nostr_eose_before_deadline"
+  },
+  "publication_relationship": {
+    "relationship": "independent",
+    "evidence_sources_are_publication_targets": false,
+    "publication_targets_affect_coverage_or_outcome": false,
+    "publication_failure_changes_report_or_attestation_content": false,
+    "required_publication_failure": "publication_workflow_and_readiness_only",
+    "disabled_publication": "no_target_or_network_work"
+  },
+  "fixed_vector": {
+    "normalized_policy": {
+      "contract": "radroots.rhi.evidence-policy",
+      "contract_version": 1,
+      "policy_id": "production-primary",
+      "sources": [
+        {
+          "completion": "nostr_eose_before_deadline",
+          "deadline_ms": 10000,
+          "kind": "nostr_relay",
+          "lookback_seconds": 86400,
+          "overlap_seconds": 300,
+          "relay_id": "relay-primary",
+          "relay_url": "wss://relay.example.com/",
+          "required": true,
+          "selector": "trade_mutation_lineage_v1",
+          "source_id": "trade-primary"
+        }
+      ]
+    },
+    "canonical_policy_utf8": "{\"contract\":\"radroots.rhi.evidence-policy\",\"contract_version\":1,\"policy_id\":\"production-primary\",\"sources\":[{\"completion\":\"nostr_eose_before_deadline\",\"deadline_ms\":10000,\"kind\":\"nostr_relay\",\"lookback_seconds\":86400,\"overlap_seconds\":300,\"relay_id\":\"relay-primary\",\"relay_url\":\"wss://relay.example.com/\",\"required\":true,\"selector\":\"trade_mutation_lineage_v1\",\"source_id\":\"trade-primary\"}]}",
+    "preimage_utf8": "radroots:rhi-evidence-policy:v1\u0000{\"contract\":\"radroots.rhi.evidence-policy\",\"contract_version\":1,\"policy_id\":\"production-primary\",\"sources\":[{\"completion\":\"nostr_eose_before_deadline\",\"deadline_ms\":10000,\"kind\":\"nostr_relay\",\"lookback_seconds\":86400,\"overlap_seconds\":300,\"relay_id\":\"relay-primary\",\"relay_url\":\"wss://relay.example.com/\",\"required\":true,\"selector\":\"trade_mutation_lineage_v1\",\"source_id\":\"trade-primary\"}]}",
+    "policy_digest": "43f083e29fcff4f90e66b546c49f74b0205ecb148beb352adb5a211d3e5f86b2",
+    "positive": ["required_eose_before_deadline", "optional_timeout_does_not_block_required_scope"]
+  },
+  "configuration_fixture": {
+    "contract": "radroots.rhi.evidence-policy",
+    "contract_version": 1,
+    "policy_id": "production-primary",
+    "sources": [
+      { "source_id": "trade-primary", "kind": "nostr_relay", "relay_id": "relay-primary", "required": true, "selector": "trade_mutation_lineage_v1", "deadline_ms": 10000, "lookback_seconds": 86400, "overlap_seconds": 300 }
+    ]
+  },
+  "configuration_vectors": [
+    { "case": "valid_base", "mutation": { "op": "none" }, "expected": "valid" },
+    { "case": "invalid_policy_id", "mutation": { "op": "set_top_field", "field": "policy_id", "value": "Invalid Policy" }, "expected": "invalid_policy_id" },
+    { "case": "duplicate_source_id", "mutation": { "op": "append_source", "source": { "source_id": "trade-primary", "kind": "nostr_relay", "relay_id": "relay-secondary", "required": true, "selector": "trade_mutation_lineage_v1", "deadline_ms": 10000, "lookback_seconds": 86400, "overlap_seconds": 300 } }, "expected": "duplicate_source_id" },
+    { "case": "duplicate_binding", "mutation": { "op": "append_source", "source": { "source_id": "trade-alias", "kind": "nostr_relay", "relay_id": "relay-primary", "required": true, "selector": "trade_mutation_lineage_v1", "deadline_ms": 10000, "lookback_seconds": 86400, "overlap_seconds": 300 } }, "expected": "duplicate_source_binding" },
+    { "case": "zero_required", "mutation": { "op": "set_source_field", "field": "required", "value": false }, "expected": "no_required_source" },
+    { "case": "implicit_source", "mutation": { "op": "remove_top_field", "field": "sources" }, "expected": "missing_required_field" },
+    { "case": "zero_sources", "mutation": { "op": "set_top_field", "field": "sources", "value": [] }, "expected": "source_count_out_of_range" },
+    { "case": "seventeen_sources", "mutation": { "op": "repeat_sources", "count": 17 }, "expected": "source_count_out_of_range" },
+    { "case": "non_array_sources", "mutation": { "op": "set_top_field", "field": "sources", "value": "relay-primary" }, "expected": "invalid_sources_type" },
+    { "case": "non_object_source", "mutation": { "op": "set_top_field", "field": "sources", "value": [42] }, "expected": "invalid_source_type" },
+    { "case": "unknown_top_field", "mutation": { "op": "add_top_field", "field": "default_source", "value": "relay-primary" }, "expected": "unknown_field" },
+    { "case": "unknown_source_field", "mutation": { "op": "add_source_field", "field": "default", "value": true }, "expected": "unknown_field" },
+    { "case": "missing_deadline", "mutation": { "op": "remove_source_field", "field": "deadline_ms" }, "expected": "missing_required_field" },
+    { "case": "missing_lookback", "mutation": { "op": "remove_source_field", "field": "lookback_seconds" }, "expected": "missing_required_field" },
+    { "case": "missing_overlap", "mutation": { "op": "remove_source_field", "field": "overlap_seconds" }, "expected": "missing_required_field" },
+    { "case": "unknown_source_kind", "mutation": { "op": "set_source_field", "field": "kind", "value": "filesystem" }, "expected": "unsupported_source_kind" },
+    { "case": "publication_target_as_evidence", "mutation": { "op": "set_source_field", "field": "kind", "value": "publication_target" }, "expected": "unsupported_source_kind" },
+    { "case": "invalid_selector", "mutation": { "op": "set_source_field", "field": "selector", "value": "all_events_v1" }, "expected": "unsupported_selector" },
+    { "case": "invalid_source_id", "mutation": { "op": "set_source_field", "field": "source_id", "value": "Invalid Source" }, "expected": "invalid_source_id" },
+    { "case": "invalid_relay_id", "mutation": { "op": "set_source_field", "field": "relay_id", "value": "/relay" }, "expected": "invalid_source_id" },
+    { "case": "non_boolean_required", "mutation": { "op": "set_source_field", "field": "required", "value": "true" }, "expected": "invalid_required_type" },
+    { "case": "non_integer_deadline", "mutation": { "op": "set_source_field", "field": "deadline_ms", "value": "10000" }, "expected": "invalid_deadline_type" },
+    { "case": "non_integer_lookback", "mutation": { "op": "set_source_field", "field": "lookback_seconds", "value": "86400" }, "expected": "invalid_lookback_type" },
+    { "case": "non_integer_overlap", "mutation": { "op": "set_source_field", "field": "overlap_seconds", "value": "300" }, "expected": "invalid_overlap_type" },
+    { "case": "deadline_minimum", "mutation": { "op": "set_source_field", "field": "deadline_ms", "value": 100 }, "expected": "valid" },
+    { "case": "deadline_below_minimum", "mutation": { "op": "set_source_field", "field": "deadline_ms", "value": 99 }, "expected": "deadline_out_of_range" },
+    { "case": "deadline_maximum", "mutation": { "op": "set_source_field", "field": "deadline_ms", "value": 30000 }, "expected": "valid" },
+    { "case": "deadline_above_maximum", "mutation": { "op": "set_source_field", "field": "deadline_ms", "value": 30001 }, "expected": "deadline_out_of_range" },
+    { "case": "lookback_minimum", "mutation": { "op": "set_source_fields", "fields": { "lookback_seconds": 60, "overlap_seconds": 60 } }, "expected": "valid" },
+    { "case": "lookback_below_minimum", "mutation": { "op": "set_source_field", "field": "lookback_seconds", "value": 59 }, "expected": "lookback_out_of_range" },
+    { "case": "lookback_maximum", "mutation": { "op": "set_source_field", "field": "lookback_seconds", "value": 2678400 }, "expected": "valid" },
+    { "case": "lookback_above_maximum", "mutation": { "op": "set_source_field", "field": "lookback_seconds", "value": 2678401 }, "expected": "lookback_out_of_range" },
+    { "case": "overlap_minimum", "mutation": { "op": "set_source_field", "field": "overlap_seconds", "value": 1 }, "expected": "valid" },
+    { "case": "overlap_below_minimum", "mutation": { "op": "set_source_field", "field": "overlap_seconds", "value": 0 }, "expected": "overlap_out_of_range" },
+    { "case": "overlap_maximum", "mutation": { "op": "set_source_field", "field": "overlap_seconds", "value": 86400 }, "expected": "valid" },
+    { "case": "overlap_above_maximum", "mutation": { "op": "set_source_field", "field": "overlap_seconds", "value": 86401 }, "expected": "overlap_out_of_range" },
+    { "case": "overlap_exceeds_lookback", "mutation": { "op": "set_source_fields", "fields": { "lookback_seconds": 60, "overlap_seconds": 61 } }, "expected": "overlap_exceeds_lookback" }
+  ],
+  "completion_vectors": [
+    { "case": "eose_before_deadline", "input": { "eose_at_ms": 9999, "deadline_ms": 10000, "disconnect": false, "relay_error": false, "unsupported": false, "resource_limit": false }, "expected": "complete" },
+    { "case": "eose_at_deadline", "input": { "eose_at_ms": 10000, "deadline_ms": 10000, "disconnect": false, "relay_error": false, "unsupported": false, "resource_limit": false }, "expected": "incomplete_timeout" },
+    { "case": "missing_eose", "input": { "deadline_elapsed_without_eose": true, "deadline_ms": 10000, "disconnect": false, "relay_error": false, "unsupported": false, "resource_limit": false }, "expected": "incomplete_timeout" },
+    { "case": "eose_after_deadline", "input": { "eose_at_ms": 10001, "deadline_ms": 10000, "disconnect": false, "relay_error": false, "unsupported": false, "resource_limit": false }, "expected": "incomplete_timeout" },
+    { "case": "disconnect_before_eose", "input": { "deadline_ms": 10000, "disconnect": true, "relay_error": false, "unsupported": false, "resource_limit": false }, "expected": "incomplete_unavailable" },
+    { "case": "relay_error_before_eose", "input": { "deadline_ms": 10000, "disconnect": false, "relay_error": true, "unsupported": false, "resource_limit": false }, "expected": "incomplete_unavailable" },
+    { "case": "unsupported", "input": { "deadline_ms": 10000, "disconnect": false, "relay_error": false, "unsupported": true, "resource_limit": false }, "expected": "unsupported" },
+    { "case": "bounded_result_exceeded", "input": { "deadline_ms": 10000, "disconnect": false, "relay_error": false, "unsupported": false, "resource_limit": true }, "expected": "incomplete_resource_limit" },
+    { "case": "response_without_eose", "input": { "deadline_ms": 10000, "disconnect": false, "relay_error": false, "unsupported": false, "resource_limit": false }, "expected": "incomplete_unknown" }
+  ],
+  "cursor_vectors": [
+    { "case": "rejected_event_cannot_advance", "current": { "created_at_unix_seconds": 100, "event_id_lowercase_hex": "0000000000000000000000000000000000000000000000000000000000000001" }, "candidate": { "created_at_unix_seconds": 101, "event_id_lowercase_hex": "0000000000000000000000000000000000000000000000000000000000000002", "admitted": false }, "source_complete": true, "generation_fence": true, "expected": { "created_at_unix_seconds": 100, "event_id_lowercase_hex": "0000000000000000000000000000000000000000000000000000000000000001" } },
+    { "case": "equal_timestamp_event_id_advances", "current": { "created_at_unix_seconds": 100, "event_id_lowercase_hex": "0000000000000000000000000000000000000000000000000000000000000001" }, "candidate": { "created_at_unix_seconds": 100, "event_id_lowercase_hex": "0000000000000000000000000000000000000000000000000000000000000002", "admitted": true }, "source_complete": true, "generation_fence": true, "expected": { "created_at_unix_seconds": 100, "event_id_lowercase_hex": "0000000000000000000000000000000000000000000000000000000000000002" } }
+  ],
+  "coverage_vectors": [
+    { "case": "required_unsupported", "sources": [{ "required": true, "completion": "unsupported", "admitted_events": 0 }], "scope_prerequisites_satisfied": false, "expected_coverage": "Unsupported", "allowed_outcomes": ["Indeterminate"] },
+    { "case": "nothing_observed", "sources": [{ "required": true, "completion": "incomplete", "admitted_events": 0 }], "scope_prerequisites_satisfied": false, "expected_coverage": "Missing", "allowed_outcomes": ["Indeterminate"] },
+    { "case": "optional_evidence_required_incomplete", "sources": [{ "required": true, "completion": "incomplete", "admitted_events": 0 }, { "required": false, "completion": "complete", "admitted_events": 1 }], "scope_prerequisites_satisfied": false, "expected_coverage": "Partial", "allowed_outcomes": ["Indeterminate"] },
+    { "case": "required_complete_prerequisite_missing", "sources": [{ "required": true, "completion": "complete", "admitted_events": 1 }], "scope_prerequisites_satisfied": false, "expected_coverage": "Partial", "allowed_outcomes": ["Indeterminate"] },
+    { "case": "required_scope_satisfied", "sources": [{ "required": true, "completion": "complete", "admitted_events": 1 }, { "required": false, "completion": "incomplete", "admitted_events": 0 }], "scope_prerequisites_satisfied": true, "expected_coverage": "ScopeSatisfied", "allowed_outcomes": ["Valid", "Invalid", "Indeterminate"] }
+  ]
+}

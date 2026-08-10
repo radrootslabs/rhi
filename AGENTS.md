@@ -34,6 +34,12 @@
 - Before editing, read this file, `README`, `Cargo.toml`,
   `radroots.lib.source-lock.v1.toml`, the relevant implementation and tests,
   and `config.toml` or `flake.nix` when they are in scope.
+- `.radroots-consumer-root` is the standalone source-lock identity and must
+  remain exactly `rhi`. The reserved pre-implementation evidence authority is
+  `contracts/services_hardening/evidence_policy.v1.json`. RHI source and
+  configuration must implement its exact source, selector, cursor, completion,
+  coverage, digest, and publication-independence semantics; prototype source
+  behavior is not permission to reinterpret them.
 - Treat checked-in source, tests, configuration, and prototype behavior as
   implementation evidence, not permission to preserve behavior that the active
   requirement removes.
