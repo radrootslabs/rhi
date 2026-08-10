@@ -36,10 +36,13 @@
   and `config.toml` or `flake.nix` when they are in scope.
 - `.radroots-consumer-root` is the standalone source-lock identity and must
   remain exactly `rhi`. The reserved pre-implementation evidence authority is
-  `contracts/services_hardening/evidence_policy.v1.json`. RHI source and
-  configuration must implement its exact source, selector, cursor, completion,
-  coverage, digest, and publication-independence semantics; prototype source
-  behavior is not permission to reinterpret them.
+  `contracts/services_hardening/evidence_policy.v1.json`, and the reserved
+  pre-implementation operator authority is
+  `contracts/services_hardening/operator_contract.v1.json`. RHI source and
+  configuration must implement their exact source, selector, cursor,
+  completion, coverage, digest, publication-independence, route, wire-model,
+  identity-role, pagination, mutation, doctor, exit, and TCP semantics;
+  prototype source behavior is not permission to reinterpret them.
 - Treat checked-in source, tests, configuration, and prototype behavior as
   implementation evidence, not permission to preserve behavior that the active
   requirement removes.
