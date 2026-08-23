@@ -236,6 +236,17 @@ fn semantic_valid(value: &Value, profile: Profile) -> bool {
             return false;
         }
     }
+    if value["resource_limits"]["source_results"]["events"]
+        .as_u64()
+        .unwrap_or(4_096)
+        != 4_096
+        || value["resource_limits"]["source_results"]["bytes"]
+            .as_u64()
+            .unwrap_or(8_388_608)
+            != 8_388_608
+    {
+        return false;
+    }
     true
 }
 
@@ -702,12 +713,6 @@ fn exact_resource_boundaries_and_safe_defaults_are_frozen() {
         ("/resource_limits/admin/header_count", 64, 65),
         ("/resource_limits/admin/query_items", 200, 201),
         ("/resource_limits/events/wire_bytes", 524_288, 524_289),
-        ("/resource_limits/source_results/events", 4_096, 4_097),
-        (
-            "/resource_limits/source_results/bytes",
-            8_388_608,
-            8_388_609,
-        ),
         ("/resource_limits/metrics/samples", 512, 513),
         ("/resource_limits/runtime/worker_threads", 32, 33),
     ] {
@@ -732,6 +737,29 @@ fn exact_resource_boundaries_and_safe_defaults_are_frozen() {
         let mut excessive = value.clone();
         *excessive.pointer_mut(pointer).expect("bounded field") = json!(over);
         assert_rejected(&excessive, Profile::Production);
+    }
+    for (pointer, exact, lower, over) in [
+        (
+            "/resource_limits/source_results/events",
+            4_096,
+            4_095,
+            4_097,
+        ),
+        (
+            "/resource_limits/source_results/bytes",
+            8_388_608,
+            8_388_607,
+            8_388_609,
+        ),
+    ] {
+        let mut exact_candidate = value.clone();
+        *exact_candidate.pointer_mut(pointer).expect("bounded field") = json!(exact);
+        assert!(semantic_valid(&exact_candidate, Profile::Production));
+        for invalid in [0, lower, over] {
+            let mut candidate = value.clone();
+            *candidate.pointer_mut(pointer).expect("bounded field") = json!(invalid);
+            assert_rejected(&candidate, Profile::Production);
+        }
     }
     let mut exact_admin_response = value.clone();
     exact_admin_response["resource_limits"]["admin"]["response_body_utf8_bytes"] = json!(512);

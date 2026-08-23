@@ -3,6 +3,7 @@
 pub mod adapters;
 pub mod cli;
 pub mod config;
+mod config_v1;
 pub mod features;
 pub mod host_identity;
 pub mod host_nostr;
@@ -13,6 +14,12 @@ pub mod paths;
 pub mod rhi;
 
 pub use cli::Args as cli_args;
+pub use config_v1::{
+    RHI_CONFIG_DOCUMENT_MAX_UTF8_BYTES, RHI_CONFIG_EFFECTIVE_MAX_UTF8_BYTES, RHI_CONFIG_SCHEMA,
+    RHI_CONFIG_SCHEMA_VERSION, RhiConfigDefaultAuthority, RhiConfigDocumentV1, RhiConfigProfile,
+    RhiConfigV1Error, RhiConfigV1ErrorKind, RhiConfigValueSource, RhiEffectiveConfigV1,
+    RhiRuntimeThreadLimitsV1, parse_rhi_config_v1,
+};
 
 use anyhow::{Context, Result, anyhow, bail};
 use radroots_event::{

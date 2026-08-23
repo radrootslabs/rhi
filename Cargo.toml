@@ -38,6 +38,7 @@ anyhow = { version = "1" }
 chacha20poly1305 = { version = "0.10" }
 clap = { version = "4", features = ["derive"] }
 futures-executor = { version = "0.3" }
+jsonschema = { version = "0.48.1", default-features = false }
 nostr = { version = "0.44.7", features = ["nip49"] }
 nostr-sdk = { version = "0.44.1" }
 rand = { version = "0.9" }
@@ -51,8 +52,7 @@ toml = { version = "0.8" }
 tracing = { version = "0.1" }
 tracing-appender = { version = "0.2" }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2"
 zeroize = { version = "1" }
 
 [dev-dependencies]
-jsonschema = { version = "0.48.1", default-features = false }
-url = "2"

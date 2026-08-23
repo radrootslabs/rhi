@@ -25,6 +25,15 @@ their ordered replacement steps are complete. Existing environment and worker
 selectors are prototype evidence, not authority to change or weaken the v1
 contract.
 
+`parse_rhi_config_v1` is the strict in-memory admission boundary for the target
+document. It bounds original bytes before parsing, rejects malformed duplicate
+or null TOML and unknown fields, validates the bootstrap-selected relay posture
+and all cross-field relationships, and returns an immutable document with a
+deterministic bounded redacted effective projection. The projection records the
+exact `toml` or `safe_default` origin for every leaf and the governed authority
+behind each safe default. Parsing performs no filesystem, environment,
+identity, database, clock, entropy, logging, DNS, or network operation.
+
 Use the repository-owned Nix lanes for validation:
 
 ```text
