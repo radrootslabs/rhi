@@ -84,7 +84,8 @@ async fn initialize_is_create_new_and_both_existing_open_modes_close_explicitly(
     let lock = runtime.artifacts().state_lock();
 
     assert!(!state.exists());
-    initialize_rhi_state(&runtime, &metadata)
+    let (applied_at, build) = migration_evidence();
+    initialize_rhi_state(&runtime, &metadata, applied_at, &build)
         .await
         .expect("create-new initialization");
     assert!(state.is_file());
@@ -98,12 +99,11 @@ async fn initialize_is_create_new_and_both_existing_open_modes_close_explicitly(
         0o600
     );
 
-    let duplicate = initialize_rhi_state(&runtime, &metadata)
+    let duplicate = initialize_rhi_state(&runtime, &metadata, applied_at, &build)
         .await
         .expect_err("second initialization must fail");
     assert_eq!(duplicate.kind(), RhiStateHostErrorKind::Initialize);
 
-    let (applied_at, build) = migration_evidence();
     let writer = open_rhi_state_read_write(&runtime, &metadata, applied_at, &build)
         .await
         .expect("existing writable state");
@@ -224,7 +224,27 @@ async fn missing_state_and_mismatched_evidence_fail_before_database_creation() {
     assert_eq!(missing.kind(), RhiStateHostErrorKind::ReadWriteOpen);
     assert!(!primary.artifacts().state_database().exists());
 
-    let mismatch = initialize_rhi_state(&secondary, &primary_metadata)
+    let invalid_build = MigrationBuildIdentity::new(
+        env!("CARGO_PKG_VERSION"),
+        "1111111111111111111111111111111111111111",
+        "7d7b454b4c9ed86569671993bd03ca868b676665",
+        "rustc-test",
+        "test-target",
+        "service-host",
+        2,
+        1,
+        1,
+        1,
+        1,
+    )
+    .expect("structurally valid mismatched build");
+    let invalid = initialize_rhi_state(&primary, &primary_metadata, applied_at, &invalid_build)
+        .await
+        .expect_err("migration build must match RHI policy before I/O");
+    assert_eq!(invalid.kind(), RhiStateHostErrorKind::InvalidEvidence);
+    assert!(!primary.artifacts().state_database().exists());
+
+    let mismatch = initialize_rhi_state(&secondary, &primary_metadata, applied_at, &build)
         .await
         .expect_err("cross-instance metadata");
     assert_eq!(mismatch.kind(), RhiStateHostErrorKind::InvalidEvidence);

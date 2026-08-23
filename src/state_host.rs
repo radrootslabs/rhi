@@ -1,17 +1,22 @@
 //! Sealed lifecycle boundary for the canonical RHI SQLite state catalog.
 
 use core::fmt;
-use std::{error::Error, path::PathBuf};
+use std::{
+    error::Error,
+    path::{Path, PathBuf},
+};
 
 use radroots_service_sqlite::{
-    MigrationAppliedAtUnixSeconds, MigrationBuildIdentity, OpenMode,
-    ServiceSqliteConnectionOptions, ServiceSqliteHost, ServiceSqlitePaths, initialize_database,
+    BackupCreatedAtUnixMs, IntegrityCheckedAtUnixMs, MigrationAppliedAtUnixSeconds,
+    MigrationBuildIdentity, OpenMode, ServiceBackupManifest, ServiceSqliteConnectionOptions,
+    ServiceSqliteHost, ServiceSqliteIntegrityReport, ServiceSqlitePaths, initialize_database,
 };
 use sqlx::{ConnectOptions, Connection, SqliteConnection, sqlite::SqliteConnectOptions};
 
 use crate::{
-    RHI_STATE_SCHEMA_VERSION, RhiRuntimeContext, RhiStateMetadata, RhiStateRepositories,
-    rhi_migration_catalog, rhi_schema_catalog, validate_rhi_state_catalogs,
+    RHI_STATE_SCHEMA_VERSION, RhiRuntimeContext, RhiStateMaintenanceError,
+    RhiStateMaintenanceErrorKind, RhiStateMetadata, RhiStateRepositories, rhi_migration_catalog,
+    rhi_schema_catalog, validate_rhi_state_catalogs,
 };
 
 /// Stable lifecycle mode of one opened RHI state host.
@@ -145,6 +150,37 @@ impl RhiStateHost {
         RhiStateRepositories::new(self)
     }
 
+    /// Captures one governed point-in-time backup from a writable RHI host.
+    ///
+    /// The staging directory must be a new absolute path. The returned
+    /// manifest remains in memory and contains no protected identity material.
+    pub async fn capture_online_backup(
+        &self,
+        staging_directory: &Path,
+        created_at: BackupCreatedAtUnixMs,
+    ) -> Result<ServiceBackupManifest, RhiStateMaintenanceError> {
+        if self.mode != RhiStateHostMode::ReadWriteExisting {
+            return Err(RhiStateMaintenanceError::new(
+                RhiStateMaintenanceErrorKind::InvalidMode,
+            ));
+        }
+        self.host
+            .capture_online_backup(staging_directory, created_at)
+            .await
+            .map_err(RhiStateMaintenanceError::from_sqlite)
+    }
+
+    /// Runs one explicit bounded integrity inspection over this host.
+    pub async fn inspect_integrity(
+        &self,
+        checked_at: IntegrityCheckedAtUnixMs,
+    ) -> Result<ServiceSqliteIntegrityReport, RhiStateMaintenanceError> {
+        self.host
+            .inspect_integrity(checked_at)
+            .await
+            .map_err(RhiStateMaintenanceError::from_sqlite)
+    }
+
     /// Drains the shared host and explicitly releases retained authority.
     pub async fn close(&self) -> Result<(), RhiStateHostError> {
         self.host
@@ -167,16 +203,20 @@ impl fmt::Debug for RhiStateHost {
 /// Creates a missing RHI catalog exactly once and releases initialization authority.
 ///
 /// This function never opens an existing database as initialization. The caller
-/// injects the shared metadata evidence; Step 171 owns its exact RHI application,
-/// configuration, evidence-policy, identity, and contract-version bindings.
+/// injects the shared metadata and migration evidence. Contract versions are
+/// cross-bound before database I/O, and all governed migrations are applied by
+/// the shared host before initialization authority is explicitly released.
 pub async fn initialize_rhi_state(
     runtime: &RhiRuntimeContext,
     metadata: &RhiStateMetadata,
+    applied_at: MigrationAppliedAtUnixSeconds,
+    build: &MigrationBuildIdentity,
 ) -> Result<(), RhiStateHostError> {
     let paths = state_paths(runtime)?;
     require_metadata(runtime, metadata)?;
+    require_migration_build(metadata, build)?;
     let (migrations, schema) = catalogs()?;
-    let mut authority = initialize_database(
+    let authority = initialize_database(
         &paths,
         OpenMode::Initialize,
         metadata.database(),
@@ -185,11 +225,26 @@ pub async fn initialize_rhi_state(
     )
     .await
     .map_err(|_| RhiStateHostError::new(RhiStateHostErrorKind::Initialize))?;
-    authority
-        .release()
-        .map_err(|_| RhiStateHostError::new(RhiStateHostErrorKind::Initialize))?;
-    drop(migrations);
-    Ok(())
+    let identity = metadata.database_identity();
+    let (host, outcome) = ServiceSqliteHost::open_initialized(
+        &paths,
+        &identity,
+        &migrations,
+        &schema,
+        ServiceSqliteConnectionOptions::reviewed(),
+        authority,
+        applied_at,
+        build,
+        &[],
+    )
+    .await
+    .map_err(|_| RhiStateHostError::new(RhiStateHostErrorKind::Initialize))?;
+    if !exact_migration_outcome(outcome) {
+        return Err(close_error(&host, RhiStateHostErrorKind::Catalog).await);
+    }
+    host.close()
+        .await
+        .map_err(|_| RhiStateHostError::new(RhiStateHostErrorKind::Initialize))
 }
 
 /// Opens an already initialized RHI catalog with exclusive writer authority.
@@ -205,6 +260,7 @@ pub async fn open_rhi_state_read_write(
 ) -> Result<RhiStateHost, RhiStateHostError> {
     let paths = state_paths(runtime)?;
     require_metadata(runtime, metadata)?;
+    require_migration_build(metadata, build)?;
     let identity = metadata.database_identity();
     let (migrations, schema) = catalogs()?;
     let (host, outcome) = ServiceSqliteHost::open_read_write_existing(
@@ -219,12 +275,8 @@ pub async fn open_rhi_state_read_write(
     )
     .await
     .map_err(|_| RhiStateHostError::new(RhiStateHostErrorKind::ReadWriteOpen))?;
-    if outcome.initial_version() != RHI_STATE_SCHEMA_VERSION
-        || outcome.final_version() != RHI_STATE_SCHEMA_VERSION
-        || outcome.applied_count() != 0
-    {
-        let _ = host.close().await;
-        return Err(RhiStateHostError::new(RhiStateHostErrorKind::Catalog));
+    if !exact_migration_outcome(outcome) {
+        return Err(close_error(&host, RhiStateHostErrorKind::Catalog).await);
     }
     Ok(RhiStateHost {
         host,
@@ -258,12 +310,14 @@ pub async fn open_rhi_state_inspection(
     })
 }
 
-fn state_paths(runtime: &RhiRuntimeContext) -> Result<ServiceSqlitePaths, RhiStateHostError> {
+pub(crate) fn state_paths(
+    runtime: &RhiRuntimeContext,
+) -> Result<ServiceSqlitePaths, RhiStateHostError> {
     ServiceSqlitePaths::from_runtime_context(runtime.context())
         .map_err(|_| RhiStateHostError::new(RhiStateHostErrorKind::InvalidPaths))
 }
 
-fn require_metadata(
+pub(crate) fn require_metadata(
     runtime: &RhiRuntimeContext,
     metadata: &RhiStateMetadata,
 ) -> Result<(), RhiStateHostError> {
@@ -277,7 +331,39 @@ fn require_metadata(
         .ok_or_else(|| RhiStateHostError::new(RhiStateHostErrorKind::InvalidEvidence))
 }
 
-fn catalogs() -> Result<
+fn require_migration_build(
+    metadata: &RhiStateMetadata,
+    build: &MigrationBuildIdentity,
+) -> Result<(), RhiStateHostError> {
+    let versions = metadata.policy_versions();
+    let matches = build.config_contract_version() == versions.configuration()
+        && build.state_contract_version() == versions.state()
+        && build.admin_contract_version() == versions.admin()
+        && build.status_contract_version() == versions.status()
+        && build.provider_contract_version() == versions.provider();
+    matches
+        .then_some(())
+        .ok_or_else(|| RhiStateHostError::new(RhiStateHostErrorKind::InvalidEvidence))
+}
+
+fn exact_migration_outcome(outcome: radroots_service_sqlite::MigrationApplicationOutcome) -> bool {
+    outcome.initial_version() == RHI_STATE_SCHEMA_VERSION
+        && outcome.final_version() == RHI_STATE_SCHEMA_VERSION
+        && outcome.applied_count() == 0
+}
+
+async fn close_error(
+    host: &ServiceSqliteHost,
+    fallback: RhiStateHostErrorKind,
+) -> RhiStateHostError {
+    if host.close().await.is_err() {
+        RhiStateHostError::new(RhiStateHostErrorKind::Close)
+    } else {
+        RhiStateHostError::new(fallback)
+    }
+}
+
+pub(crate) fn catalogs() -> Result<
     (
         radroots_service_sqlite::MigrationCatalog,
         radroots_service_sqlite::SchemaCatalog,

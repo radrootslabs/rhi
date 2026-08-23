@@ -1,0 +1,363 @@
+#![forbid(unsafe_code)]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
+
+use std::{
+    error::Error,
+    fs,
+    num::NonZeroU64,
+    os::unix::fs::{MetadataExt, PermissionsExt},
+    path::{Path, PathBuf},
+};
+
+use radroots_service_sqlite::{
+    BackupCreatedAtUnixMs, IntegrityCheckOutcome, IntegrityCheckedAtUnixMs,
+    MigrationAppliedAtUnixSeconds, MigrationBuildIdentity,
+};
+use radroots_storage::event::SourceGeneration;
+use rhi::{
+    RHI_STATE_SCHEMA_VERSION, RadrootsHostEnvironment, RadrootsPathResolver, RadrootsPlatform,
+    RhiConfigProfile, RhiStateHostErrorKind, RhiStateMaintenanceErrorKind, RhiStateMetadata,
+    RhiStateRepositoryKind, finalize_rhi_state_restore, initialize_rhi_state,
+    open_rhi_state_inspection, open_rhi_state_read_write, parse_rhi_cli_v1_from,
+    parse_rhi_config_v1, resolve_rhi_runtime_context, stage_rhi_state_restore,
+    verify_rhi_state_backup,
+};
+use sqlx::{ConnectOptions, Connection, SqliteConnection, sqlite::SqliteConnectOptions};
+
+const CONFIG_EXAMPLE: &[u8] =
+    include_bytes!("../contracts/services_hardening/config.v1.example.toml");
+const LIB_SOURCE: &str = include_str!("../src/lib.rs");
+const HOST_SOURCE: &str = include_str!("../src/state_host.rs");
+const MAINTENANCE_SOURCE: &str = include_str!("../src/state_maintenance.rs");
+
+fn runtime(root: &Path, instance: &str) -> rhi::RhiRuntimeContext {
+    let invocation = parse_rhi_cli_v1_from([
+        "rhi",
+        "--profile",
+        "repo-local",
+        "--instance",
+        instance,
+        "--repo-local-root",
+        root.to_str().expect("UTF-8 temporary root"),
+        "run",
+    ])
+    .expect("valid invocation");
+    resolve_rhi_runtime_context(
+        &RadrootsPathResolver::new(RadrootsPlatform::Linux, RadrootsHostEnvironment::default()),
+        &invocation,
+    )
+    .expect("runtime context")
+}
+
+fn prepare_state_directory(runtime: &rhi::RhiRuntimeContext) {
+    let directory = runtime.context().paths().state();
+    fs::create_dir_all(directory).expect("state directory");
+    fs::set_permissions(directory, fs::Permissions::from_mode(0o700)).expect("state mode");
+}
+
+fn metadata(runtime: &rhi::RhiRuntimeContext) -> RhiStateMetadata {
+    let configuration =
+        parse_rhi_config_v1(CONFIG_EXAMPLE, RhiConfigProfile::RepoLocal).expect("configuration");
+    RhiStateMetadata::new(
+        runtime,
+        &configuration,
+        SourceGeneration::new([0x5a; 32]).expect("generation"),
+        1_725_000_000_000,
+    )
+    .expect("metadata")
+}
+
+fn migration_evidence() -> (MigrationAppliedAtUnixSeconds, MigrationBuildIdentity) {
+    let applied_at = MigrationAppliedAtUnixSeconds::new(1_725_000_000).expect("migration time");
+    let build = MigrationBuildIdentity::new(
+        env!("CARGO_PKG_VERSION"),
+        "1111111111111111111111111111111111111111",
+        "7d7b454b4c9ed86569671993bd03ca868b676665",
+        "rustc-test",
+        "test-target",
+        "service-host",
+        1,
+        RHI_STATE_SCHEMA_VERSION,
+        1,
+        1,
+        1,
+    )
+    .expect("build identity");
+    (applied_at, build)
+}
+
+fn recovery_paths(runtime: &rhi::RhiRuntimeContext) -> [PathBuf; 4] {
+    let state = runtime.context().paths().state();
+    [
+        state.join("state.restore-staged.sqlite"),
+        state.join("state.restore-backup.sqlite"),
+        state.join("state.restore-marker.v1"),
+        state.join("state.restore-marker.v1.next"),
+    ]
+}
+
+#[tokio::test]
+async fn backup_integrity_and_offline_restore_obey_one_exact_rhi_authority() {
+    let directory = tempfile::tempdir().expect("temporary root");
+    let runtime = runtime(directory.path(), "primary");
+    prepare_state_directory(&runtime);
+    let metadata = metadata(&runtime);
+    let (applied_at, build) = migration_evidence();
+    initialize_rhi_state(&runtime, &metadata, applied_at, &build)
+        .await
+        .expect("initialization");
+
+    let writer = open_rhi_state_read_write(&runtime, &metadata, applied_at, &build)
+        .await
+        .expect("writable host");
+    let report = writer
+        .inspect_integrity(
+            IntegrityCheckedAtUnixMs::new(1_725_000_000_100).expect("inspection time"),
+        )
+        .await
+        .expect("writable integrity inspection");
+    assert_eq!(report.sqlite(), IntegrityCheckOutcome::Verified);
+    assert_eq!(report.foreign_keys(), IntegrityCheckOutcome::Verified);
+    assert!(report.diagnostics().is_empty());
+
+    let bundle = directory.path().join("backup");
+    let manifest = writer
+        .capture_online_backup(
+            &bundle,
+            BackupCreatedAtUnixMs::new(1_725_000_000_200).expect("capture time"),
+        )
+        .await
+        .expect("online backup");
+    assert_eq!(manifest.service().as_str(), "rhi");
+    assert_eq!(manifest.instance().as_str(), "primary");
+    assert_eq!(
+        manifest.state_schema_version().get(),
+        RHI_STATE_SCHEMA_VERSION
+    );
+    assert!(!manifest.protected_material_included());
+    assert_eq!(manifest.members().len(), 1);
+    assert_eq!(manifest.members()[0].name(), "state.sqlite");
+    let entries = fs::read_dir(&bundle)
+        .expect("backup directory")
+        .map(|entry| entry.expect("entry").file_name())
+        .collect::<Vec<_>>();
+    assert_eq!(entries, ["state.sqlite"]);
+    let manifest_bytes = manifest.canonical_bytes().to_vec();
+    let manifest_digest = manifest.digest();
+    let maximum_state_bytes =
+        NonZeroU64::new(manifest.members()[0].byte_length()).expect("member length");
+    writer.close().await.expect("writer close");
+
+    let live_path = runtime.artifacts().state_database();
+    let old_live_inode = fs::metadata(live_path).expect("live metadata").ino();
+    let inspection = open_rhi_state_inspection(&runtime, &metadata)
+        .await
+        .expect("read-only inspection");
+    let inspection_report = inspection
+        .inspect_integrity(
+            IntegrityCheckedAtUnixMs::new(1_725_000_000_300).expect("inspection time"),
+        )
+        .await
+        .expect("read-only integrity inspection");
+    assert_eq!(inspection_report.sqlite(), IntegrityCheckOutcome::Verified);
+    assert_eq!(
+        inspection_report.foreign_keys(),
+        IntegrityCheckOutcome::Verified
+    );
+    let forbidden_bundle = directory.path().join("inspection-backup");
+    let error = inspection
+        .capture_online_backup(
+            &forbidden_bundle,
+            BackupCreatedAtUnixMs::new(1_725_000_000_400).expect("capture time"),
+        )
+        .await
+        .expect_err("read-only capture");
+    assert_eq!(error.kind(), RhiStateMaintenanceErrorKind::InvalidMode);
+    assert!(!forbidden_bundle.exists());
+
+    let verified = verify_rhi_state_backup(
+        &manifest_bytes,
+        manifest_digest,
+        &bundle,
+        &metadata,
+        maximum_state_bytes,
+    )
+    .expect("verified retained backup");
+    let contended = stage_rhi_state_restore(&runtime, &metadata, verified)
+        .await
+        .expect_err("offline staging rejects a live inspection host");
+    assert_eq!(contended.kind(), RhiStateMaintenanceErrorKind::Authority);
+    inspection.close().await.expect("inspection close");
+
+    let verified = verify_rhi_state_backup(
+        &manifest_bytes,
+        manifest_digest,
+        &bundle,
+        &metadata,
+        maximum_state_bytes,
+    )
+    .expect("reverified backup for runtime mismatch");
+    let secondary = self::runtime(directory.path(), "secondary");
+    let mismatch = stage_rhi_state_restore(&secondary, &metadata, verified)
+        .await
+        .expect_err("runtime and metadata remain cross-bound");
+    assert_eq!(
+        mismatch.kind(),
+        RhiStateMaintenanceErrorKind::InvalidEvidence
+    );
+    assert!(!secondary.artifacts().state_database().exists());
+    assert!(recovery_paths(&secondary).iter().all(|path| !path.exists()));
+
+    let verified = verify_rhi_state_backup(
+        &manifest_bytes,
+        manifest_digest,
+        &bundle,
+        &metadata,
+        maximum_state_bytes,
+    )
+    .expect("reverified backup");
+    assert_eq!(
+        format!("{verified:?}"),
+        "RhiVerifiedStateBackup([redacted])"
+    );
+    assert_eq!(
+        verified.database_metadata().state_schema_version().get(),
+        RHI_STATE_SCHEMA_VERSION
+    );
+    let staged = stage_rhi_state_restore(&runtime, &metadata, verified)
+        .await
+        .expect("offline staging");
+    assert_eq!(format!("{staged:?}"), "RhiStagedStateRestore([redacted])");
+    finalize_rhi_state_restore(staged)
+        .await
+        .expect("atomic finalization");
+
+    let unavailable = open_rhi_state_inspection(&runtime, &metadata)
+        .await
+        .expect_err("inspection never performs restore recovery");
+    assert_eq!(unavailable.kind(), RhiStateHostErrorKind::InspectionOpen);
+    let recovered = open_rhi_state_read_write(&runtime, &metadata, applied_at, &build)
+        .await
+        .expect("writable open reconciles exact recovery evidence");
+    assert_eq!(
+        recovered.repositories().sources().kind(),
+        RhiStateRepositoryKind::Source
+    );
+    recovered.close().await.expect("recovered writer close");
+    assert_ne!(
+        fs::metadata(live_path)
+            .expect("recovered live metadata")
+            .ino(),
+        old_live_inode
+    );
+    for path in recovery_paths(&runtime) {
+        assert!(!path.exists(), "recovery evidence must be retired");
+    }
+}
+
+#[tokio::test]
+async fn exact_open_rejects_unexpected_migration_history_without_repair() {
+    let directory = tempfile::tempdir().expect("temporary root");
+    let runtime = runtime(directory.path(), "primary");
+    prepare_state_directory(&runtime);
+    let metadata = metadata(&runtime);
+    let (applied_at, build) = migration_evidence();
+    initialize_rhi_state(&runtime, &metadata, applied_at, &build)
+        .await
+        .expect("initialization");
+
+    let options = SqliteConnectOptions::new()
+        .filename(runtime.artifacts().state_database())
+        .create_if_missing(false)
+        .disable_statement_logging();
+    let mut connection = SqliteConnection::connect_with(&options)
+        .await
+        .expect("test-only offline connection");
+    sqlx::query(
+        "INSERT INTO schema_migrations (
+            version, name, checksum, applied_at_unix_s,
+            service_version, service_commit, lib_revision, rust_version, target,
+            feature_profile, config_contract_version, state_contract_version,
+            admin_contract_version, status_contract_version, provider_contract_version
+         ) VALUES (2, 'unexpected_schema', ?, 1725000000, '0.1.0', ?, ?,
+                   'rustc-test', 'test-target', 'service-host', 1, 1, 1, 1, 1)",
+    )
+    .bind([0x44_u8; 32].as_slice())
+    .bind("1111111111111111111111111111111111111111")
+    .bind("7d7b454b4c9ed86569671993bd03ca868b676665")
+    .execute(&mut connection)
+    .await
+    .expect("insert unexpected ledger row");
+    connection.close().await.expect("test connection close");
+
+    let error = open_rhi_state_read_write(&runtime, &metadata, applied_at, &build)
+        .await
+        .expect_err("migration drift must fail closed");
+    assert_eq!(error.kind(), RhiStateHostErrorKind::ReadWriteOpen);
+    let inspection = open_rhi_state_inspection(&runtime, &metadata)
+        .await
+        .expect_err("inspection rejects migration drift");
+    assert_eq!(inspection.kind(), RhiStateHostErrorKind::InspectionOpen);
+}
+
+#[test]
+fn maintenance_boundary_is_sealed_source_free_and_sqlx_owned() {
+    assert!(LIB_SOURCE.contains("mod state_maintenance;"));
+    assert!(!LIB_SOURCE.contains("pub mod state_maintenance;"));
+    assert!(HOST_SOURCE.contains(".capture_online_backup(staging_directory, created_at)"));
+    assert!(HOST_SOURCE.contains(".inspect_integrity(checked_at)"));
+    assert!(MAINTENANCE_SOURCE.contains("verify_backup_bundle("));
+    assert!(MAINTENANCE_SOURCE.contains("stage_verified_restore("));
+    assert!(MAINTENANCE_SOURCE.contains("finalize_staged_restore("));
+    for forbidden in [
+        "sqlx::",
+        "SqliteConnection",
+        "SqlitePool",
+        "raw_sql",
+        "BEGIN ",
+        "COMMIT",
+        "ROLLBACK",
+        "std::fs",
+        "std::env",
+        "std::time",
+        "provider",
+        "relay",
+        "tokio::spawn",
+        "spawn_blocking",
+    ] {
+        assert!(
+            !MAINTENANCE_SOURCE.contains(forbidden),
+            "found forbidden maintenance authority `{forbidden}`"
+        );
+    }
+
+    for kind in [
+        RhiStateMaintenanceErrorKind::InvalidEvidence,
+        RhiStateMaintenanceErrorKind::InvalidMode,
+        RhiStateMaintenanceErrorKind::Catalog,
+        RhiStateMaintenanceErrorKind::Authority,
+        RhiStateMaintenanceErrorKind::Open,
+        RhiStateMaintenanceErrorKind::Metadata,
+        RhiStateMaintenanceErrorKind::Migration,
+        RhiStateMaintenanceErrorKind::Backup,
+        RhiStateMaintenanceErrorKind::Restore,
+        RhiStateMaintenanceErrorKind::Integrity,
+        RhiStateMaintenanceErrorKind::Recovery,
+    ] {
+        assert!(!kind.code().is_empty());
+    }
+
+    let error = verify_rhi_state_backup(
+        b"/tmp/secret-state.sqlite",
+        radroots_service_sqlite::BackupManifestSha256::from_bytes([0x11; 32]),
+        Path::new("/tmp/secret-bundle"),
+        &metadata(&runtime(Path::new("/tmp/secret-root"), "primary")),
+        NonZeroU64::new(1).expect("limit"),
+    )
+    .expect_err("invalid manifest");
+    assert!(Error::source(&error).is_none());
+    let rendered = format!("{error} {error:?}");
+    assert!(!rendered.contains("secret"));
+    assert!(!rendered.contains("/tmp"));
+    assert!(!rendered.contains("sqlite"));
+}

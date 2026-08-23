@@ -24,6 +24,7 @@ const CONFIG_SOURCE: &str = include_str!("../src/config_v1.rs");
 const CREDENTIAL_SOURCE: &str = include_str!("../src/identity_credential.rs");
 const ENVELOPE_SOURCE: &str = include_str!("../src/identity_envelope.rs");
 const STATE_HOST_SOURCE: &str = include_str!("../src/state_host.rs");
+const STATE_MAINTENANCE_SOURCE: &str = include_str!("../src/state_maintenance.rs");
 
 fn digest(label: &str) -> [u8; 32] {
     Sha256::digest(label.as_bytes()).into()
@@ -152,10 +153,10 @@ async fn wave_two_composes_one_runtime_without_crossing_secret_or_state_authorit
     assert_eq!(opened.public_identity().as_hex(), expected_identity);
 
     prepare_secure_directory(runtime.context().paths().state());
-    initialize_rhi_state(&runtime, &metadata)
+    let (applied_at, build) = migration_evidence();
+    initialize_rhi_state(&runtime, &metadata, applied_at, &build)
         .await
         .expect("create-new state initialization");
-    let (applied_at, build) = migration_evidence();
     let state = open_rhi_state_read_write(&runtime, &metadata, applied_at, &build)
         .await
         .expect("existing state open");
@@ -201,7 +202,7 @@ async fn wave_two_composes_one_runtime_without_crossing_secret_or_state_authorit
 }
 
 #[test]
-fn wave_two_contracts_freeze_backup_exclusion_without_claiming_backup_execution() {
+fn wave_two_contracts_freeze_backup_exclusion_at_the_sealed_maintenance_boundary() {
     let envelope: serde_json::Value =
         serde_json::from_str(ENVELOPE_CONTRACT).expect("envelope contract");
     let credential: serde_json::Value =
@@ -216,8 +217,9 @@ fn wave_two_contracts_freeze_backup_exclusion_without_claiming_backup_execution(
         false
     );
     assert_eq!(credential["backup_included"], false);
-    assert!(!STATE_HOST_SOURCE.contains("capture_online_backup"));
+    assert!(STATE_HOST_SOURCE.contains("capture_online_backup"));
     assert!(!STATE_HOST_SOURCE.contains("verify_backup_bundle"));
+    assert!(STATE_MAINTENANCE_SOURCE.contains("verify_backup_bundle"));
     assert!(!STATE_HOST_SOURCE.contains("finalize_staged_restore"));
 }
 

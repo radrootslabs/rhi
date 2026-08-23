@@ -151,6 +151,18 @@ pool, connection, transaction, SQL, path, or cloneable write authority.
 Schema migration and verification, CRUD behavior, backup/restore, network I/O,
 and task supervision remain owned by their later ordered checkpoints.
 
+RHI now composes the shared SQLx-owned resilience boundary without exposing a
+second database authority. A writable `RhiStateHost` can capture one governed
+online backup, and either host mode can run an explicit bounded integrity
+inspection. Offline verification returns a sealed exact-inode proof; staging
+retains exclusive writer authority; finalization uses the shared durable
+marker and atomic replacement protocol; and the next writable existing-state
+open reconciles interrupted restore evidence before exposing a host. Read-only
+inspection never performs recovery. Callers inject all times, manifest bytes
+and digest, and the positive backup-size limit. RHI adds no SQLite dependency,
+raw connection, background runtime, implicit deadline, or direct file-copy
+authority.
+
 Validate the standalone crate through extbuild:
 
 ```text

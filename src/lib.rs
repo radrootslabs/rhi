@@ -9,6 +9,7 @@ mod identity_envelope;
 mod runtime_context;
 mod state_catalog;
 mod state_host;
+mod state_maintenance;
 mod state_metadata;
 mod state_repository;
 
@@ -55,6 +56,11 @@ pub use state_catalog::{
 pub use state_host::{
     RhiStateHost, RhiStateHostError, RhiStateHostErrorKind, RhiStateHostMode, initialize_rhi_state,
     open_rhi_state_inspection, open_rhi_state_read_write,
+};
+pub use state_maintenance::{
+    RhiStagedStateRestore, RhiStateMaintenanceError, RhiStateMaintenanceErrorKind,
+    RhiVerifiedStateBackup, finalize_rhi_state_restore, stage_rhi_state_restore,
+    verify_rhi_state_backup,
 };
 pub use state_metadata::{
     RHI_ADMIN_CONTRACT_VERSION, RHI_PROVIDER_CONTRACT_VERSION, RHI_STATE_APPLICATION_ID,
