@@ -1838,6 +1838,7 @@ dependencies = [
  "radroots_service_sqlite",
  "radroots_storage",
  "radroots_trade",
+ "radroots_transport",
  "rustix",
  "serde",
  "serde_json",

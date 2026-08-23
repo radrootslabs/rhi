@@ -69,6 +69,13 @@ fn shared_storage_generation_type_is_exactly_source_locked() {
 }
 
 #[test]
+fn shared_transport_spi_is_exactly_source_locked_without_serde() {
+    assert!(MANIFEST.contains(
+        "radroots_transport = { git = \"https://github.com/radrootslabs/lib\", rev = \"7d7b454b4c9ed86569671993bd03ca868b676665\", version = \"=0.1.0-alpha\", default-features = false, features = [\"std\"] }"
+    ));
+}
+
+#[test]
 fn source_lock_binds_the_current_cargo_lock() {
     let digest = lower_hex(&Sha256::digest(include_bytes!("../Cargo.lock")));
     assert!(SOURCE_LOCK.starts_with(

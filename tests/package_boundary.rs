@@ -7,6 +7,9 @@ const ROOT: &str = include_str!("../src/lib.rs");
 const ADAPTERS: &str = include_str!("../src/adapters/mod.rs");
 const NOSTR_ADAPTERS: &str = include_str!("../src/adapters/nostr/mod.rs");
 const FEATURES: &str = include_str!("../src/features/mod.rs");
+const RUNTIME_ADAPTERS: &str = include_str!("../src/runtime_adapters.rs");
+const RUNTIME_ADAPTER_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/runtime_adapters.v1.json");
 const PUBLIC_API: &str = include_str!("../contracts/api_baselines/rhi.txt");
 const SOURCES: &[&str] = &[
     include_str!("../src/adapters/nostr/event.rs"),
@@ -16,6 +19,7 @@ const SOURCES: &[&str] = &[
     include_str!("../src/identity_credential.rs"),
     include_str!("../src/identity_envelope.rs"),
     include_str!("../src/runtime_context.rs"),
+    include_str!("../src/runtime_adapters.rs"),
     include_str!("../src/state_catalog.rs"),
     include_str!("../src/state_host.rs"),
     include_str!("../src/state_maintenance.rs"),
@@ -44,20 +48,26 @@ fn package_identity_is_standalone_and_non_publishable() {
 }
 
 #[test]
-fn shared_host_implementations_do_not_escape_the_public_api() {
+fn shared_runtime_contracts_are_curated_without_exposing_implementation_authority() {
     for forbidden in [
-        "pub use radroots_service_host",
         "pub use radroots_service_sqlite",
         "pub mod service_host",
         "pub mod service_sqlite",
         "sqlx::Pool",
         "sqlx::SqliteConnection",
+        "SystemEntropy",
+        "SystemMonotonicClock",
+        "SystemWallClock",
+        "TaskSupervisor",
+        "CancellationToken",
     ] {
         assert!(
             !ROOT.contains(forbidden),
             "RHI public root exposes private host implementation {forbidden}"
         );
     }
+    assert!(!PUBLIC_API.contains("radroots_service_host::HostError"));
+    assert!(!PUBLIC_API.contains("radroots_service_host::TaskSupervisor"));
 }
 
 #[test]
@@ -70,6 +80,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "identity_credential",
         "identity_envelope",
         "runtime_context",
+        "runtime_adapters",
         "state_catalog",
         "state_host",
         "state_maintenance",
@@ -97,6 +108,17 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "rhi_schema_catalog",
         "validate_rhi_state_catalogs",
         "RhiStateCatalogError",
+        "RhiRuntimeAdapters",
+        "RhiTimeEntropyAdapters",
+        "RhiTransportAdapters",
+        "RhiCredentialAccess",
+        "RhiIdentityAccess",
+        "WallClock",
+        "MonotonicClock",
+        "EntropySource",
+        "EntropyError",
+        "WallClockError",
+        "MonotonicClockError",
     ] {
         assert!(
             ROOT.contains(required),
@@ -113,6 +135,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
     assert!(PUBLIC_API.contains("pub struct rhi::TradeAgreementAttestationError"));
     assert!(!PUBLIC_API.contains("rhi::adapters::"));
     assert!(!PUBLIC_API.contains("rhi::features::"));
+    assert!(!PUBLIC_API.contains("rhi::runtime_adapters::"));
 }
 
 #[test]
@@ -147,7 +170,74 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .lines()
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
-    assert_eq!(public_error_count, 10);
+    assert_eq!(public_error_count, 11);
+}
+
+#[test]
+fn runtime_adapter_boundary_is_exact_bounded_and_process_neutral() {
+    let contract: serde_json::Value =
+        serde_json::from_str(RUNTIME_ADAPTER_CONTRACT).expect("runtime adapter contract");
+    assert_eq!(contract["schema"], "radroots.rhi.runtime-adapters");
+    assert_eq!(contract["schema_version"], 1);
+    assert_eq!(contract["contract_version"], 1);
+    assert_eq!(contract["jitter"]["inclusive_maximum"], 3_600_000);
+    assert_eq!(contract["jitter"]["maximum_entropy_draws"], 16);
+    assert_eq!(contract["jitter"]["wall_clock_derived"], false);
+    assert_eq!(contract["transport"]["evidence_fetch"], "EventSource");
+    assert_eq!(
+        contract["transport"]["evidence_subscription"],
+        "EventSubscriber"
+    );
+    assert_eq!(contract["transport"]["publication"], "EventSink");
+    assert_eq!(
+        contract["identity"]["order"],
+        serde_json::json!(["credential", "encrypted_identity"])
+    );
+    assert_eq!(contract["identity"]["fallback"], false);
+    assert_eq!(contract["identity"]["generation"], false);
+    assert_eq!(contract["tasks"]["join_owned"], true);
+    assert_eq!(contract["tasks"]["handles_exposed"], false);
+
+    for required in [
+        "Arc<dyn WallClock>",
+        "Arc<dyn MonotonicClock>",
+        "Arc<dyn EntropySource>",
+        "Arc<dyn EventSource>",
+        "Arc<dyn EventSubscriber>",
+        "Arc<dyn EventSink>",
+        "TaskSupervisor",
+        "RHI_RUNTIME_JITTER_MAX_MILLISECONDS: u64 = 3_600_000",
+        "RHI_RUNTIME_JITTER_MAX_ENTROPY_DRAWS: usize = 16",
+        "u128::from(u64::from_be_bytes(bytes)) * u128::from(range)",
+        "low >= rejection_threshold",
+        "resolve_rhi_wrapping_credential(runtime, binding)",
+        "open_rhi_encrypted_identity(binding, credential)",
+    ] {
+        assert!(
+            RUNTIME_ADAPTERS.contains(required),
+            "runtime adapter boundary is missing {required}"
+        );
+    }
+    for forbidden in [
+        "tokio::runtime::Runtime",
+        "tokio::runtime::Builder",
+        "tokio::signal",
+        "signal_hook",
+        "tracing_subscriber",
+        "std::process::exit",
+        "tokio::spawn",
+        "std::thread::spawn",
+        "SystemTime::now",
+        "subsec_nanos",
+        "rand::",
+    ] {
+        assert!(
+            !RUNTIME_ADAPTERS.contains(forbidden),
+            "runtime adapter boundary contains forbidden authority {forbidden}"
+        );
+    }
+    assert!(MANIFEST.contains("radroots_transport ="));
+    assert!(MANIFEST.contains("default-features = false, features = [\"std\"]"));
 }
 
 #[test]
@@ -156,8 +246,19 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "## Public API boundary",
         "one curated crate-root API",
         "public errors use RHI-owned stable classifications",
+        "shared clock and entropy traits and their source-free error values",
+        "failures into stable RHI classifications",
         "```compile_fail",
         "[RHI API baseline](contracts/api_baselines/rhi.txt)",
+        "## Injected runtime adapters",
+        "whole-second wall UTC",
+        "process-local monotonic time",
+        "exact v1 maximum of 3,600,000",
+        "fails closed after sixteen rejected entropy draws",
+        "never derived from wall-clock",
+        "Constructing the adapter set performs no clock read",
+        "no signal handler, Tokio runtime, logger, or process-exit policy",
+        "[`runtime_adapters.v1.json`](contracts/services_hardening/runtime_adapters.v1.json)",
     ] {
         assert!(README.contains(required), "README is missing {required}");
     }
@@ -166,6 +267,8 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "contracts/api_baselines/rhi.txt",
         "Public errors must use RHI-owned stable classifications",
         "no raw dependency-owned source chain",
+        "Compose those dependencies only through the sealed runtime-adapter boundary",
+        "exposes no task handle or concrete transport handle",
     ] {
         assert!(AGENTS.contains(required), "AGENTS is missing {required}");
     }

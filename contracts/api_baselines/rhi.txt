@@ -1,6 +1,12 @@
 pub mod rhi
+pub use rhi::EntropyError
+pub use rhi::EntropySource
 pub use rhi::INSTANCE_ID_MAX_BYTES
 pub use rhi::InstanceId
+pub use rhi::MonotonicClock
+pub use rhi::MonotonicClockError
+pub use rhi::MonotonicDeadline
+pub use rhi::MonotonicTime
 pub use rhi::RadrootsHostEnvironment
 pub use rhi::RadrootsPathProfile
 pub use rhi::RadrootsPathResolver
@@ -9,6 +15,9 @@ pub use rhi::RadrootsServiceInstanceArtifacts
 pub use rhi::RuntimeContext
 pub use rhi::RuntimeContextSource
 pub use rhi::ServiceId
+pub use rhi::UnixTimeSeconds
+pub use rhi::WallClock
+pub use rhi::WallClockError
 pub enum rhi::RhiBootstrapProfileV1
 pub rhi::RhiBootstrapProfileV1::Interactive
 pub rhi::RhiBootstrapProfileV1::RepoLocal
@@ -122,6 +131,15 @@ pub enum rhi::RhiReconciliationCommandV1
 pub rhi::RhiReconciliationCommandV1::Jobs
 pub rhi::RhiReconciliationCommandV1::Refresh
 pub rhi::RhiReconciliationCommandV1::Status
+pub enum rhi::RhiRuntimeAdapterErrorKind
+pub rhi::RhiRuntimeAdapterErrorKind::CredentialAccess
+pub rhi::RhiRuntimeAdapterErrorKind::EntropyUnavailable
+pub rhi::RhiRuntimeAdapterErrorKind::IdentityAccess
+pub rhi::RhiRuntimeAdapterErrorKind::InvalidJitterBound
+pub rhi::RhiRuntimeAdapterErrorKind::MonotonicDeadlineInvalid
+pub rhi::RhiRuntimeAdapterErrorKind::WallClockUnavailable
+impl rhi::RhiRuntimeAdapterErrorKind
+pub const fn rhi::RhiRuntimeAdapterErrorKind::code(self) -> &'static str
 pub enum rhi::RhiRuntimeContextErrorKind
 pub rhi::RhiRuntimeContextErrorKind::InvalidBootstrapBinding
 pub rhi::RhiRuntimeContextErrorKind::InvalidServiceIdentity
@@ -224,6 +242,12 @@ impl rhi::TradeAgreementAttestationErrorKind
 pub const fn rhi::TradeAgreementAttestationErrorKind::code(self) -> &'static str
 impl core::fmt::Display for rhi::TradeAgreementAttestationErrorKind
 pub fn rhi::TradeAgreementAttestationErrorKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::CanonicalRhiCredentialAccess
+impl rhi::RhiCredentialAccess for rhi::CanonicalRhiCredentialAccess
+pub fn rhi::CanonicalRhiCredentialAccess::resolve_existing(&self, &rhi::RhiRuntimeContext, &rhi::RhiIdentityEnvelopeBinding) -> core::result::Result<rhi::RhiWrappingCredential, rhi::RhiCredentialResolutionError>
+pub struct rhi::CanonicalRhiIdentityAccess
+impl rhi::RhiIdentityAccess for rhi::CanonicalRhiIdentityAccess
+pub fn rhi::CanonicalRhiIdentityAccess::open_existing(&self, &rhi::RhiIdentityEnvelopeBinding, &rhi::RhiWrappingCredential) -> core::result::Result<rhi::RhiDecryptedIdentity, rhi::RhiEncryptedIdentityEnvelopeError>
 pub struct rhi::NostrEventAdapter<'a>
 impl<'a> rhi::NostrEventAdapter<'a>
 pub fn rhi::NostrEventAdapter<'a>::new(&'a nostr::event::Event) -> Self
@@ -341,6 +365,13 @@ impl rhi::RhiExpectedPublicIdentity
 pub fn rhi::RhiExpectedPublicIdentity::as_hex(&self) -> &str
 impl core::fmt::Debug for rhi::RhiExpectedPublicIdentity
 pub fn rhi::RhiExpectedPublicIdentity::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiIdentityCredentialAdapters
+impl rhi::RhiIdentityCredentialAdapters
+pub fn rhi::RhiIdentityCredentialAdapters::canonical() -> Self
+pub fn rhi::RhiIdentityCredentialAdapters::new(alloc::sync::Arc<dyn rhi::RhiCredentialAccess>, alloc::sync::Arc<dyn rhi::RhiIdentityAccess>) -> Self
+pub fn rhi::RhiIdentityCredentialAdapters::open_existing(&self, &rhi::RhiRuntimeContext, &rhi::RhiIdentityEnvelopeBinding) -> core::result::Result<rhi::RhiDecryptedIdentity, rhi::RhiRuntimeAdapterError>
+impl core::fmt::Debug for rhi::RhiIdentityCredentialAdapters
+pub fn rhi::RhiIdentityCredentialAdapters::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiIdentityEnvelopeBinding
 impl rhi::RhiIdentityEnvelopeBinding
 pub const fn rhi::RhiIdentityEnvelopeBinding::expected_identity(&self) -> &rhi::RhiExpectedPublicIdentity
@@ -349,6 +380,14 @@ pub const fn rhi::RhiIdentityEnvelopeBinding::kind(&self) -> rhi::RhiIdentityPro
 pub const fn rhi::RhiIdentityEnvelopeBinding::role(&self) -> rhi::RhiIdentityRole
 impl core::fmt::Debug for rhi::RhiIdentityEnvelopeBinding
 pub fn rhi::RhiIdentityEnvelopeBinding::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiJitterBoundMilliseconds(_)
+impl rhi::RhiJitterBoundMilliseconds
+pub const fn rhi::RhiJitterBoundMilliseconds::get(self) -> u64
+pub const fn rhi::RhiJitterBoundMilliseconds::new(u64) -> core::result::Result<Self, rhi::RhiRuntimeAdapterError>
+pub struct rhi::RhiJitterMilliseconds(_)
+impl rhi::RhiJitterMilliseconds
+pub const fn rhi::RhiJitterMilliseconds::duration(self) -> core::time::Duration
+pub const fn rhi::RhiJitterMilliseconds::get(self) -> u64
 pub struct rhi::RhiMutationRepository<'host>
 impl rhi::RhiMutationRepository<'_>
 pub const fn rhi::RhiMutationRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
@@ -408,6 +447,23 @@ pub const fn rhi::RhiReportRepository<'_>::descriptor(&self) -> rhi::RhiStateRep
 pub const fn rhi::RhiReportRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
 impl core::fmt::Debug for rhi::RhiReportRepository<'_>
 pub fn rhi::RhiReportRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiRuntimeAdapterError
+impl rhi::RhiRuntimeAdapterError
+pub const fn rhi::RhiRuntimeAdapterError::code(self) -> &'static str
+pub const fn rhi::RhiRuntimeAdapterError::kind(self) -> rhi::RhiRuntimeAdapterErrorKind
+impl core::error::Error for rhi::RhiRuntimeAdapterError
+impl core::fmt::Debug for rhi::RhiRuntimeAdapterError
+pub fn rhi::RhiRuntimeAdapterError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiRuntimeAdapterError
+pub fn rhi::RhiRuntimeAdapterError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiRuntimeAdapters
+impl rhi::RhiRuntimeAdapters
+pub const fn rhi::RhiRuntimeAdapters::identity_credential(&self) -> &rhi::RhiIdentityCredentialAdapters
+pub fn rhi::RhiRuntimeAdapters::new(rhi::RhiTimeEntropyAdapters, rhi::RhiTransportAdapters, rhi::RhiIdentityCredentialAdapters) -> Self
+pub fn rhi::RhiRuntimeAdapters::supervised_task_count(&self) -> usize
+pub const fn rhi::RhiRuntimeAdapters::time_entropy(&self) -> &rhi::RhiTimeEntropyAdapters
+impl core::fmt::Debug for rhi::RhiRuntimeAdapters
+pub fn rhi::RhiRuntimeAdapters::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiRuntimeContext
 impl rhi::RhiRuntimeContext
 pub const fn rhi::RhiRuntimeContext::artifacts(&self) -> &radroots_runtime_paths::conventions::RadrootsServiceInstanceArtifacts
@@ -561,6 +617,21 @@ pub const fn rhi::RhiSupersessionRepository<'_>::descriptor(&self) -> rhi::RhiSt
 pub const fn rhi::RhiSupersessionRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
 impl core::fmt::Debug for rhi::RhiSupersessionRepository<'_>
 pub fn rhi::RhiSupersessionRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiTimeEntropyAdapters
+impl rhi::RhiTimeEntropyAdapters
+pub fn rhi::RhiTimeEntropyAdapters::deadline_after(&self, core::time::Duration) -> core::result::Result<radroots_service_host::time::MonotonicDeadline, rhi::RhiRuntimeAdapterError>
+pub fn rhi::RhiTimeEntropyAdapters::new<W, M, E>(W, M, E) -> Self where W: radroots_service_host::time::WallClock + 'static, M: radroots_service_host::time::MonotonicClock + 'static, E: radroots_service_host::entropy::EntropySource + 'static
+pub fn rhi::RhiTimeEntropyAdapters::now_monotonic(&self) -> radroots_service_host::time::MonotonicTime
+pub fn rhi::RhiTimeEntropyAdapters::now_utc(&self) -> core::result::Result<radroots_service_host::time::UnixTimeSeconds, rhi::RhiRuntimeAdapterError>
+pub fn rhi::RhiTimeEntropyAdapters::sample_full_jitter(&self, rhi::RhiJitterBoundMilliseconds) -> core::result::Result<rhi::RhiJitterMilliseconds, rhi::RhiRuntimeAdapterError>
+pub fn rhi::RhiTimeEntropyAdapters::system() -> Self
+impl core::fmt::Debug for rhi::RhiTimeEntropyAdapters
+pub fn rhi::RhiTimeEntropyAdapters::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiTransportAdapters
+impl rhi::RhiTransportAdapters
+pub fn rhi::RhiTransportAdapters::new(alloc::sync::Arc<dyn radroots_transport::source::EventSource>, alloc::sync::Arc<dyn radroots_transport::source::EventSubscriber>, alloc::sync::Arc<dyn radroots_transport::sink::EventSink>) -> Self
+impl core::fmt::Debug for rhi::RhiTransportAdapters
+pub fn rhi::RhiTransportAdapters::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiVerifiedStateBackup
 impl rhi::RhiVerifiedStateBackup
 pub const fn rhi::RhiVerifiedStateBackup::database_metadata(&self) -> &radroots_service_sqlite::metadata::ServiceDatabaseMetadata
@@ -630,6 +701,9 @@ pub const rhi::RHI_ENCRYPTED_IDENTITY_ENVELOPE_CONTRACT_VERSION: u32
 pub const rhi::RHI_ENCRYPTED_IDENTITY_ENVELOPE_MAX_BYTES: usize
 pub const rhi::RHI_MIGRATION_CATALOG_SHA256: [u8; 32]
 pub const rhi::RHI_PROVIDER_CONTRACT_VERSION: u32
+pub const rhi::RHI_RUNTIME_ADAPTER_CONTRACT_VERSION: u32
+pub const rhi::RHI_RUNTIME_JITTER_MAX_ENTROPY_DRAWS: usize
+pub const rhi::RHI_RUNTIME_JITTER_MAX_MILLISECONDS: u64
 pub const rhi::RHI_STATE_APPLICATION_ID: u32
 pub const rhi::RHI_STATE_REPOSITORY_CONTRACT_VERSION: u32
 pub const rhi::RHI_STATE_REPOSITORY_COUNT: usize
@@ -640,6 +714,14 @@ pub const rhi::RHI_STATE_SCHEMA_VERSION_1_SHA256: [u8; 32]
 pub const rhi::RHI_STATUS_CONTRACT_VERSION: u32
 pub const rhi::RHI_WRAPPING_CREDENTIAL_ARTIFACT_BYTES: usize
 pub const rhi::RHI_WRAPPING_CREDENTIAL_CONTRACT_VERSION: u32
+pub trait rhi::RhiCredentialAccess: core::marker::Send + core::marker::Sync
+pub fn rhi::RhiCredentialAccess::resolve_existing(&self, &rhi::RhiRuntimeContext, &rhi::RhiIdentityEnvelopeBinding) -> core::result::Result<rhi::RhiWrappingCredential, rhi::RhiCredentialResolutionError>
+impl rhi::RhiCredentialAccess for rhi::CanonicalRhiCredentialAccess
+pub fn rhi::CanonicalRhiCredentialAccess::resolve_existing(&self, &rhi::RhiRuntimeContext, &rhi::RhiIdentityEnvelopeBinding) -> core::result::Result<rhi::RhiWrappingCredential, rhi::RhiCredentialResolutionError>
+pub trait rhi::RhiIdentityAccess: core::marker::Send + core::marker::Sync
+pub fn rhi::RhiIdentityAccess::open_existing(&self, &rhi::RhiIdentityEnvelopeBinding, &rhi::RhiWrappingCredential) -> core::result::Result<rhi::RhiDecryptedIdentity, rhi::RhiEncryptedIdentityEnvelopeError>
+impl rhi::RhiIdentityAccess for rhi::CanonicalRhiIdentityAccess
+pub fn rhi::CanonicalRhiIdentityAccess::open_existing(&self, &rhi::RhiIdentityEnvelopeBinding, &rhi::RhiWrappingCredential) -> core::result::Result<rhi::RhiDecryptedIdentity, rhi::RhiEncryptedIdentityEnvelopeError>
 pub fn rhi::attest_projection_claim(&radroots_trade::trade_contract_v1::RadrootsTradeProjectionV1, &radroots_event::id::MutationId, &rhi::TradeAgreementAttestationPolicy) -> core::result::Result<rhi::TradeAgreementAttestationReportV1, rhi::TradeAgreementAttestationError>
 pub async fn rhi::finalize_rhi_state_restore(rhi::RhiStagedStateRestore) -> core::result::Result<(), rhi::RhiStateMaintenanceError>
 pub async fn rhi::initialize_rhi_state(&rhi::RhiRuntimeContext, &rhi::RhiStateMetadata, radroots_service_sqlite::migration::MigrationAppliedAtUnixSeconds, &radroots_service_sqlite::migration::MigrationBuildIdentity) -> core::result::Result<(), rhi::RhiStateHostError>

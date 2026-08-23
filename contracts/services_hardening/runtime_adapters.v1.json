@@ -1,0 +1,46 @@
+{
+  "schema": "radroots.rhi.runtime-adapters",
+  "schema_version": 1,
+  "contract_version": 1,
+  "time_entropy": {
+    "wall_time": "injected_whole_second_utc",
+    "monotonic_time": "injected_process_local_domain",
+    "entropy": "injected_complete_fill_or_error",
+    "event_authored_time": "untrusted_input"
+  },
+  "jitter": {
+    "algorithm": "rejection_sampled_multiply_high_full_jitter",
+    "unit": "milliseconds",
+    "inclusive_minimum": 0,
+    "inclusive_maximum": 3600000,
+    "maximum_entropy_draws": 16,
+    "wall_clock_derived": false
+  },
+  "transport": {
+    "contract": "radroots_transport",
+    "evidence_fetch": "EventSource",
+    "evidence_subscription": "EventSubscriber",
+    "publication": "EventSink",
+    "construction_performs_io": false,
+    "concrete_handles_exposed": false
+  },
+  "identity": {
+    "order": ["credential", "encrypted_identity"],
+    "credential": "read_existing_canonical_instance_artifact",
+    "encrypted_identity": "read_existing_and_independently_verify",
+    "fallback": false,
+    "generation": false
+  },
+  "tasks": {
+    "supervisor": "radroots_service_host::TaskSupervisor",
+    "join_owned": true,
+    "handles_exposed": false
+  },
+  "library_exclusions": [
+    "signal_installation",
+    "runtime_creation",
+    "logging_installation",
+    "process_exit",
+    "detached_tasks"
+  ]
+}

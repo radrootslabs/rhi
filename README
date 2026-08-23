@@ -12,6 +12,11 @@ runtime-path, service-SQLite, storage, event, and trade values that appear in
 signatures are deliberate governed contract types; raw SQLx, Serde, transport,
 filesystem, and task authority never crosses this boundary.
 
+The shared clock and entropy traits and their source-free error values are also
+deliberate governed injection contracts. RHI operations normalize their
+failures into stable RHI classifications; concrete system adapters remain
+private implementation details.
+
 Child modules cannot bypass the reviewed root surface:
 
 ```compile_fail
@@ -27,6 +32,30 @@ RHI publishes its service kind-0 Profile only through the sealed
 `radroots_nostr` Profile builder after constructing the strict
 `RadrootsAuthoredProfile` replacement snapshot. It does not retain a generic
 kind-0 event-authoring path.
+
+## Injected runtime adapters
+
+`RhiRuntimeAdapters` is the sealed composition boundary for all runtime inputs
+that must remain replaceable in deterministic tests. It owns distinct injected
+whole-second wall UTC, process-local monotonic time, and entropy sources; a
+transport-neutral bounded event source, live subscriber, and publication sink;
+ordered read-existing credential and independently verified encrypted-identity
+access; and one private shared join-owning task supervisor.
+
+Full jitter is measured only in whole milliseconds, is sampled from injected
+entropy with rejection-sampled multiply-high mapping, is always in the
+inclusive configured range, and is capped at the exact v1 maximum of 3,600,000
+milliseconds. Sampling fails closed after sixteen rejected entropy draws, so a
+bad adapter cannot hang scheduling. Jitter is never derived from wall-clock
+nanoseconds. Event-authored time remains untrusted input and cannot substitute
+for an injected observation time or a monotonic deadline.
+
+Constructing the adapter set performs no clock read, entropy read, identity or
+credential access, DNS lookup, network operation, or task spawn. Concrete
+transport handles and the task supervisor remain sealed. The library installs
+no signal handler, Tokio runtime, logger, or process-exit policy; the final
+binary checkpoint owns those authorities. The exact machine contract is
+[`runtime_adapters.v1.json`](contracts/services_hardening/runtime_adapters.v1.json).
 
 ## Hardened v1 configuration contract
 

@@ -8,6 +8,7 @@ mod config_v1;
 mod features;
 mod identity_credential;
 mod identity_envelope;
+mod runtime_adapters;
 mod runtime_context;
 mod state_catalog;
 mod state_host;
@@ -54,6 +55,17 @@ pub use radroots_runtime_paths::{
     INSTANCE_ID_MAX_BYTES, InstanceId, RadrootsHostEnvironment, RadrootsPathProfile,
     RadrootsPathResolver, RadrootsPlatform, RadrootsServiceInstanceArtifacts, RuntimeContext,
     RuntimeContextSource, ServiceId,
+};
+pub use radroots_service_host::{
+    EntropyError, EntropySource, MonotonicClock, MonotonicClockError, MonotonicDeadline,
+    MonotonicTime, UnixTimeSeconds, WallClock, WallClockError,
+};
+pub use runtime_adapters::{
+    CanonicalRhiCredentialAccess, CanonicalRhiIdentityAccess, RHI_RUNTIME_ADAPTER_CONTRACT_VERSION,
+    RHI_RUNTIME_JITTER_MAX_ENTROPY_DRAWS, RHI_RUNTIME_JITTER_MAX_MILLISECONDS, RhiCredentialAccess,
+    RhiIdentityAccess, RhiIdentityCredentialAdapters, RhiJitterBoundMilliseconds,
+    RhiJitterMilliseconds, RhiRuntimeAdapterError, RhiRuntimeAdapterErrorKind, RhiRuntimeAdapters,
+    RhiTimeEntropyAdapters, RhiTransportAdapters,
 };
 pub use runtime_context::{
     RhiRuntimeContext, RhiRuntimeContextError, RhiRuntimeContextErrorKind,

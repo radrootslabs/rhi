@@ -213,6 +213,17 @@
   evidence sources, and failpoints. Supervise and join every authoritative task;
   panic, error, or unexpected successful return from a critical task must
   coordinate shutdown and produce a nonzero process result.
+- Compose those dependencies only through the sealed runtime-adapter boundary.
+  Wall UTC and process-local monotonic observations remain distinct; jitter is
+  bounded whole-millisecond full jitter derived only from injected entropy.
+  The transport-neutral `radroots_transport` source, subscription, and sink
+  traits are the sole generic event I/O SPI. Credential access must precede
+  independently verified encrypted-identity access, with no fallback or
+  generation. The adapter set owns one private shared `TaskSupervisor` and
+  exposes no task handle or concrete transport handle.
+- Library code must not install signals, create a runtime, install logging,
+  call process exit, or detach an authoritative task. Those process authorities
+  remain exclusively with the final binary checkpoint.
 - On startup, reclaim expired reconciliation/publication leases, resume durable
   retry schedules with injected bounded jitter, retain unknown submissions,
   finalize already-proven outcomes idempotently, and scan all authoritative
