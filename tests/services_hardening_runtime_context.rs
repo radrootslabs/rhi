@@ -263,7 +263,6 @@ fn source_contains_no_legacy_path_authority() {
     let lib = include_str!("../src/lib.rs");
     let context = include_str!("../src/runtime_context.rs");
     let main = include_str!("../src/main.rs");
-    let config = include_str!("../src/config.rs");
     for forbidden in [
         "pub mod host_paths",
         "pub mod paths",
@@ -279,9 +278,13 @@ fn source_contains_no_legacy_path_authority() {
         assert!(!lib.contains(forbidden));
         assert!(!context.contains(forbidden));
         assert!(!main.contains(forbidden));
-        assert!(!config.contains(forbidden));
     }
-    for removed in ["src/paths.rs", "src/host_paths/mod.rs", "src/cli.rs"] {
+    for removed in [
+        "src/paths.rs",
+        "src/host_paths/mod.rs",
+        "src/cli.rs",
+        "src/config.rs",
+    ] {
         assert!(
             !Path::new(env!("CARGO_MANIFEST_DIR")).join(removed).exists(),
             "legacy path authority remains at {removed}"

@@ -20,9 +20,12 @@ reviewed bounded operational leaves have defaults. Bootstrap profile,
 instance, repo-local root, and config-path selection are CLI concerns and are
 not document fields.
 
-The current runtime loader and root `config.toml` remain transitional until
-their ordered replacement steps are complete. Prototype environment and worker
-selectors are removed and are not compatibility authority.
+The retired root `config.toml`, transitional runtime loader, JSON state
+adapter, environment and worker selectors, and prototype smoke/runtime paths
+are removed. The executable admits one strict CLI invocation and one sealed
+runtime context, then fails closed until later ordered checkpoints bind each
+command to its governed state and runtime authority. It never falls back to a
+prototype execution path.
 
 `parse_rhi_config_v1` is the strict in-memory admission boundary for the target
 document. It bounds original bytes before parsing, rejects malformed duplicate

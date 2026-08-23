@@ -1,4 +1,4 @@
-use crate::host_nostr::{Event, Kind};
+use nostr::{Event, Kind};
 use radroots_event_codec::decode::job::{JobEventBorrow, JobEventLike};
 
 #[derive(Clone, Debug)]
@@ -81,8 +81,9 @@ impl JobEventLike for NostrEventAdapter<'_> {
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::NostrEventAdapter;
-    use crate::host_nostr::{Event, GenericBuilder, Keys, Kind, Tag, TagKind};
+    use nostr::{Event, Keys, Kind, Tag, TagKind};
     use radroots_event_codec::decode::job::{JobEventBorrow, JobEventLike};
+    use radroots_nostr::event::GenericBuilder;
 
     fn build_event(keys: &Keys, kind: Kind, tags: Vec<Tag>) -> Event {
         GenericBuilder::new(kind, "content")

@@ -100,78 +100,90 @@ fn rhi_release_product_surface_has_no_order_or_receipt_modules() {
 }
 
 #[test]
-fn rhi_agreement_attestation_is_release_product_optional_infrastructure() {
-    let worker = read_repo_file("src/features/trade_agreement_attestation.rs");
-    let lib = read_repo_file("src/lib.rs");
+fn rhi_agreement_attestation_retains_only_the_pure_foundation() {
+    let attestation = read_repo_file("src/features/trade_agreement_attestation.rs");
     let cli = read_repo_file("src/cli_v1.rs");
-    let config = read_repo_file("src/config.rs");
 
     for required in [
         "RHI_AGREEMENT_ATTESTATION_PROTOCOL_ID",
         "TradeAgreementAttestationPolicy",
         "LocalStatementHash",
-        "TradeAgreementAttestationRuntime",
-        "handle_trade_mutation_event",
         "attest_projection_claim",
-        "claim_mutation_id",
         "projection_digest",
         "RadrootsTradeAttestationResultV1::Valid",
         "RadrootsTradeAttestationResultV1::Invalid",
         "TRADE_MUTATION_EVENT_KINDS",
-        "is_trade_mutation_event_kind",
-        "no_agreement_authority",
         "expected_statement_contract_hash",
     ] {
         assert!(
-            worker.contains(required),
-            "agreement attestation worker must retain release-product requirement `{required}`"
+            attestation.contains(required),
+            "agreement attestation foundation must retain release-product requirement `{required}`"
         );
     }
 
-    assert!(
-        lib.contains("trade_mutation_subscription_kinds()")
-            && lib.contains("TRADE_MUTATION_EVENT_KINDS")
-            && lib.contains("AuthoredProfile")
-            && lib.contains("ProfileBuilder")
-            && lib.contains("build_profile")
-            && lib.contains("build_application_handler")
-            && lib.contains(".send_event(")
-            && !lib.contains("radroots_nostr::prelude")
-            && lib.contains("client.into_inner()"),
-        "RHI service presence must advertise canonical release-product trade mutation kinds"
-    );
     assert!(
         !cli.contains("AttestationSmoke")
             && !cli.contains("ProofSmoke")
             && !cli.contains("remote-prove"),
         "RHI CLI must not retain prototype smoke commands"
     );
-    assert!(
-        config.contains("settings.config.trade_agreement_attestation.validate()?"),
-        "RHI config loading must validate the canonical attestation policy"
-    );
 }
 
 #[test]
-fn rhi_state_paths_are_named_for_agreement_attestation() {
-    let config = read_repo_file("src/config.rs");
+fn rhi_runtime_context_retains_only_governed_artifacts() {
     let context = read_repo_file("src/runtime_context.rs");
 
-    assert!(
-        config.contains("trade-agreement-attestation"),
-        "transitional RHI state paths must use agreement-attestation naming"
-    );
-    for source in [config.as_str(), context.as_str()] {
-        assert!(
-            !source.contains("trade-listing"),
-            "RHI runtime state paths must not retain trade-listing naming"
-        );
-    }
+    assert!(!context.contains("trade-listing"));
     assert!(
         context.contains("default_service_instance_artifacts")
             && context.contains("service.identity.ncrypt"),
         "RHI path authority must derive exact common and credential artifacts"
     );
+}
+
+#[test]
+fn rhi_wave_one_removes_prototype_runtime_and_selection_authority() {
+    for forbidden_path in [
+        "config.toml",
+        "flake.lock",
+        "flake.nix",
+        "radroots.lib.source-lock.v1.toml",
+        "src/config.rs",
+        "src/host_nostr.rs",
+        "src/host_runtime.rs",
+        "src/rhi.rs",
+    ] {
+        assert!(
+            !Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(forbidden_path)
+                .exists(),
+            "RHI must not retain removed wave-one path `{forbidden_path}`"
+        );
+    }
+
+    for (path, source) in rust_sources_under("src") {
+        for forbidden in [
+            "load_settings_from_path",
+            "TradeAgreementAttestationRuntime",
+            "TradeAgreementAttestationStatePersistence",
+            "TradeAgreementAttestationSmoke",
+            "handle_smoke_request_bytes",
+            "worker_name",
+            "state.json",
+            "std::env::var(\"RHI_",
+            "std::env::var_os(\"RHI_",
+            "worker_root",
+            "nostr_sdk::Client",
+            "tokio::signal",
+            "tracing_appender",
+            "tracing_subscriber",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "{path} retains removed wave-one authority `{forbidden}`"
+            );
+        }
+    }
 }
 
 fn read_repo_file(relative_path: &str) -> String {

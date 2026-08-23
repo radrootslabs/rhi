@@ -32,8 +32,9 @@
 ## 2. Authority and preflight
 
 - Before editing, read this file, `README`, `Cargo.toml`,
-  `radroots.service.source-lock.v2.toml`, the relevant implementation and tests,
-  and `config.toml` when it is in scope.
+  `radroots.service.source-lock.v2.toml`, and the relevant implementation and
+  tests. The removed prototype root `config.toml` is not configuration
+  authority.
 - `.radroots-consumer-root` is the standalone source-lock identity and must
   remain exactly `rhi`. The reserved pre-implementation evidence authority is
   `contracts/services_hardening/evidence_policy.v1.json`, and the reserved
