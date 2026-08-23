@@ -32,8 +32,8 @@
 ## 2. Authority and preflight
 
 - Before editing, read this file, `README`, `Cargo.toml`,
-  `radroots.lib.source-lock.v1.toml`, the relevant implementation and tests,
-  and `config.toml` or `flake.nix` when they are in scope.
+  `radroots.service.source-lock.v2.toml`, the relevant implementation and tests,
+  and `config.toml` when it is in scope.
 - `.radroots-consumer-root` is the standalone source-lock identity and must
   remain exactly `rhi`. The reserved pre-implementation evidence authority is
   `contracts/services_hardening/evidence_policy.v1.json`, and the reserved
@@ -264,8 +264,8 @@
 ## 9. Rust and test discipline
 
 - The final Rust baseline is edition 2024, resolver 3, and Rust/toolchain
-  1.97.1. Keep `Cargo.toml`, `rust-toolchain.toml`, Cargo metadata, and Nix
-  toolchain resolution in exact agreement.
+  1.97.1. Keep `Cargo.toml`, `rust-toolchain.toml`, and Cargo metadata in exact
+  agreement.
 - Keep `#![forbid(unsafe_code)]` at crate roots; unsafe code is forbidden. Deny
   broken rustdoc links, `dbg!`, `todo!`, and `unimplemented!` in production.
 - Prefer pure transformations, explicit state machines, validated newtypes,
@@ -286,22 +286,27 @@
 
 ## 10. Canonical verification
 
-Use the repository-owned Nix lanes as standalone command surfaces:
+Through RCLD-RSHR-170, run the standalone native command authority through
+extbuild. Do not install, repair, invoke, or require Nix, and do not claim Nix,
+NixOS-module, or Nix-produced OCI qualification:
 
 ```text
-nix run .#fmt
-nix run .#check
-nix run .#test
+cargo extbuild doctor
+cargo extbuild run -- cargo fmt --all --check
+cargo extbuild run -- cargo check --workspace --all-targets --locked
+cargo extbuild run -- cargo test --workspace --all-targets --locked
+cargo extbuild run -- cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo extbuild run -- env RUSTDOCFLAGS=-Dwarnings cargo doc --workspace --no-deps --locked
 ```
 
 The complete release contract also requires locked all-target check and test
 with serialized tests, warnings-denied all-target Clippy, warnings-denied
-rustdoc, the `source_guards` integration test, and diff hygiene. Run those gates
-explicitly until a repository-owned aggregate enforces them; do not describe a
-partial Nix lane as complete release acceptance. Run coverage, SQLx freshness,
-source-lock, Nix flake, package, OCI, systemd, SBOM, checksum, notice, and
-fresh-install gates when their surfaces change. Use narrower commands only for
-iteration, and never claim a command passed unless it ran successfully.
+rustdoc, the source-lock and package-boundary tests, and diff hygiene. Run
+additional coverage, SQLx freshness, source-lock, package, systemd, SBOM,
+checksum, notice, and fresh-install gates when their surfaces change. Nix and
+OCI remain deferred and unclaimed through RCLD-RSHR-170. Use narrower commands
+only for iteration, and never claim a command passed unless it ran
+successfully.
 
 ## 11. Commits and irreversible actions
 

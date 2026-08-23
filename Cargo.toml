@@ -6,35 +6,53 @@ authors = ["Radroots Authors"]
 rust-version = "1.97.1"
 license = "AGPL-3.0-or-later"
 description = "Radroots trade agreement attestation worker"
+repository = "https://github.com/radrootslabs/rhi"
+readme = "README"
+publish = false
 
 [workspace]
 resolver = "3"
 
-[workspace.dependencies]
-radroots_event = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha" }
-radroots_event_codec = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha" }
-radroots_identity = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha" }
-radroots_nostr = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha" }
-radroots_protocol = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha" }
-radroots_runtime_paths = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha" }
-radroots_secrets = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha" }
-radroots_trade = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha" }
+[workspace.metadata.radroots.service_source_lock]
+service = "rhi"
+host_feature_profile = "service-host"
+nix_material = "absent"
+config_contract_version = 1
+state_contract_version = 1
+admin_contract_version = 1
+status_contract_version = 1
+provider_contract_version = 1
 
-[features]
-default = []
-
-[lints.rust]
+[workspace.lints.rust]
+unsafe_code = "deny"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+
+[features]
+default = ["service-host"]
+service-host = []
+
+[lints]
+workspace = true
+
 [dependencies]
-radroots_event = { workspace = true, features = ["serde"] }
-radroots_event_codec = { workspace = true, features = ["json"] }
-radroots_identity = { workspace = true }
-radroots_nostr = { workspace = true, features = ["events"] }
-radroots_protocol = { workspace = true }
-radroots_runtime_paths = { workspace = true }
-radroots_secrets = { workspace = true }
-radroots_trade = { workspace = true }
+radroots_event = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha", features = ["serde"] }
+radroots_event_codec = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha", features = ["json"] }
+radroots_identity = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha" }
+radroots_nostr = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha", features = ["events"] }
+radroots_protocol = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha" }
+radroots_runtime_paths = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha" }
+radroots_service_host = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha" }
+radroots_service_sqlite = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha" }
+radroots_secrets = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha" }
+radroots_trade = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha" }
 
 anyhow = { version = "1" }
 chacha20poly1305 = { version = "0.10" }

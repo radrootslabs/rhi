@@ -77,16 +77,21 @@ injected host environment defined by `radroots_runtime_paths`; repo-local uses
 one explicit absolute base and the same `services/rhi/<instance>` namespace.
 Path resolution performs no directory creation or filesystem I/O.
 
-Use the repository-owned Nix lanes for validation:
+Validate the standalone crate through extbuild:
 
 ```text
-nix run .#fmt
-nix run .#check
-nix run .#test
+cargo extbuild doctor
+cargo extbuild run -- cargo fmt --all --check
+cargo extbuild run -- cargo check --workspace --all-targets --locked
+cargo extbuild run -- cargo test --workspace --all-targets --locked
+cargo extbuild run -- cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo extbuild run -- env RUSTDOCFLAGS=-Dwarnings cargo doc --workspace --no-deps --locked
 ```
 
-Use `nix develop` to enter the repository's development shell before running
-narrower ad hoc Cargo commands from this repository root.
+Through RCLD-RSHR-170, Nix evaluation, builds, packages, NixOS modules, and
+Nix-produced OCI artifacts are deferred and unclaimed. Do not install, repair,
+invoke, or require Nix for these checkpoints. Run narrower ad hoc Cargo
+commands through `cargo extbuild run --` from this repository root.
 
 ## Copyright
 

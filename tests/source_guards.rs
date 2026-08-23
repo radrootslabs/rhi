@@ -13,7 +13,6 @@ fn rhi_manifest_has_no_sdk_or_legacy_proof_dependency() {
         "sp1_proving",
         "sp1_cuda_proving",
         "reqwest",
-        "sqlx",
         "libsqlite3-sys",
     ] {
         assert!(
@@ -26,19 +25,29 @@ fn rhi_manifest_has_no_sdk_or_legacy_proof_dependency() {
 #[test]
 fn rhi_manifest_exact_pins_radroots_contract() {
     let manifest: toml::Value = toml::from_str(&read_repo_file("Cargo.toml")).expect("manifest");
-    let dependencies = manifest["workspace"]["dependencies"]
+    let dependencies = manifest["dependencies"]
         .as_table()
-        .expect("workspace dependencies");
+        .expect("package dependencies");
 
     for (name, dependency) in dependencies {
         if !name.starts_with("radroots_") {
             continue;
         }
-        let version = dependency
-            .as_str()
-            .or_else(|| dependency.get("version").and_then(toml::Value::as_str));
+        let dependency = dependency
+            .as_table()
+            .unwrap_or_else(|| panic!("{name} must use an explicit dependency table"));
         assert_eq!(
-            version,
+            dependency.get("git").and_then(toml::Value::as_str),
+            Some("https://github.com/radrootslabs/lib"),
+            "RHI must source {name} from the governed public Lib repository"
+        );
+        assert_eq!(
+            dependency.get("rev").and_then(toml::Value::as_str),
+            Some("7d7b454b4c9ed86569671993bd03ca868b676665"),
+            "RHI must source-lock {name} to the exact promoted Lib revision"
+        );
+        assert_eq!(
+            dependency.get("version").and_then(toml::Value::as_str),
             Some("=0.1.0-alpha"),
             "RHI must exact-pin {name} to the governed event contract release"
         );
