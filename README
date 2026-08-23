@@ -8,6 +8,23 @@ RHI publishes its service kind-0 Profile only through the sealed
 `RadrootsAuthoredProfile` replacement snapshot. It does not retain a generic
 kind-0 event-authoring path.
 
+## Hardened v1 configuration contract
+
+The target service configuration is frozen by
+`contracts/services_hardening/config.v1.schema.json` and the canonical
+non-secret `config.v1.example.toml`. It is one strict immutable TOML document
+with explicit identity, relay, evidence-source, reconciliation, attestation,
+publication, presence, resource, and retention authority. The evidence fields
+and maxima consume `evidence_policy.v1.json` without reinterpretation. Only
+reviewed bounded operational leaves have defaults. Bootstrap profile,
+instance, repo-local root, and config-path selection are CLI concerns and are
+not document fields.
+
+The current runtime loader and root `config.toml` remain transitional until
+their ordered replacement steps are complete. Existing environment and worker
+selectors are prototype evidence, not authority to change or weaken the v1
+contract.
+
 Use the repository-owned Nix lanes for validation:
 
 ```text

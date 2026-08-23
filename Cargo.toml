@@ -54,3 +54,5 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 zeroize = { version = "1" }
 
 [dev-dependencies]
+jsonschema = { version = "0.48.1", default-features = false }
+url = "2"

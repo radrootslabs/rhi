@@ -1,0 +1,426 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://radroots.org/contracts/rhi/config.v1.schema.json",
+  "title": "Radroots RHI configuration v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schema_version",
+    "service",
+    "logging",
+    "operations",
+    "database",
+    "identity",
+    "relays",
+    "network",
+    "evidence",
+    "reconciliation",
+    "attestation",
+    "publication",
+    "presence",
+    "resource_limits",
+    "retention"
+  ],
+  "properties": {
+    "schema": { "const": "radroots.rhi.config" },
+    "schema_version": { "const": 1 },
+    "service": { "$ref": "#/$defs/service" },
+    "logging": { "$ref": "#/$defs/logging" },
+    "operations": { "$ref": "#/$defs/operations" },
+    "database": { "$ref": "#/$defs/database" },
+    "identity": { "$ref": "#/$defs/identity" },
+    "relays": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": { "$ref": "#/$defs/relay" }
+    },
+    "network": { "$ref": "#/$defs/network" },
+    "evidence": { "$ref": "#/$defs/evidence" },
+    "reconciliation": { "$ref": "#/$defs/reconciliation" },
+    "attestation": { "$ref": "#/$defs/attestation" },
+    "publication": { "$ref": "#/$defs/publication" },
+    "presence": { "$ref": "#/$defs/presence" },
+    "resource_limits": { "$ref": "#/$defs/resource_limits" },
+    "retention": { "$ref": "#/$defs/retention" }
+  },
+  "$defs": {
+    "stable_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_-]*$"
+    },
+    "contract_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9._-]*$"
+    },
+    "absolute_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^/"
+    },
+    "credential_reference": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9_-]*$"
+    },
+    "public_key": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "relay_id": { "$ref": "#/$defs/stable_id" },
+    "relay_url": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^(wss|ws)://"
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "shutdown_grace_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 300000,
+          "default": 30000,
+          "x-radroots-default-source": "accepted_service_authority"
+        }
+      }
+    },
+    "logging": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "enum": ["error", "warn", "info", "debug", "trace"],
+          "default": "info",
+          "x-radroots-default-source": "engineering_safety"
+        },
+        "format": {
+          "enum": ["json", "text"],
+          "default": "json",
+          "x-radroots-default-source": "engineering_safety"
+        }
+      }
+    },
+    "operations_limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "header_count": { "type": "integer", "minimum": 1, "maximum": 64, "default": 32, "x-radroots-default-source": "radroots_service_host" },
+        "header_bytes": { "type": "integer", "minimum": 8192, "maximum": 32768, "default": 16384, "x-radroots-default-source": "radroots_service_host" },
+        "response_body_utf8_bytes": { "type": "integer", "minimum": 1, "maximum": 1048576, "default": 1048576, "x-radroots-default-source": "radroots_service_host" },
+        "concurrent_connections": { "type": "integer", "minimum": 1, "maximum": 64, "default": 32, "x-radroots-default-source": "radroots_service_host" },
+        "request_deadline_ms": { "type": "integer", "minimum": 1, "maximum": 30000, "default": 15000, "x-radroots-default-source": "radroots_service_host" },
+        "idle_timeout_ms": { "type": "integer", "minimum": 1, "maximum": 60000, "default": 30000, "x-radroots-default-source": "radroots_service_host" }
+      }
+    },
+    "operations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "listen": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "bind_policy": { "enum": ["loopback_only", "explicit_public"] },
+        "limits": { "$ref": "#/$defs/operations_limits" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "enabled": { "const": true } }, "required": ["enabled"] },
+          "then": { "required": ["listen", "bind_policy", "limits"] },
+          "else": { "maxProperties": 1 }
+        }
+      ]
+    },
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimum_free_bytes"],
+      "properties": {
+        "busy_timeout_ms": { "type": "integer", "minimum": 1, "maximum": 60000, "default": 5000, "x-radroots-default-source": "radroots_service_sqlite" },
+        "max_connections": { "type": "integer", "minimum": 1, "maximum": 8, "default": 8, "x-radroots-default-source": "radroots_service_sqlite" },
+        "minimum_free_bytes": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 }
+      }
+    },
+    "encrypted_file_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "envelope_path", "credential_reference", "expected_public_key"],
+      "properties": {
+        "provider": { "const": "encrypted_file" },
+        "envelope_path": { "$ref": "#/$defs/absolute_path" },
+        "credential_reference": { "$ref": "#/$defs/credential_reference" },
+        "expected_public_key": { "$ref": "#/$defs/public_key" }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["service"],
+      "properties": { "service": { "$ref": "#/$defs/encrypted_file_identity" } }
+    },
+    "relay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "url", "read", "write", "required", "authentication"],
+      "properties": {
+        "id": { "$ref": "#/$defs/relay_id" },
+        "url": { "$ref": "#/$defs/relay_url" },
+        "read": { "type": "boolean" },
+        "write": { "type": "boolean" },
+        "required": { "type": "boolean" },
+        "authentication": { "enum": ["none", "required"] }
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "connect_deadline_ms": { "type": "integer", "minimum": 100, "maximum": 30000, "default": 10000, "x-radroots-default-source": "engineering_safety" },
+        "dns_answer_limit": { "type": "integer", "minimum": 1, "maximum": 64, "default": 16, "x-radroots-default-source": "engineering_safety" }
+      }
+    },
+    "evidence_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_id", "kind", "relay_id", "required", "selector", "deadline_ms", "lookback_seconds", "overlap_seconds"],
+      "properties": {
+        "source_id": { "$ref": "#/$defs/stable_id" },
+        "kind": { "const": "nostr_relay" },
+        "relay_id": { "$ref": "#/$defs/relay_id" },
+        "required": { "type": "boolean" },
+        "selector": { "const": "trade_mutation_lineage_v1" },
+        "deadline_ms": { "type": "integer", "minimum": 100, "maximum": 30000 },
+        "lookback_seconds": { "type": "integer", "minimum": 60, "maximum": 2678400 },
+        "overlap_seconds": { "type": "integer", "minimum": 1, "maximum": 86400 }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "contract_version", "policy_id", "sources"],
+      "properties": {
+        "contract": { "const": "radroots.rhi.evidence-policy" },
+        "contract_version": { "const": 1 },
+        "policy_id": { "$ref": "#/$defs/stable_id" },
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/evidence_source" }
+        }
+      }
+    },
+    "reconciliation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "concurrency": { "type": "integer", "minimum": 1, "maximum": 64, "default": 8, "x-radroots-default-source": "engineering_safety" },
+        "queue_capacity": { "type": "integer", "minimum": 1, "maximum": 65536, "default": 4096, "x-radroots-default-source": "engineering_safety" },
+        "lease_ms": { "type": "integer", "minimum": 1000, "maximum": 300000, "default": 30000, "x-radroots-default-source": "engineering_safety" },
+        "lease_renewal_ms": { "type": "integer", "minimum": 100, "maximum": 150000, "default": 10000, "x-radroots-default-source": "engineering_safety" },
+        "max_attempts": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10, "x-radroots-default-source": "engineering_safety" },
+        "initial_backoff_ms": { "type": "integer", "minimum": 1, "maximum": 60000, "default": 250, "x-radroots-default-source": "engineering_safety" },
+        "maximum_backoff_ms": { "type": "integer", "minimum": 1, "maximum": 3600000, "default": 30000, "x-radroots-default-source": "engineering_safety" },
+        "attempt_deadline_ms": { "type": "integer", "minimum": 100, "maximum": 300000, "default": 30000, "x-radroots-default-source": "engineering_safety" }
+      }
+    },
+    "attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "contract_version", "method", "reducer_contract", "reducer_contract_version"],
+      "properties": {
+        "contract": { "const": "radroots.rhi.evidence_attestation.v1" },
+        "contract_version": { "const": 1 },
+        "method": { "const": "signed_evidence_snapshot" },
+        "reducer_contract": { "const": "radroots.trade.reducer.v1" },
+        "reducer_contract_version": { "const": 1 }
+      }
+    },
+    "retry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_attempts": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10, "x-radroots-default-source": "engineering_safety" },
+        "initial_backoff_ms": { "type": "integer", "minimum": 1, "maximum": 60000, "default": 250, "x-radroots-default-source": "engineering_safety" },
+        "maximum_backoff_ms": { "type": "integer", "minimum": 1, "maximum": 3600000, "default": 30000, "x-radroots-default-source": "engineering_safety" },
+        "attempt_deadline_ms": { "type": "integer", "minimum": 100, "maximum": 30000, "default": 15000, "x-radroots-default-source": "engineering_safety" }
+      }
+    },
+    "publication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": { "enum": ["required", "disabled"] },
+        "target_relay_ids": { "type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/relay_id" } },
+        "retry": { "$ref": "#/$defs/retry" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "mode": { "const": "required" } }, "required": ["mode"] },
+          "then": { "required": ["target_relay_ids", "retry"] },
+          "else": { "maxProperties": 1 }
+        }
+      ]
+    },
+    "presence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "profile", "application_handler"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "profile": { "type": "boolean" },
+        "application_handler": { "type": "boolean" },
+        "target_relay_ids": { "type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/relay_id" } }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "enabled": { "const": true } }, "required": ["enabled"] },
+          "then": { "required": ["target_relay_ids"] },
+          "else": { "maxProperties": 3 }
+        }
+      ]
+    },
+    "admin_limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "header_count": { "type": "integer", "minimum": 1, "maximum": 64, "default": 32, "x-radroots-default-source": "radroots_service_host" },
+        "header_bytes": { "type": "integer", "minimum": 8192, "maximum": 32768, "default": 16384, "x-radroots-default-source": "radroots_service_host" },
+        "request_body_utf8_bytes": { "type": "integer", "minimum": 1, "maximum": 65536, "default": 65536, "x-radroots-default-source": "radroots_service_host" },
+        "response_body_utf8_bytes": { "type": "integer", "minimum": 512, "maximum": 1048576, "default": 1048576, "x-radroots-default-source": "radroots_service_host" },
+        "concurrent_connections": { "type": "integer", "minimum": 1, "maximum": 64, "default": 32, "x-radroots-default-source": "radroots_service_host" },
+        "request_deadline_ms": { "type": "integer", "minimum": 1, "maximum": 30000, "default": 15000, "x-radroots-default-source": "radroots_service_host" },
+        "idle_timeout_ms": { "type": "integer", "minimum": 1, "maximum": 60000, "default": 30000, "x-radroots-default-source": "radroots_service_host" },
+        "query_items": { "type": "integer", "minimum": 1, "maximum": 200, "default": 100, "x-radroots-default-source": "accepted_service_authority" }
+      }
+    },
+    "event_limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "wire_bytes": { "type": "integer", "minimum": 1, "maximum": 524288, "default": 262144, "x-radroots-default-source": "radroots_event" },
+        "content_bytes": { "type": "integer", "minimum": 1, "maximum": 131072, "default": 131072, "x-radroots-default-source": "radroots_event" },
+        "tag_count": { "type": "integer", "minimum": 1, "maximum": 1024, "default": 1024, "x-radroots-default-source": "radroots_event" },
+        "tag_total_elements": { "type": "integer", "minimum": 1, "maximum": 4096, "default": 4096, "x-radroots-default-source": "radroots_event" },
+        "tag_element_bytes": { "type": "integer", "minimum": 1, "maximum": 4096, "default": 4096, "x-radroots-default-source": "radroots_event" },
+        "tag_total_bytes": { "type": "integer", "minimum": 1, "maximum": 131072, "default": 131072, "x-radroots-default-source": "radroots_event" }
+      }
+    },
+    "source_result_limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "events": { "type": "integer", "minimum": 1, "maximum": 4096, "default": 4096, "x-radroots-default-source": "rhi_evidence_policy" },
+        "bytes": { "type": "integer", "minimum": 1, "maximum": 8388608, "default": 8388608, "x-radroots-default-source": "rhi_evidence_policy" }
+      }
+    },
+    "queue_limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ingress": { "type": "integer", "minimum": 1, "maximum": 65536, "default": 1024, "x-radroots-default-source": "engineering_safety" },
+        "reconciliation": { "type": "integer", "minimum": 1, "maximum": 65536, "default": 4096, "x-radroots-default-source": "engineering_safety" },
+        "publication": { "type": "integer", "minimum": 1, "maximum": 65536, "default": 4096, "x-radroots-default-source": "engineering_safety" },
+        "presence": { "type": "integer", "minimum": 1, "maximum": 4096, "default": 64, "x-radroots-default-source": "engineering_safety" }
+      }
+    },
+    "metrics_limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "descriptors": { "type": "integer", "minimum": 1, "maximum": 64, "default": 64, "x-radroots-default-source": "radroots_service_host" },
+        "samples": { "type": "integer", "minimum": 1, "maximum": 512, "default": 512, "x-radroots-default-source": "radroots_service_host" },
+        "labels_per_sample": { "type": "integer", "minimum": 1, "maximum": 8, "default": 8, "x-radroots-default-source": "radroots_service_host" },
+        "render_utf8_bytes": { "type": "integer", "minimum": 1, "maximum": 1048576, "default": 1048576, "x-radroots-default-source": "radroots_service_host" }
+      }
+    },
+    "runtime_limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "worker_threads": { "type": "integer", "minimum": 2, "maximum": 32, "default": 4, "x-radroots-default-source": "engineering_safety" },
+        "blocking_threads": { "type": "integer", "minimum": 1, "maximum": 32, "default": 8, "x-radroots-default-source": "engineering_safety" }
+      }
+    },
+    "resource_limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "admin": { "$ref": "#/$defs/admin_limits" },
+        "events": { "$ref": "#/$defs/event_limits" },
+        "source_results": { "$ref": "#/$defs/source_result_limits" },
+        "queues": { "$ref": "#/$defs/queue_limits" },
+        "metrics": { "$ref": "#/$defs/metrics_limits" },
+        "runtime": { "$ref": "#/$defs/runtime_limits" }
+      }
+    },
+    "retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["duplicate_observations_ms", "completed_jobs_ms", "terminal_publication_attempts_ms", "terminal_presence_attempts_ms", "operation_dedup_ms", "audit_ms"],
+      "properties": {
+        "duplicate_observations_ms": { "type": "integer", "minimum": 1000, "maximum": 31536000000 },
+        "completed_jobs_ms": { "type": "integer", "minimum": 1000, "maximum": 31536000000 },
+        "terminal_publication_attempts_ms": { "type": "integer", "minimum": 1000, "maximum": 31536000000 },
+        "terminal_presence_attempts_ms": { "type": "integer", "minimum": 1000, "maximum": 31536000000 },
+        "operation_dedup_ms": { "type": "integer", "minimum": 1000, "maximum": 31536000000 },
+        "audit_ms": { "type": "integer", "minimum": 1000, "maximum": 31536000000 }
+      }
+    }
+  },
+  "x-radroots-contract": {
+    "schema": "radroots.rhi.configuration-contract.v1",
+    "contract_version": 1,
+    "document_format": "toml_utf8",
+    "document_max_utf8_bytes": 1048576,
+    "unknown_fields": "reject_at_every_object_boundary",
+    "duplicate_keys": "reject_on_original_wire",
+    "null_values": "reject_on_original_wire",
+    "environment_overlay": "forbidden",
+    "protected_material": "forbidden",
+    "effective_output": "deterministic_redacted_with_exact_provenance",
+    "bootstrap_only": ["profile", "instance", "repo_local_root", "config_path"],
+    "evidence_policy": "contracts/services_hardening/evidence_policy.v1.json",
+    "evidence_policy_sha256": "b4da4aa2863905975c577668bc75cbb03857106a67899278130915e085319dc8",
+    "safe_default_sources": ["radroots_service_host", "radroots_service_sqlite", "radroots_event", "rhi_evidence_policy", "accepted_service_authority", "engineering_safety"],
+    "semantic_relationships": [
+      "relay_ids_unique",
+      "relay_urls_canonical_unique",
+      "relay_read_or_write",
+      "production_relays_wss_only",
+      "repo_local_plaintext_relays_loopback_only",
+      "identity_envelope_path_is_canonical_absolute_non_root",
+      "configured_service_public_key_is_valid_x_only_secp256k1",
+      "evidence_source_ids_unique",
+      "evidence_source_bindings_unique",
+      "evidence_source_relays_reference_read_relays",
+      "at_least_one_required_evidence_source",
+      "evidence_overlap_not_greater_than_lookback",
+      "evidence_completion_is_nostr_eose_before_deadline",
+      "source_result_limits_match_evidence_policy_maxima",
+      "reconciliation_renewal_less_than_lease",
+      "reconciliation_initial_backoff_not_greater_than_maximum_backoff",
+      "reconciliation_attempt_deadline_not_less_than_source_deadlines",
+      "publication_targets_reference_write_relays",
+      "publication_disabled_has_no_targets_or_retry",
+      "publication_initial_backoff_not_greater_than_maximum_backoff",
+      "presence_targets_reference_write_relays",
+      "presence_disabled_has_no_targets_and_no_desired_documents",
+      "operations_public_bind_requires_explicit_public_policy",
+      "retention_preserves_current_and_reproducibility_authority"
+    ],
+    "forbidden_prototype_fields": ["paths", "storage", "workers", "worker", "output_dir", "state_file", "state_path", "relay_url", "env_file", "environment", "identity_path", "private_key", "secret_key", "wrapping_key_path", "sqlite_path", "json_state", "hot_reload", "include"]
+  }
+}
