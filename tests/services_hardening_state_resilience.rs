@@ -7,6 +7,7 @@ use std::{
     num::NonZeroU64,
     os::unix::fs::{MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 use radroots_service_sqlite::{
@@ -96,6 +97,21 @@ fn recovery_paths(runtime: &rhi::RhiRuntimeContext) -> [PathBuf; 4] {
     ]
 }
 
+fn directory_inventory(directory: &Path) -> Vec<String> {
+    let mut entries = fs::read_dir(directory)
+        .expect("state directory")
+        .map(|entry| {
+            entry
+                .expect("state entry")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect::<Vec<_>>();
+    entries.sort();
+    entries
+}
+
 #[tokio::test]
 async fn backup_integrity_and_offline_restore_obey_one_exact_rhi_authority() {
     let directory = tempfile::tempdir().expect("temporary root");
@@ -110,6 +126,36 @@ async fn backup_integrity_and_offline_restore_obey_one_exact_rhi_authority() {
     let writer = open_rhi_state_read_write(&runtime, &metadata, applied_at, &build)
         .await
         .expect("writable host");
+    let cancelled_bundle = directory.path().join("cancelled-backup");
+    let cancelled = tokio::time::timeout(
+        Duration::from_nanos(1),
+        writer.capture_online_backup(
+            &cancelled_bundle,
+            BackupCreatedAtUnixMs::new(1_725_000_000_050).expect("capture time"),
+        ),
+    )
+    .await;
+    assert!(cancelled.is_err(), "capture future must be cancellable");
+    writer
+        .close()
+        .await
+        .expect("close drains cancelled capture cleanup");
+    assert!(!cancelled_bundle.exists());
+
+    let writer = open_rhi_state_read_write(&runtime, &metadata, applied_at, &build)
+        .await
+        .expect("writer reacquisition after cancelled capture");
+    let cancelled_integrity = tokio::time::timeout(
+        Duration::from_nanos(1),
+        writer.inspect_integrity(
+            IntegrityCheckedAtUnixMs::new(1_725_000_000_099).expect("inspection time"),
+        ),
+    )
+    .await;
+    assert!(
+        cancelled_integrity.is_err(),
+        "integrity future must be cancellable"
+    );
     let report = writer
         .inspect_integrity(
             IntegrityCheckedAtUnixMs::new(1_725_000_000_100).expect("inspection time"),
@@ -150,6 +196,13 @@ async fn backup_integrity_and_offline_restore_obey_one_exact_rhi_authority() {
 
     let live_path = runtime.artifacts().state_database();
     let old_live_inode = fs::metadata(live_path).expect("live metadata").ino();
+    let state_directory = runtime.context().paths().state();
+    let live_bytes_before_inspection = fs::read(live_path).expect("live bytes");
+    let live_modified_before_inspection = fs::metadata(live_path)
+        .expect("live metadata")
+        .modified()
+        .expect("live modified time");
+    let inventory_before_inspection = directory_inventory(state_directory);
     let inspection = open_rhi_state_inspection(&runtime, &metadata)
         .await
         .expect("read-only inspection");
@@ -188,6 +241,21 @@ async fn backup_integrity_and_offline_restore_obey_one_exact_rhi_authority() {
         .expect_err("offline staging rejects a live inspection host");
     assert_eq!(contended.kind(), RhiStateMaintenanceErrorKind::Authority);
     inspection.close().await.expect("inspection close");
+    assert_eq!(
+        fs::read(live_path).expect("live bytes after inspection"),
+        live_bytes_before_inspection
+    );
+    assert_eq!(
+        fs::metadata(live_path)
+            .expect("live metadata after inspection")
+            .modified()
+            .expect("live modified time after inspection"),
+        live_modified_before_inspection
+    );
+    assert_eq!(
+        directory_inventory(state_directory),
+        inventory_before_inspection
+    );
 
     let verified = verify_rhi_state_backup(
         &manifest_bytes,

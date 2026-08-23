@@ -7,6 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use nostr::{Keys, SecretKey};
 use radroots_service_sqlite::{
     MigrationAppliedAtUnixSeconds, MigrationBuildIdentity, OpenMode,
     ServiceSqliteConnectionOptions, ServiceSqliteHost, ServiceSqlitePaths, initialize_database,
@@ -306,6 +307,76 @@ async fn interrupted_first_binding_resumes_after_schema_migration() {
         .await
         .expect("seeded binding count");
     assert_eq!(count, 1);
+    connection.close().await.expect("connection close");
+}
+
+#[tokio::test]
+async fn semantically_conflicting_but_structurally_valid_history_fails_closed() {
+    let directory = tempfile::tempdir().expect("root");
+    let runtime = runtime(directory.path());
+    fs::create_dir_all(runtime.context().paths().state()).expect("state directory");
+    fs::set_permissions(
+        runtime.context().paths().state(),
+        fs::Permissions::from_mode(0o700),
+    )
+    .expect("state mode");
+    let current = configuration(EXAMPLE);
+    let metadata = RhiStateMetadata::new(
+        &runtime,
+        &current,
+        SourceGeneration::new([0x5a; 32]).expect("generation"),
+        1_725_000_000_000,
+    )
+    .expect("metadata");
+    let (applied_at, build) = evidence(1_725_000_000);
+    initialize_rhi_state(&runtime, &metadata, applied_at, &build)
+        .await
+        .expect("initialize");
+
+    let conflicting_key =
+        Keys::new(SecretKey::from_slice(&[0x33; 32]).expect("deterministic conflicting secret"))
+            .public_key()
+            .to_hex();
+    assert_ne!(conflicting_key, metadata.expected_identity().as_hex());
+    let mut connection = offline_connection(&runtime).await;
+    sqlx::query(
+        r#"INSERT INTO rhi_config_bindings (
+            generation, normalized_config_sha256, evidence_policy_sha256,
+            service_public_key, config_contract_version, state_contract_version,
+            admin_contract_version, status_contract_version, provider_contract_version,
+            applied_at_unix_s, service_version, service_commit, lib_revision,
+            rust_version, target, feature_profile
+        )
+        SELECT generation + 1, normalized_config_sha256, evidence_policy_sha256,
+            ?, config_contract_version, state_contract_version,
+            admin_contract_version, status_contract_version, provider_contract_version,
+            applied_at_unix_s + 1, service_version, service_commit, lib_revision,
+            rust_version, target, feature_profile
+        FROM rhi_config_bindings WHERE generation = 1"#,
+    )
+    .bind(conflicting_key)
+    .execute(&mut connection)
+    .await
+    .expect("append structurally valid conflicting evidence");
+    connection.close().await.expect("connection close");
+
+    let rejected = open_rhi_state_read_write_from_config(&runtime, &current, applied_at, &build)
+        .await
+        .expect_err("conflicting history must fail closed");
+    assert_eq!(rejected.kind(), rhi::RhiStateHostErrorKind::InvalidEvidence);
+    let retried = open_rhi_state_read_write_from_config(&runtime, &current, applied_at, &build)
+        .await
+        .expect_err("rejected history must not leak writer authority");
+    assert_eq!(retried.kind(), rhi::RhiStateHostErrorKind::InvalidEvidence);
+
+    let mut connection = offline_connection(&runtime).await;
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM rhi_config_bindings")
+            .fetch_one(&mut connection)
+            .await
+            .expect("history count"),
+        2
+    );
     connection.close().await.expect("connection close");
 }
 

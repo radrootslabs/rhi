@@ -264,7 +264,7 @@ async fn foundation_proves_state_config_identity_and_contacts_no_transport() {
 }
 
 #[tokio::test]
-async fn missing_or_mismatched_state_fails_before_identity_or_transport_access() {
+async fn missing_state_fails_before_identity_or_transport_access() {
     let directory = tempfile::tempdir().expect("root");
     let runtime = runtime(directory.path());
     let secret = identity_secret();
@@ -292,6 +292,86 @@ async fn missing_or_mismatched_state_fails_before_identity_or_transport_access()
     assert_eq!(error.kind(), RhiRuntimeFoundationErrorKind::StateOpen);
     assert_eq!(spy.invoked(), 0);
     assert!(!runtime.artifacts().state_database().exists());
+}
+
+#[tokio::test]
+async fn mismatched_configuration_fails_before_identity_or_transport_access() {
+    let directory = tempfile::tempdir().expect("root");
+    let runtime = runtime(directory.path());
+    let secret = identity_secret();
+    let identity = Keys::new(SecretKey::from_slice(&secret).expect("secret"))
+        .public_key()
+        .to_hex();
+    let current = configuration(&runtime, &identity);
+    let metadata = prepare(&runtime, &current);
+    let (applied_at, build) = evidence();
+    initialize_rhi_state(&runtime, &metadata, applied_at, &build)
+        .await
+        .expect("initialize");
+
+    let changed_source = CONFIG_EXAMPLE
+        .replace(
+            "/var/lib/radroots/services/rhi/default/secrets/service.identity.ncrypt",
+            runtime.identity_path().to_str().expect("identity path"),
+        )
+        .replace(&"2".repeat(64), &identity)
+        .replacen("level = \"info\"", "level = \"debug\"", 1);
+    let changed = parse_rhi_config_v1(changed_source.as_bytes(), RhiConfigProfile::RepoLocal)
+        .expect("changed configuration");
+    let spy = TransportSpy(Arc::new(AtomicUsize::new(0)));
+    let error =
+        open_rhi_runtime_foundation(runtime.clone(), changed, adapters(&spy), applied_at, &build)
+            .await
+            .expect_err("configuration mismatch");
+    assert_eq!(error.kind(), RhiRuntimeFoundationErrorKind::StateOpen);
+    assert_eq!(spy.invoked(), 0);
+
+    let reopened = open_rhi_state_read_write(&runtime, &metadata, applied_at, &build)
+        .await
+        .expect("failed foundation releases state authority");
+    reopened.close().await.expect("close");
+}
+
+#[tokio::test]
+async fn identity_failure_after_state_open_releases_authority_without_transport_access() {
+    let directory = tempfile::tempdir().expect("root");
+    let runtime = runtime(directory.path());
+    let secret = identity_secret();
+    let identity = Keys::new(SecretKey::from_slice(&secret).expect("secret"))
+        .public_key()
+        .to_hex();
+    let configuration = configuration(&runtime, &identity);
+    let metadata = prepare(&runtime, &configuration);
+    let (applied_at, build) = evidence();
+    initialize_rhi_state(&runtime, &metadata, applied_at, &build)
+        .await
+        .expect("initialize");
+    fs::remove_file(
+        runtime
+            .context()
+            .paths()
+            .secrets()
+            .join("service_wrapping_key"),
+    )
+    .expect("remove credential");
+
+    let spy = TransportSpy(Arc::new(AtomicUsize::new(0)));
+    let error = open_rhi_runtime_foundation(
+        runtime.clone(),
+        configuration,
+        adapters(&spy),
+        applied_at,
+        &build,
+    )
+    .await
+    .expect_err("missing credential");
+    assert_eq!(error.kind(), RhiRuntimeFoundationErrorKind::IdentityAccess);
+    assert_eq!(spy.invoked(), 0);
+
+    let reopened = open_rhi_state_read_write(&runtime, &metadata, applied_at, &build)
+        .await
+        .expect("identity failure releases state authority");
+    reopened.close().await.expect("close");
 }
 
 #[test]

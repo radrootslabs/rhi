@@ -1242,6 +1242,7 @@ mod tests {
         candidate
     }
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn different_identity_secret() -> [u8; 32] {
         let mut candidate = bytes("radroots.rhi.test-only.different-identity-secret.v1");
         while SecretKey::from_slice(&candidate).is_err() {
@@ -1295,6 +1296,7 @@ mod tests {
         (configuration, metadata)
     }
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn binding(root: &Path, path: &Path) -> RhiIdentityEnvelopeBinding {
         let (configuration, metadata) = binding_authority(root, path);
         RhiIdentityEnvelopeBinding::from_configuration(&configuration, &metadata)

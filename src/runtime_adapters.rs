@@ -447,8 +447,8 @@ mod tests {
     };
 
     use radroots_service_host::{
-        EntropyError, HostError, MonotonicClockError, TaskClassification, TaskMetadata, TaskName,
-        WallClockError,
+        EntropyError, HostError, MonotonicClockError, ShutdownPhase, TaskClassification,
+        TaskMetadata, TaskName, WallClockError,
     };
     use radroots_transport::{
         BoxFuture, DeliveryReceipt, DeliveryRequest, EventSubscription, FetchPage, FetchRequest,
@@ -727,6 +727,42 @@ mod tests {
             format!("{adapters:?}"),
             "RhiRuntimeAdapters { time_entropy: \"[injected]\", transport: \"[sealed]\", identity_credential: \"[sealed]\", supervised_task_count: 0 }"
         );
+    }
+
+    #[tokio::test]
+    async fn adapter_shutdown_cancels_and_joins_long_lived_tasks() {
+        let transport = Arc::new(NoIoTransport);
+        let transports = RhiTransportAdapters::new(transport.clone(), transport.clone(), transport);
+        let mut adapters = RhiRuntimeAdapters::new(
+            RhiTimeEntropyAdapters::new(
+                FixedWall(Ok(UnixTimeSeconds::new(1))),
+                FixedMonotonic(MonotonicTime::from_duration_since_origin(Duration::ZERO)),
+                FixedEntropy(Ok(1)),
+            ),
+            transports,
+            RhiIdentityCredentialAdapters::canonical(),
+        );
+        let cancellations = Arc::new(AtomicUsize::new(0));
+        let task_cancellations = Arc::clone(&cancellations);
+        adapters
+            .supervisor_mut()
+            .spawn(
+                TaskMetadata::new(
+                    TaskName::new("adapter_cancellation_test").expect("task name"),
+                    TaskClassification::Critical,
+                    Some(ShutdownPhase::CloseNetwork),
+                )
+                .expect("metadata"),
+                move |cancel| async move {
+                    cancel.cancelled().await;
+                    task_cancellations.fetch_add(1, Ordering::Relaxed);
+                    Ok::<(), HostError>(())
+                },
+            )
+            .expect("register");
+        adapters.shutdown().await.expect("joined shutdown");
+        assert_eq!(cancellations.load(Ordering::Relaxed), 1);
+        assert_eq!(adapters.supervised_task_count(), 0);
     }
 
     #[test]
