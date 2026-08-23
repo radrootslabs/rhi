@@ -1,0 +1,660 @@
+pub mod rhi
+pub use rhi::INSTANCE_ID_MAX_BYTES
+pub use rhi::InstanceId
+pub use rhi::RadrootsHostEnvironment
+pub use rhi::RadrootsPathProfile
+pub use rhi::RadrootsPathResolver
+pub use rhi::RadrootsPlatform
+pub use rhi::RadrootsServiceInstanceArtifacts
+pub use rhi::RuntimeContext
+pub use rhi::RuntimeContextSource
+pub use rhi::ServiceId
+pub enum rhi::RhiBootstrapProfileV1
+pub rhi::RhiBootstrapProfileV1::Interactive
+pub rhi::RhiBootstrapProfileV1::RepoLocal
+pub rhi::RhiBootstrapProfileV1::ServiceHost
+pub enum rhi::RhiCliOutputModeV1
+pub rhi::RhiCliOutputModeV1::Human
+pub rhi::RhiCliOutputModeV1::Json
+pub enum rhi::RhiCliV1ErrorKind
+pub rhi::RhiCliV1ErrorKind::InvalidArguments
+pub rhi::RhiCliV1ErrorKind::InvalidConfigPath
+pub rhi::RhiCliV1ErrorKind::InvalidInstance
+pub rhi::RhiCliV1ErrorKind::InvalidRepoLocalRoot
+pub rhi::RhiCliV1ErrorKind::UnexpectedRepoLocalRoot
+pub enum rhi::RhiCommandV1
+pub rhi::RhiCommandV1::Config(rhi::RhiConfigCommandV1)
+pub rhi::RhiCommandV1::Doctor
+pub rhi::RhiCommandV1::Identity(rhi::RhiIdentityCommandV1)
+pub rhi::RhiCommandV1::Metrics(rhi::RhiMetricsCommandV1)
+pub rhi::RhiCommandV1::Presence(rhi::RhiPresenceCommandV1)
+pub rhi::RhiCommandV1::Publication(rhi::RhiPublicationCommandV1)
+pub rhi::RhiCommandV1::Reconciliation(rhi::RhiReconciliationCommandV1)
+pub rhi::RhiCommandV1::Run
+pub rhi::RhiCommandV1::Sources(rhi::RhiSourcesCommandV1)
+pub rhi::RhiCommandV1::State(rhi::RhiStateCommandV1)
+pub rhi::RhiCommandV1::Status
+pub rhi::RhiCommandV1::Trade(rhi::RhiTradeCommandV1)
+pub enum rhi::RhiConfigCommandV1
+pub rhi::RhiConfigCommandV1::Apply
+pub rhi::RhiConfigCommandV1::Init
+pub rhi::RhiConfigCommandV1::Schema
+pub rhi::RhiConfigCommandV1::Show
+pub rhi::RhiConfigCommandV1::Validate
+pub enum rhi::RhiConfigDefaultAuthority
+pub rhi::RhiConfigDefaultAuthority::AcceptedServiceAuthority
+pub rhi::RhiConfigDefaultAuthority::EngineeringSafety
+pub rhi::RhiConfigDefaultAuthority::RadrootsEvent
+pub rhi::RhiConfigDefaultAuthority::RadrootsServiceHost
+pub rhi::RhiConfigDefaultAuthority::RadrootsServiceSqlite
+pub rhi::RhiConfigDefaultAuthority::RhiEvidencePolicy
+pub enum rhi::RhiConfigProfile
+pub rhi::RhiConfigProfile::Production
+pub rhi::RhiConfigProfile::RepoLocal
+pub enum rhi::RhiConfigV1ErrorKind
+pub rhi::RhiConfigV1ErrorKind::Encoding
+pub rhi::RhiConfigV1ErrorKind::InvalidDocument
+pub rhi::RhiConfigV1ErrorKind::InvalidRelationship
+pub rhi::RhiConfigV1ErrorKind::InvalidSchema
+pub rhi::RhiConfigV1ErrorKind::InvalidSchemaVersion
+pub rhi::RhiConfigV1ErrorKind::InvalidUtf8
+pub rhi::RhiConfigV1ErrorKind::MalformedToml
+pub rhi::RhiConfigV1ErrorKind::MissingSchema
+pub rhi::RhiConfigV1ErrorKind::MissingSchemaVersion
+pub rhi::RhiConfigV1ErrorKind::SchemaMismatch
+pub rhi::RhiConfigV1ErrorKind::TooLarge
+pub rhi::RhiConfigV1ErrorKind::UnsupportedSchemaVersion
+pub enum rhi::RhiConfigValueSource
+pub rhi::RhiConfigValueSource::BootstrapCli
+pub rhi::RhiConfigValueSource::DerivedPath
+pub rhi::RhiConfigValueSource::SafeDefault
+pub rhi::RhiConfigValueSource::Toml
+pub enum rhi::RhiCredentialResolutionErrorKind
+pub rhi::RhiCredentialResolutionErrorKind::InsecureCredential
+pub rhi::RhiCredentialResolutionErrorKind::InsecureSecretsRoot
+pub rhi::RhiCredentialResolutionErrorKind::InvalidBinding
+pub rhi::RhiCredentialResolutionErrorKind::InvalidCredential
+pub rhi::RhiCredentialResolutionErrorKind::InvalidReference
+pub rhi::RhiCredentialResolutionErrorKind::Io
+pub rhi::RhiCredentialResolutionErrorKind::MissingCredential
+pub rhi::RhiCredentialResolutionErrorKind::UnsupportedPlatform
+pub rhi::RhiCredentialResolutionErrorKind::UnsupportedProfile
+impl rhi::RhiCredentialResolutionErrorKind
+pub const fn rhi::RhiCredentialResolutionErrorKind::code(self) -> &'static str
+pub enum rhi::RhiEncryptedIdentityEnvelopeErrorKind
+pub rhi::RhiEncryptedIdentityEnvelopeErrorKind::AlreadyExists
+pub rhi::RhiEncryptedIdentityEnvelopeErrorKind::IdentityMismatch
+pub rhi::RhiEncryptedIdentityEnvelopeErrorKind::InsecureArtifact
+pub rhi::RhiEncryptedIdentityEnvelopeErrorKind::InsecureParent
+pub rhi::RhiEncryptedIdentityEnvelopeErrorKind::InvalidBinding
+pub rhi::RhiEncryptedIdentityEnvelopeErrorKind::InvalidCredential
+pub rhi::RhiEncryptedIdentityEnvelopeErrorKind::InvalidPath
+pub rhi::RhiEncryptedIdentityEnvelopeErrorKind::InvalidProvisioningMaterial
+pub rhi::RhiEncryptedIdentityEnvelopeErrorKind::Io
+pub rhi::RhiEncryptedIdentityEnvelopeErrorKind::MalformedEnvelope
+pub rhi::RhiEncryptedIdentityEnvelopeErrorKind::MissingEnvelope
+pub rhi::RhiEncryptedIdentityEnvelopeErrorKind::UnsupportedEnvelopeVersion
+pub rhi::RhiEncryptedIdentityEnvelopeErrorKind::UnsupportedPlatform
+pub rhi::RhiEncryptedIdentityEnvelopeErrorKind::WrongCredential
+impl rhi::RhiEncryptedIdentityEnvelopeErrorKind
+pub const fn rhi::RhiEncryptedIdentityEnvelopeErrorKind::code(self) -> &'static str
+pub enum rhi::RhiIdentityCommandV1
+pub rhi::RhiIdentityCommandV1::ExportPublic
+pub rhi::RhiIdentityCommandV1::Init
+pub rhi::RhiIdentityCommandV1::Status
+pub enum rhi::RhiIdentityProviderKind
+pub rhi::RhiIdentityProviderKind::EncryptedFile
+pub enum rhi::RhiIdentityRole
+pub rhi::RhiIdentityRole::Service
+impl rhi::RhiIdentityRole
+pub const fn rhi::RhiIdentityRole::as_str(self) -> &'static str
+pub enum rhi::RhiMetricsCommandV1
+pub rhi::RhiMetricsCommandV1::Snapshot
+pub enum rhi::RhiPresenceCommandV1
+pub rhi::RhiPresenceCommandV1::Desired
+pub rhi::RhiPresenceCommandV1::Refresh
+pub rhi::RhiPresenceCommandV1::Render
+pub enum rhi::RhiPublicationCommandV1
+pub rhi::RhiPublicationCommandV1::Backlog
+pub rhi::RhiPublicationCommandV1::Retry
+pub rhi::RhiPublicationCommandV1::Targets
+pub enum rhi::RhiReconciliationCommandV1
+pub rhi::RhiReconciliationCommandV1::Jobs
+pub rhi::RhiReconciliationCommandV1::Refresh
+pub rhi::RhiReconciliationCommandV1::Status
+pub enum rhi::RhiRuntimeContextErrorKind
+pub rhi::RhiRuntimeContextErrorKind::InvalidBootstrapBinding
+pub rhi::RhiRuntimeContextErrorKind::InvalidServiceIdentity
+pub rhi::RhiRuntimeContextErrorKind::PathSelection
+pub enum rhi::RhiSourcesCommandV1
+pub rhi::RhiSourcesCommandV1::List
+pub enum rhi::RhiStateCatalogErrorKind
+pub rhi::RhiStateCatalogErrorKind::CatalogMismatch
+pub rhi::RhiStateCatalogErrorKind::MigrationCatalog
+pub rhi::RhiStateCatalogErrorKind::SchemaCatalog
+impl rhi::RhiStateCatalogErrorKind
+pub const fn rhi::RhiStateCatalogErrorKind::code(self) -> &'static str
+pub enum rhi::RhiStateCommandV1
+pub rhi::RhiStateCommandV1::Backup
+pub rhi::RhiStateCommandV1::Init
+pub rhi::RhiStateCommandV1::Migrate
+pub rhi::RhiStateCommandV1::Restore
+pub rhi::RhiStateCommandV1::Status
+pub rhi::RhiStateCommandV1::Verify
+pub enum rhi::RhiStateHostErrorKind
+pub rhi::RhiStateHostErrorKind::Catalog
+pub rhi::RhiStateHostErrorKind::Close
+pub rhi::RhiStateHostErrorKind::Initialize
+pub rhi::RhiStateHostErrorKind::InspectionOpen
+pub rhi::RhiStateHostErrorKind::InvalidEvidence
+pub rhi::RhiStateHostErrorKind::InvalidPaths
+pub rhi::RhiStateHostErrorKind::ReadWriteOpen
+impl rhi::RhiStateHostErrorKind
+pub const fn rhi::RhiStateHostErrorKind::code(self) -> &'static str
+pub enum rhi::RhiStateHostMode
+pub rhi::RhiStateHostMode::ReadOnlyInspection
+pub rhi::RhiStateHostMode::ReadWriteExisting
+pub enum rhi::RhiStateMaintenanceErrorKind
+pub rhi::RhiStateMaintenanceErrorKind::Authority
+pub rhi::RhiStateMaintenanceErrorKind::Backup
+pub rhi::RhiStateMaintenanceErrorKind::Catalog
+pub rhi::RhiStateMaintenanceErrorKind::Integrity
+pub rhi::RhiStateMaintenanceErrorKind::InvalidEvidence
+pub rhi::RhiStateMaintenanceErrorKind::InvalidMode
+pub rhi::RhiStateMaintenanceErrorKind::Metadata
+pub rhi::RhiStateMaintenanceErrorKind::Migration
+pub rhi::RhiStateMaintenanceErrorKind::Open
+pub rhi::RhiStateMaintenanceErrorKind::Recovery
+pub rhi::RhiStateMaintenanceErrorKind::Restore
+impl rhi::RhiStateMaintenanceErrorKind
+pub const fn rhi::RhiStateMaintenanceErrorKind::code(self) -> &'static str
+pub enum rhi::RhiStateMetadataErrorKind
+pub rhi::RhiStateMetadataErrorKind::Configuration
+pub rhi::RhiStateMetadataErrorKind::Database
+pub rhi::RhiStateMetadataErrorKind::EvidencePolicy
+pub rhi::RhiStateMetadataErrorKind::Identity
+pub rhi::RhiStateMetadataErrorKind::Invariant
+pub rhi::RhiStateMetadataErrorKind::Paths
+pub rhi::RhiStateMetadataErrorKind::Profile
+#[repr(u8)] pub enum rhi::RhiStateRepositoryKind
+pub rhi::RhiStateRepositoryKind::DesiredPresence
+pub rhi::RhiStateRepositoryKind::DirtyTrade
+pub rhi::RhiStateRepositoryKind::EvidenceManifest
+pub rhi::RhiStateRepositoryKind::Mutation
+pub rhi::RhiStateRepositoryKind::Projection
+pub rhi::RhiStateRepositoryKind::Provenance
+pub rhi::RhiStateRepositoryKind::PublicationAttempt
+pub rhi::RhiStateRepositoryKind::PublicationOutbox
+pub rhi::RhiStateRepositoryKind::PublicationTarget
+pub rhi::RhiStateRepositoryKind::ReconciliationAttempt
+pub rhi::RhiStateRepositoryKind::ReconciliationJob
+pub rhi::RhiStateRepositoryKind::Report
+pub rhi::RhiStateRepositoryKind::SignedAttestationEvent
+pub rhi::RhiStateRepositoryKind::SignedEvent
+pub rhi::RhiStateRepositoryKind::Source
+pub rhi::RhiStateRepositoryKind::SourceCompletion
+pub rhi::RhiStateRepositoryKind::SourceCursor
+pub rhi::RhiStateRepositoryKind::Supersession
+impl rhi::RhiStateRepositoryKind
+pub const fn rhi::RhiStateRepositoryKind::backing_table(self) -> &'static str
+pub const fn rhi::RhiStateRepositoryKind::code(self) -> &'static str
+pub const fn rhi::RhiStateRepositoryKind::write_class(self) -> rhi::RhiStateRepositoryWriteClass
+pub enum rhi::RhiStateRepositoryWriteClass
+pub rhi::RhiStateRepositoryWriteClass::AppendOnly
+pub rhi::RhiStateRepositoryWriteClass::CompareAndSwap
+pub rhi::RhiStateRepositoryWriteClass::Immutable
+impl rhi::RhiStateRepositoryWriteClass
+pub const fn rhi::RhiStateRepositoryWriteClass::code(self) -> &'static str
+pub enum rhi::RhiTradeCommandV1
+pub rhi::RhiTradeCommandV1::Projection
+pub rhi::RhiTradeCommandV1::ReportCurrent
+pub rhi::RhiTradeCommandV1::Reports
+pub enum rhi::TradeAgreementAttestationBackend
+pub rhi::TradeAgreementAttestationBackend::LocalStatementHash
+impl rhi::TradeAgreementAttestationBackend
+pub const fn rhi::TradeAgreementAttestationBackend::as_str(self) -> &'static str
+pub enum rhi::TradeAgreementAttestationErrorKind
+pub rhi::TradeAgreementAttestationErrorKind::Encoding
+pub rhi::TradeAgreementAttestationErrorKind::InvalidHashField
+pub rhi::TradeAgreementAttestationErrorKind::InvalidValidatorSetBinding
+pub rhi::TradeAgreementAttestationErrorKind::MissingAgreementClaim
+pub rhi::TradeAgreementAttestationErrorKind::MissingValidatorSetBinding
+pub rhi::TradeAgreementAttestationErrorKind::TradeProtocol
+impl rhi::TradeAgreementAttestationErrorKind
+pub const fn rhi::TradeAgreementAttestationErrorKind::code(self) -> &'static str
+impl core::fmt::Display for rhi::TradeAgreementAttestationErrorKind
+pub fn rhi::TradeAgreementAttestationErrorKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::NostrEventAdapter<'a>
+impl<'a> rhi::NostrEventAdapter<'a>
+pub fn rhi::NostrEventAdapter<'a>::new(&'a nostr::event::Event) -> Self
+impl core::fmt::Debug for rhi::NostrEventAdapter<'_>
+pub fn rhi::NostrEventAdapter<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl radroots_event_codec::job::traits::JobEventLike for rhi::NostrEventAdapter<'_>
+pub fn rhi::NostrEventAdapter<'_>::raw_author(&self) -> alloc::string::String
+pub fn rhi::NostrEventAdapter<'_>::raw_content(&self) -> alloc::string::String
+pub fn rhi::NostrEventAdapter<'_>::raw_id(&self) -> alloc::string::String
+pub fn rhi::NostrEventAdapter<'_>::raw_kind(&self) -> u32
+pub fn rhi::NostrEventAdapter<'_>::raw_published_at(&self) -> u64
+pub fn rhi::NostrEventAdapter<'_>::raw_sig(&self) -> alloc::string::String
+pub fn rhi::NostrEventAdapter<'_>::raw_tags(&self) -> alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>
+impl<'a> radroots_event_codec::job::traits::JobEventBorrow<'a> for rhi::NostrEventAdapter<'a>
+pub fn rhi::NostrEventAdapter<'a>::raw_author(&'a self) -> alloc::string::String
+pub fn rhi::NostrEventAdapter<'a>::raw_content(&'a self) -> &'a str
+pub fn rhi::NostrEventAdapter<'a>::raw_id(&'a self) -> alloc::string::String
+pub fn rhi::NostrEventAdapter<'a>::raw_kind(&'a self) -> u32
+pub struct rhi::RhiCliInvocationV1
+impl rhi::RhiCliInvocationV1
+pub const fn rhi::RhiCliInvocationV1::command(&self) -> rhi::RhiCommandV1
+pub fn rhi::RhiCliInvocationV1::config_path(&self) -> core::option::Option<&std::path::Path>
+pub const fn rhi::RhiCliInvocationV1::instance(&self) -> &radroots_runtime_paths::identifier::InstanceId
+pub const fn rhi::RhiCliInvocationV1::output_mode(&self) -> rhi::RhiCliOutputModeV1
+pub const fn rhi::RhiCliInvocationV1::profile(&self) -> rhi::RhiBootstrapProfileV1
+pub fn rhi::RhiCliInvocationV1::repo_local_root(&self) -> core::option::Option<&std::path::Path>
+impl core::fmt::Debug for rhi::RhiCliInvocationV1
+pub fn rhi::RhiCliInvocationV1::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiCliV1Error
+impl rhi::RhiCliV1Error
+pub const fn rhi::RhiCliV1Error::kind(self) -> rhi::RhiCliV1ErrorKind
+impl core::error::Error for rhi::RhiCliV1Error
+impl core::fmt::Debug for rhi::RhiCliV1Error
+pub fn rhi::RhiCliV1Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiCliV1Error
+pub fn rhi::RhiCliV1Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiConfigDocumentV1
+impl rhi::RhiConfigDocumentV1
+pub const fn rhi::RhiConfigDocumentV1::effective(&self) -> &rhi::RhiEffectiveConfigV1
+pub fn rhi::RhiConfigDocumentV1::evidence_source_count(&self) -> usize
+pub const fn rhi::RhiConfigDocumentV1::profile(&self) -> rhi::RhiConfigProfile
+pub fn rhi::RhiConfigDocumentV1::relay_count(&self) -> usize
+pub const fn rhi::RhiConfigDocumentV1::runtime_thread_limits(&self) -> rhi::RhiRuntimeThreadLimitsV1
+pub const fn rhi::RhiConfigDocumentV1::schema(&self) -> &'static str
+pub const fn rhi::RhiConfigDocumentV1::schema_version(&self) -> u32
+impl core::fmt::Debug for rhi::RhiConfigDocumentV1
+pub fn rhi::RhiConfigDocumentV1::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiConfigV1Error
+impl rhi::RhiConfigV1Error
+pub const fn rhi::RhiConfigV1Error::kind(self) -> rhi::RhiConfigV1ErrorKind
+impl core::error::Error for rhi::RhiConfigV1Error
+impl core::fmt::Debug for rhi::RhiConfigV1Error
+pub fn rhi::RhiConfigV1Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiConfigV1Error
+pub fn rhi::RhiConfigV1Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiCredentialResolutionError
+impl rhi::RhiCredentialResolutionError
+pub const fn rhi::RhiCredentialResolutionError::code(self) -> &'static str
+pub const fn rhi::RhiCredentialResolutionError::kind(self) -> rhi::RhiCredentialResolutionErrorKind
+impl core::error::Error for rhi::RhiCredentialResolutionError
+impl core::fmt::Debug for rhi::RhiCredentialResolutionError
+pub fn rhi::RhiCredentialResolutionError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiCredentialResolutionError
+pub fn rhi::RhiCredentialResolutionError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiDecryptedIdentity
+impl rhi::RhiDecryptedIdentity
+pub fn rhi::RhiDecryptedIdentity::public_identity(&self) -> &rhi::RhiExpectedPublicIdentity
+impl core::fmt::Debug for rhi::RhiDecryptedIdentity
+pub fn rhi::RhiDecryptedIdentity::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiDesiredPresenceRepository<'host>
+impl rhi::RhiDesiredPresenceRepository<'_>
+pub const fn rhi::RhiDesiredPresenceRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
+pub const fn rhi::RhiDesiredPresenceRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
+impl core::fmt::Debug for rhi::RhiDesiredPresenceRepository<'_>
+pub fn rhi::RhiDesiredPresenceRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiDirtyTradeRepository<'host>
+impl rhi::RhiDirtyTradeRepository<'_>
+pub const fn rhi::RhiDirtyTradeRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
+pub const fn rhi::RhiDirtyTradeRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
+impl core::fmt::Debug for rhi::RhiDirtyTradeRepository<'_>
+pub fn rhi::RhiDirtyTradeRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiEffectiveConfigV1
+impl rhi::RhiEffectiveConfigV1
+pub fn rhi::RhiEffectiveConfigV1::canonical_json(&self) -> &str
+pub const fn rhi::RhiEffectiveConfigV1::field_count(&self) -> usize
+impl core::fmt::Debug for rhi::RhiEffectiveConfigV1
+pub fn rhi::RhiEffectiveConfigV1::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiEncryptedIdentityEnvelopeError
+impl rhi::RhiEncryptedIdentityEnvelopeError
+pub const fn rhi::RhiEncryptedIdentityEnvelopeError::code(self) -> &'static str
+pub const fn rhi::RhiEncryptedIdentityEnvelopeError::kind(self) -> rhi::RhiEncryptedIdentityEnvelopeErrorKind
+impl core::error::Error for rhi::RhiEncryptedIdentityEnvelopeError
+impl core::fmt::Debug for rhi::RhiEncryptedIdentityEnvelopeError
+pub fn rhi::RhiEncryptedIdentityEnvelopeError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiEncryptedIdentityEnvelopeError
+pub fn rhi::RhiEncryptedIdentityEnvelopeError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiEncryptedIdentityProvisioningMaterial
+impl rhi::RhiEncryptedIdentityProvisioningMaterial
+pub fn rhi::RhiEncryptedIdentityProvisioningMaterial::new([u8; 32], [u8; 32], [u8; 24], [u8; 24]) -> core::result::Result<Self, rhi::RhiEncryptedIdentityEnvelopeError>
+impl core::fmt::Debug for rhi::RhiEncryptedIdentityProvisioningMaterial
+pub fn rhi::RhiEncryptedIdentityProvisioningMaterial::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiEvidenceManifestRepository<'host>
+impl rhi::RhiEvidenceManifestRepository<'_>
+pub const fn rhi::RhiEvidenceManifestRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
+pub const fn rhi::RhiEvidenceManifestRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
+impl core::fmt::Debug for rhi::RhiEvidenceManifestRepository<'_>
+pub fn rhi::RhiEvidenceManifestRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiEvidencePolicyDigest(_)
+impl rhi::RhiEvidencePolicyDigest
+pub const fn rhi::RhiEvidencePolicyDigest::as_bytes(&self) -> &[u8; 32]
+impl core::fmt::Debug for rhi::RhiEvidencePolicyDigest
+pub fn rhi::RhiEvidencePolicyDigest::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiExpectedPublicIdentity(_)
+impl rhi::RhiExpectedPublicIdentity
+pub fn rhi::RhiExpectedPublicIdentity::as_hex(&self) -> &str
+impl core::fmt::Debug for rhi::RhiExpectedPublicIdentity
+pub fn rhi::RhiExpectedPublicIdentity::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiIdentityEnvelopeBinding
+impl rhi::RhiIdentityEnvelopeBinding
+pub const fn rhi::RhiIdentityEnvelopeBinding::expected_identity(&self) -> &rhi::RhiExpectedPublicIdentity
+pub fn rhi::RhiIdentityEnvelopeBinding::from_configuration(&rhi::RhiConfigDocumentV1, &rhi::RhiStateMetadata) -> core::result::Result<Self, rhi::RhiEncryptedIdentityEnvelopeError>
+pub const fn rhi::RhiIdentityEnvelopeBinding::kind(&self) -> rhi::RhiIdentityProviderKind
+pub const fn rhi::RhiIdentityEnvelopeBinding::role(&self) -> rhi::RhiIdentityRole
+impl core::fmt::Debug for rhi::RhiIdentityEnvelopeBinding
+pub fn rhi::RhiIdentityEnvelopeBinding::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiMutationRepository<'host>
+impl rhi::RhiMutationRepository<'_>
+pub const fn rhi::RhiMutationRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
+pub const fn rhi::RhiMutationRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
+impl core::fmt::Debug for rhi::RhiMutationRepository<'_>
+pub fn rhi::RhiMutationRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiNormalizedConfigDigest(_)
+impl rhi::RhiNormalizedConfigDigest
+pub const fn rhi::RhiNormalizedConfigDigest::as_bytes(&self) -> &[u8; 32]
+impl core::fmt::Debug for rhi::RhiNormalizedConfigDigest
+pub fn rhi::RhiNormalizedConfigDigest::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiProjectionRepository<'host>
+impl rhi::RhiProjectionRepository<'_>
+pub const fn rhi::RhiProjectionRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
+pub const fn rhi::RhiProjectionRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
+impl core::fmt::Debug for rhi::RhiProjectionRepository<'_>
+pub fn rhi::RhiProjectionRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiProvenanceRepository<'host>
+impl rhi::RhiProvenanceRepository<'_>
+pub const fn rhi::RhiProvenanceRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
+pub const fn rhi::RhiProvenanceRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
+impl core::fmt::Debug for rhi::RhiProvenanceRepository<'_>
+pub fn rhi::RhiProvenanceRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPublicationAttemptRepository<'host>
+impl rhi::RhiPublicationAttemptRepository<'_>
+pub const fn rhi::RhiPublicationAttemptRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
+pub const fn rhi::RhiPublicationAttemptRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
+impl core::fmt::Debug for rhi::RhiPublicationAttemptRepository<'_>
+pub fn rhi::RhiPublicationAttemptRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPublicationOutboxRepository<'host>
+impl rhi::RhiPublicationOutboxRepository<'_>
+pub const fn rhi::RhiPublicationOutboxRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
+pub const fn rhi::RhiPublicationOutboxRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
+impl core::fmt::Debug for rhi::RhiPublicationOutboxRepository<'_>
+pub fn rhi::RhiPublicationOutboxRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPublicationTargetRepository<'host>
+impl rhi::RhiPublicationTargetRepository<'_>
+pub const fn rhi::RhiPublicationTargetRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
+pub const fn rhi::RhiPublicationTargetRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
+impl core::fmt::Debug for rhi::RhiPublicationTargetRepository<'_>
+pub fn rhi::RhiPublicationTargetRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationAttemptRepository<'host>
+impl rhi::RhiReconciliationAttemptRepository<'_>
+pub const fn rhi::RhiReconciliationAttemptRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
+pub const fn rhi::RhiReconciliationAttemptRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
+impl core::fmt::Debug for rhi::RhiReconciliationAttemptRepository<'_>
+pub fn rhi::RhiReconciliationAttemptRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationJobRepository<'host>
+impl rhi::RhiReconciliationJobRepository<'_>
+pub const fn rhi::RhiReconciliationJobRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
+pub const fn rhi::RhiReconciliationJobRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
+impl core::fmt::Debug for rhi::RhiReconciliationJobRepository<'_>
+pub fn rhi::RhiReconciliationJobRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReportRepository<'host>
+impl rhi::RhiReportRepository<'_>
+pub const fn rhi::RhiReportRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
+pub const fn rhi::RhiReportRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
+impl core::fmt::Debug for rhi::RhiReportRepository<'_>
+pub fn rhi::RhiReportRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiRuntimeContext
+impl rhi::RhiRuntimeContext
+pub const fn rhi::RhiRuntimeContext::artifacts(&self) -> &radroots_runtime_paths::conventions::RadrootsServiceInstanceArtifacts
+pub const fn rhi::RhiRuntimeContext::context(&self) -> &radroots_runtime_paths::context::RuntimeContext
+pub fn rhi::RhiRuntimeContext::identity_path(&self) -> &std::path::Path
+pub const fn rhi::RhiRuntimeContext::profile(&self) -> rhi::RhiBootstrapProfileV1
+pub fn rhi::RhiRuntimeContext::selected_config_path(&self) -> &std::path::Path
+impl core::fmt::Debug for rhi::RhiRuntimeContext
+pub fn rhi::RhiRuntimeContext::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiRuntimeContextError
+impl rhi::RhiRuntimeContextError
+pub const fn rhi::RhiRuntimeContextError::kind(self) -> rhi::RhiRuntimeContextErrorKind
+impl core::error::Error for rhi::RhiRuntimeContextError
+impl core::fmt::Debug for rhi::RhiRuntimeContextError
+pub fn rhi::RhiRuntimeContextError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiRuntimeContextError
+pub fn rhi::RhiRuntimeContextError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiRuntimeThreadLimitsV1
+impl rhi::RhiRuntimeThreadLimitsV1
+pub const fn rhi::RhiRuntimeThreadLimitsV1::blocking_threads(self) -> usize
+pub const fn rhi::RhiRuntimeThreadLimitsV1::worker_threads(self) -> usize
+pub struct rhi::RhiSignedAttestationEventRepository<'host>
+impl rhi::RhiSignedAttestationEventRepository<'_>
+pub const fn rhi::RhiSignedAttestationEventRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
+pub const fn rhi::RhiSignedAttestationEventRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
+impl core::fmt::Debug for rhi::RhiSignedAttestationEventRepository<'_>
+pub fn rhi::RhiSignedAttestationEventRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiSignedEventRepository<'host>
+impl rhi::RhiSignedEventRepository<'_>
+pub const fn rhi::RhiSignedEventRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
+pub const fn rhi::RhiSignedEventRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
+impl core::fmt::Debug for rhi::RhiSignedEventRepository<'_>
+pub fn rhi::RhiSignedEventRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiSourceCompletionRepository<'host>
+impl rhi::RhiSourceCompletionRepository<'_>
+pub const fn rhi::RhiSourceCompletionRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
+pub const fn rhi::RhiSourceCompletionRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
+impl core::fmt::Debug for rhi::RhiSourceCompletionRepository<'_>
+pub fn rhi::RhiSourceCompletionRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiSourceCursorRepository<'host>
+impl rhi::RhiSourceCursorRepository<'_>
+pub const fn rhi::RhiSourceCursorRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
+pub const fn rhi::RhiSourceCursorRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
+impl core::fmt::Debug for rhi::RhiSourceCursorRepository<'_>
+pub fn rhi::RhiSourceCursorRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiSourceRepository<'host>
+impl rhi::RhiSourceRepository<'_>
+pub const fn rhi::RhiSourceRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
+pub const fn rhi::RhiSourceRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
+impl core::fmt::Debug for rhi::RhiSourceRepository<'_>
+pub fn rhi::RhiSourceRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiStagedStateRestore
+impl core::fmt::Debug for rhi::RhiStagedStateRestore
+pub fn rhi::RhiStagedStateRestore::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiStateCatalogError
+impl rhi::RhiStateCatalogError
+pub const fn rhi::RhiStateCatalogError::code(self) -> &'static str
+pub const fn rhi::RhiStateCatalogError::kind(self) -> rhi::RhiStateCatalogErrorKind
+impl core::error::Error for rhi::RhiStateCatalogError
+impl core::fmt::Debug for rhi::RhiStateCatalogError
+pub fn rhi::RhiStateCatalogError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiStateCatalogError
+pub fn rhi::RhiStateCatalogError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiStateHost
+impl rhi::RhiStateHost
+pub async fn rhi::RhiStateHost::capture_online_backup(&self, &std::path::Path, radroots_service_sqlite::backup::manifest::BackupCreatedAtUnixMs) -> core::result::Result<radroots_service_sqlite::backup::manifest::ServiceBackupManifest, rhi::RhiStateMaintenanceError>
+pub async fn rhi::RhiStateHost::close(&self) -> core::result::Result<(), rhi::RhiStateHostError>
+pub async fn rhi::RhiStateHost::inspect_integrity(&self, radroots_service_sqlite::integrity::inspection::IntegrityCheckedAtUnixMs) -> core::result::Result<radroots_service_sqlite::integrity::inspection::ServiceSqliteIntegrityReport, rhi::RhiStateMaintenanceError>
+pub const fn rhi::RhiStateHost::metadata(&self) -> &rhi::RhiStateMetadata
+pub const fn rhi::RhiStateHost::mode(&self) -> rhi::RhiStateHostMode
+pub const fn rhi::RhiStateHost::repositories(&self) -> rhi::RhiStateRepositories<'_>
+impl core::fmt::Debug for rhi::RhiStateHost
+pub fn rhi::RhiStateHost::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiStateHostError
+impl rhi::RhiStateHostError
+pub const fn rhi::RhiStateHostError::code(self) -> &'static str
+pub const fn rhi::RhiStateHostError::kind(self) -> rhi::RhiStateHostErrorKind
+impl core::error::Error for rhi::RhiStateHostError
+impl core::fmt::Debug for rhi::RhiStateHostError
+pub fn rhi::RhiStateHostError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiStateHostError
+pub fn rhi::RhiStateHostError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiStateMaintenanceError
+impl rhi::RhiStateMaintenanceError
+pub const fn rhi::RhiStateMaintenanceError::code(self) -> &'static str
+pub const fn rhi::RhiStateMaintenanceError::kind(self) -> rhi::RhiStateMaintenanceErrorKind
+impl core::error::Error for rhi::RhiStateMaintenanceError
+impl core::fmt::Debug for rhi::RhiStateMaintenanceError
+pub fn rhi::RhiStateMaintenanceError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiStateMaintenanceError
+pub fn rhi::RhiStateMaintenanceError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiStateMetadata
+impl rhi::RhiStateMetadata
+pub const fn rhi::RhiStateMetadata::configuration_digest(&self) -> rhi::RhiNormalizedConfigDigest
+pub const fn rhi::RhiStateMetadata::database(&self) -> &radroots_service_sqlite::metadata::ServiceDatabaseMetadata
+pub fn rhi::RhiStateMetadata::database_identity(&self) -> radroots_service_sqlite::metadata::ServiceDatabaseIdentity
+pub const fn rhi::RhiStateMetadata::evidence_policy_digest(&self) -> rhi::RhiEvidencePolicyDigest
+pub const fn rhi::RhiStateMetadata::expected_identity(&self) -> &rhi::RhiExpectedPublicIdentity
+pub fn rhi::RhiStateMetadata::new(&rhi::RhiRuntimeContext, &rhi::RhiConfigDocumentV1, radroots_storage::event::SourceGeneration, u64) -> core::result::Result<Self, rhi::RhiStateMetadataError>
+pub const fn rhi::RhiStateMetadata::policy_versions(&self) -> rhi::RhiStatePolicyVersions
+impl core::fmt::Debug for rhi::RhiStateMetadata
+pub fn rhi::RhiStateMetadata::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiStateMetadataError
+impl rhi::RhiStateMetadataError
+pub const fn rhi::RhiStateMetadataError::kind(self) -> rhi::RhiStateMetadataErrorKind
+impl core::error::Error for rhi::RhiStateMetadataError
+impl core::fmt::Debug for rhi::RhiStateMetadataError
+pub fn rhi::RhiStateMetadataError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiStateMetadataError
+pub fn rhi::RhiStateMetadataError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiStatePolicyVersions
+impl rhi::RhiStatePolicyVersions
+pub const fn rhi::RhiStatePolicyVersions::admin(self) -> u32
+pub const fn rhi::RhiStatePolicyVersions::configuration(self) -> u32
+pub const fn rhi::RhiStatePolicyVersions::provider(self) -> u32
+pub const fn rhi::RhiStatePolicyVersions::state(self) -> u32
+pub const fn rhi::RhiStatePolicyVersions::status(self) -> u32
+pub struct rhi::RhiStateRepositories<'host>
+impl<'host> rhi::RhiStateRepositories<'host>
+pub const fn rhi::RhiStateRepositories<'host>::desired_presence(&self) -> rhi::RhiDesiredPresenceRepository<'host>
+pub const fn rhi::RhiStateRepositories<'host>::dirty_trades(&self) -> rhi::RhiDirtyTradeRepository<'host>
+pub const fn rhi::RhiStateRepositories<'host>::evidence_manifests(&self) -> rhi::RhiEvidenceManifestRepository<'host>
+pub const fn rhi::RhiStateRepositories<'host>::mutations(&self) -> rhi::RhiMutationRepository<'host>
+pub const fn rhi::RhiStateRepositories<'host>::projections(&self) -> rhi::RhiProjectionRepository<'host>
+pub const fn rhi::RhiStateRepositories<'host>::provenance(&self) -> rhi::RhiProvenanceRepository<'host>
+pub const fn rhi::RhiStateRepositories<'host>::publication_attempts(&self) -> rhi::RhiPublicationAttemptRepository<'host>
+pub const fn rhi::RhiStateRepositories<'host>::publication_outbox(&self) -> rhi::RhiPublicationOutboxRepository<'host>
+pub const fn rhi::RhiStateRepositories<'host>::publication_targets(&self) -> rhi::RhiPublicationTargetRepository<'host>
+pub const fn rhi::RhiStateRepositories<'host>::reconciliation_attempts(&self) -> rhi::RhiReconciliationAttemptRepository<'host>
+pub const fn rhi::RhiStateRepositories<'host>::reconciliation_jobs(&self) -> rhi::RhiReconciliationJobRepository<'host>
+pub const fn rhi::RhiStateRepositories<'host>::reports(&self) -> rhi::RhiReportRepository<'host>
+pub const fn rhi::RhiStateRepositories<'host>::signed_attestation_events(&self) -> rhi::RhiSignedAttestationEventRepository<'host>
+pub const fn rhi::RhiStateRepositories<'host>::signed_events(&self) -> rhi::RhiSignedEventRepository<'host>
+pub const fn rhi::RhiStateRepositories<'host>::source_completions(&self) -> rhi::RhiSourceCompletionRepository<'host>
+pub const fn rhi::RhiStateRepositories<'host>::source_cursors(&self) -> rhi::RhiSourceCursorRepository<'host>
+pub const fn rhi::RhiStateRepositories<'host>::sources(&self) -> rhi::RhiSourceRepository<'host>
+pub const fn rhi::RhiStateRepositories<'host>::supersessions(&self) -> rhi::RhiSupersessionRepository<'host>
+impl core::fmt::Debug for rhi::RhiStateRepositories<'_>
+pub fn rhi::RhiStateRepositories<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiStateRepositoryDescriptor
+impl rhi::RhiStateRepositoryDescriptor
+pub const fn rhi::RhiStateRepositoryDescriptor::backing_table(self) -> &'static str
+pub const fn rhi::RhiStateRepositoryDescriptor::code(self) -> &'static str
+pub const fn rhi::RhiStateRepositoryDescriptor::kind(self) -> rhi::RhiStateRepositoryKind
+pub const fn rhi::RhiStateRepositoryDescriptor::write_class(self) -> rhi::RhiStateRepositoryWriteClass
+impl core::fmt::Debug for rhi::RhiStateRepositoryDescriptor
+pub fn rhi::RhiStateRepositoryDescriptor::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiSupersessionRepository<'host>
+impl rhi::RhiSupersessionRepository<'_>
+pub const fn rhi::RhiSupersessionRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
+pub const fn rhi::RhiSupersessionRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
+impl core::fmt::Debug for rhi::RhiSupersessionRepository<'_>
+pub fn rhi::RhiSupersessionRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiVerifiedStateBackup
+impl rhi::RhiVerifiedStateBackup
+pub const fn rhi::RhiVerifiedStateBackup::database_metadata(&self) -> &radroots_service_sqlite::metadata::ServiceDatabaseMetadata
+pub const fn rhi::RhiVerifiedStateBackup::manifest(&self) -> &radroots_service_sqlite::backup::manifest::ServiceBackupManifest
+impl core::fmt::Debug for rhi::RhiVerifiedStateBackup
+pub fn rhi::RhiVerifiedStateBackup::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiWrappingCredential(_)
+impl core::fmt::Debug for rhi::RhiWrappingCredential
+pub fn rhi::RhiWrappingCredential::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::TradeAgreementAttestationError
+impl rhi::TradeAgreementAttestationError
+pub const fn rhi::TradeAgreementAttestationError::code(self) -> &'static str
+pub const fn rhi::TradeAgreementAttestationError::kind(self) -> rhi::TradeAgreementAttestationErrorKind
+impl core::fmt::Debug for rhi::TradeAgreementAttestationError
+pub fn rhi::TradeAgreementAttestationError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::TradeAgreementAttestationPolicy
+pub rhi::TradeAgreementAttestationPolicy::backend: rhi::TradeAgreementAttestationBackend
+pub rhi::TradeAgreementAttestationPolicy::expected_statement_contract_hash: core::option::Option<alloc::string::String>
+pub rhi::TradeAgreementAttestationPolicy::validator_set_addr: core::option::Option<alloc::string::String>
+pub rhi::TradeAgreementAttestationPolicy::validator_set_event_id: core::option::Option<alloc::string::String>
+impl rhi::TradeAgreementAttestationPolicy
+pub fn rhi::TradeAgreementAttestationPolicy::validate(&self) -> core::result::Result<(), rhi::TradeAgreementAttestationError>
+impl core::fmt::Debug for rhi::TradeAgreementAttestationPolicy
+pub fn rhi::TradeAgreementAttestationPolicy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::TradeAgreementAttestationReportV1
+pub rhi::TradeAgreementAttestationReportV1::attestation_id: alloc::string::String
+pub rhi::TradeAgreementAttestationReportV1::proof_identity_hash: alloc::string::String
+pub rhi::TradeAgreementAttestationReportV1::proof_system: alloc::string::String
+pub rhi::TradeAgreementAttestationReportV1::report_version: u16
+pub rhi::TradeAgreementAttestationReportV1::result: radroots_trade::trade_contract_v1::RadrootsTradeAttestationResultV1
+pub rhi::TradeAgreementAttestationReportV1::statement: rhi::TradeAgreementAttestationStatementV1
+pub rhi::TradeAgreementAttestationReportV1::statement_hash: alloc::string::String
+impl core::fmt::Debug for rhi::TradeAgreementAttestationReportV1
+pub fn rhi::TradeAgreementAttestationReportV1::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::TradeAgreementAttestationStatementV1
+pub rhi::TradeAgreementAttestationStatementV1::active_agreement_claim_ids: alloc::vec::Vec<alloc::string::String>
+pub rhi::TradeAgreementAttestationStatementV1::agreement_state: radroots_trade::trade_contract_v1::RadrootsTradeAgreementStateV1
+pub rhi::TradeAgreementAttestationStatementV1::attestation_state_before_report: radroots_trade::trade_contract_v1::RadrootsTradeAttestationStateV1
+pub rhi::TradeAgreementAttestationStatementV1::cancelled_claim_ids: alloc::vec::Vec<alloc::string::String>
+pub rhi::TradeAgreementAttestationStatementV1::claim_mutation_id: alloc::string::String
+pub rhi::TradeAgreementAttestationStatementV1::contested_claim_ids: alloc::vec::Vec<alloc::string::String>
+pub rhi::TradeAgreementAttestationStatementV1::evidence_state: radroots_trade::trade_contract_v1::RadrootsTradeEvidenceStateV1
+pub rhi::TradeAgreementAttestationStatementV1::projection_digest: alloc::string::String
+pub rhi::TradeAgreementAttestationStatementV1::protocol_id: alloc::string::String
+pub rhi::TradeAgreementAttestationStatementV1::reducer_contract_id: alloc::string::String
+pub rhi::TradeAgreementAttestationStatementV1::reducer_version: u16
+pub rhi::TradeAgreementAttestationStatementV1::schema_version: u16
+pub rhi::TradeAgreementAttestationStatementV1::trade_id: alloc::string::String
+pub rhi::TradeAgreementAttestationStatementV1::validator_set: core::option::Option<rhi::TradeAgreementAttestationValidatorSetBinding>
+impl core::fmt::Debug for rhi::TradeAgreementAttestationStatementV1
+pub fn rhi::TradeAgreementAttestationStatementV1::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::TradeAgreementAttestationValidatorSetBinding
+pub rhi::TradeAgreementAttestationValidatorSetBinding::validator_set_addr: alloc::string::String
+pub rhi::TradeAgreementAttestationValidatorSetBinding::validator_set_event_id: alloc::string::String
+impl core::fmt::Debug for rhi::TradeAgreementAttestationValidatorSetBinding
+pub fn rhi::TradeAgreementAttestationValidatorSetBinding::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub const rhi::RHI_ADMIN_CONTRACT_VERSION: u32
+pub const rhi::RHI_AGREEMENT_ATTESTATION_PROOF_SYSTEM_LOCAL_STATEMENT_HASH: &str
+pub const rhi::RHI_AGREEMENT_ATTESTATION_PROTOCOL_ID: &str
+pub const rhi::RHI_AGREEMENT_ATTESTATION_REPORT_VERSION: u16
+pub const rhi::RHI_CONFIG_DOCUMENT_MAX_UTF8_BYTES: usize
+pub const rhi::RHI_CONFIG_EFFECTIVE_MAX_UTF8_BYTES: usize
+pub const rhi::RHI_CONFIG_SCHEMA: &str
+pub const rhi::RHI_CONFIG_SCHEMA_VERSION: u32
+pub const rhi::RHI_ENCRYPTED_IDENTITY_BACKUP_INCLUDED: bool
+pub const rhi::RHI_ENCRYPTED_IDENTITY_ENVELOPE_CONTRACT_VERSION: u32
+pub const rhi::RHI_ENCRYPTED_IDENTITY_ENVELOPE_MAX_BYTES: usize
+pub const rhi::RHI_MIGRATION_CATALOG_SHA256: [u8; 32]
+pub const rhi::RHI_PROVIDER_CONTRACT_VERSION: u32
+pub const rhi::RHI_STATE_APPLICATION_ID: u32
+pub const rhi::RHI_STATE_REPOSITORY_CONTRACT_VERSION: u32
+pub const rhi::RHI_STATE_REPOSITORY_COUNT: usize
+pub const rhi::RHI_STATE_SCHEMA_CATALOG_SHA256: [u8; 32]
+pub const rhi::RHI_STATE_SCHEMA_VERSION: u32
+pub const rhi::RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT: u32
+pub const rhi::RHI_STATE_SCHEMA_VERSION_1_SHA256: [u8; 32]
+pub const rhi::RHI_STATUS_CONTRACT_VERSION: u32
+pub const rhi::RHI_WRAPPING_CREDENTIAL_ARTIFACT_BYTES: usize
+pub const rhi::RHI_WRAPPING_CREDENTIAL_CONTRACT_VERSION: u32
+pub fn rhi::attest_projection_claim(&radroots_trade::trade_contract_v1::RadrootsTradeProjectionV1, &radroots_event::id::MutationId, &rhi::TradeAgreementAttestationPolicy) -> core::result::Result<rhi::TradeAgreementAttestationReportV1, rhi::TradeAgreementAttestationError>
+pub async fn rhi::finalize_rhi_state_restore(rhi::RhiStagedStateRestore) -> core::result::Result<(), rhi::RhiStateMaintenanceError>
+pub async fn rhi::initialize_rhi_state(&rhi::RhiRuntimeContext, &rhi::RhiStateMetadata, radroots_service_sqlite::migration::MigrationAppliedAtUnixSeconds, &radroots_service_sqlite::migration::MigrationBuildIdentity) -> core::result::Result<(), rhi::RhiStateHostError>
+pub fn rhi::open_rhi_encrypted_identity(&rhi::RhiIdentityEnvelopeBinding, &rhi::RhiWrappingCredential) -> core::result::Result<rhi::RhiDecryptedIdentity, rhi::RhiEncryptedIdentityEnvelopeError>
+pub async fn rhi::open_rhi_state_inspection(&rhi::RhiRuntimeContext, &rhi::RhiStateMetadata) -> core::result::Result<rhi::RhiStateHost, rhi::RhiStateHostError>
+pub async fn rhi::open_rhi_state_read_write(&rhi::RhiRuntimeContext, &rhi::RhiStateMetadata, radroots_service_sqlite::migration::MigrationAppliedAtUnixSeconds, &radroots_service_sqlite::migration::MigrationBuildIdentity) -> core::result::Result<rhi::RhiStateHost, rhi::RhiStateHostError>
+pub fn rhi::parse_rhi_cli_v1_from<I, T>(I) -> core::result::Result<rhi::RhiCliInvocationV1, rhi::RhiCliV1Error> where I: core::iter::traits::collect::IntoIterator<Item = T>, T: core::convert::Into<std::ffi::os_str::OsString> + core::clone::Clone
+pub fn rhi::parse_rhi_config_v1(&[u8], rhi::RhiConfigProfile) -> core::result::Result<rhi::RhiConfigDocumentV1, rhi::RhiConfigV1Error>
+pub fn rhi::provision_rhi_encrypted_identity(&rhi::RhiIdentityEnvelopeBinding, &rhi::RhiWrappingCredential, rhi::RhiEncryptedIdentityProvisioningMaterial) -> core::result::Result<rhi::RhiDecryptedIdentity, rhi::RhiEncryptedIdentityEnvelopeError>
+pub fn rhi::resolve_rhi_runtime_context(&radroots_runtime_paths::roots::RadrootsPathResolver, &rhi::RhiCliInvocationV1) -> core::result::Result<rhi::RhiRuntimeContext, rhi::RhiRuntimeContextError>
+pub fn rhi::resolve_rhi_wrapping_credential(&rhi::RhiRuntimeContext, &rhi::RhiIdentityEnvelopeBinding) -> core::result::Result<rhi::RhiWrappingCredential, rhi::RhiCredentialResolutionError>
+pub fn rhi::rhi_migration_catalog() -> core::result::Result<radroots_service_sqlite::migration::MigrationCatalog, rhi::RhiStateCatalogError>
+pub fn rhi::rhi_schema_catalog() -> core::result::Result<radroots_service_sqlite::integrity::catalog::SchemaCatalog, rhi::RhiStateCatalogError>
+pub const fn rhi::rhi_state_repository_descriptors() -> &'static [rhi::RhiStateRepositoryDescriptor; 18]
+pub async fn rhi::stage_rhi_state_restore(&rhi::RhiRuntimeContext, &rhi::RhiStateMetadata, rhi::RhiVerifiedStateBackup) -> core::result::Result<rhi::RhiStagedStateRestore, rhi::RhiStateMaintenanceError>
+pub fn rhi::trade_mutation_subscription_kinds() -> alloc::vec::Vec<u32>
+pub fn rhi::validate_rhi_state_catalogs(&radroots_service_sqlite::migration::MigrationCatalog, &radroots_service_sqlite::integrity::catalog::SchemaCatalog) -> core::result::Result<(), rhi::RhiStateCatalogError>
+pub fn rhi::verify_rhi_state_backup(&[u8], radroots_service_sqlite::backup::manifest::BackupManifestSha256, &std::path::Path, &rhi::RhiStateMetadata, core::num::nonzero::NonZeroU64) -> core::result::Result<rhi::RhiVerifiedStateBackup, rhi::RhiStateMaintenanceError>

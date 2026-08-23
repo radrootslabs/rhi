@@ -33,7 +33,7 @@ impl TradeAgreementAttestationBackend {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TradeAgreementAttestationPolicy {
     #[serde(default)]
@@ -46,6 +46,12 @@ pub struct TradeAgreementAttestationPolicy {
     pub expected_statement_contract_hash: Option<String>,
 }
 
+impl core::fmt::Debug for TradeAgreementAttestationPolicy {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str("TradeAgreementAttestationPolicy([redacted])")
+    }
+}
+
 impl TradeAgreementAttestationPolicy {
     pub fn validate(&self) -> Result<(), TradeAgreementAttestationError> {
         validate_optional_hash32(&self.expected_statement_contract_hash)?;
@@ -55,21 +61,20 @@ impl TradeAgreementAttestationPolicy {
         ) {
             (Some(addr), Some(event_id)) => {
                 AddressableCoordinate::parse(addr).map_err(|_| {
-                    TradeAgreementAttestationError::InvalidValidatorSetBinding("validator_set_addr")
+                    TradeAgreementAttestationError::new(
+                        TradeAgreementAttestationErrorKind::InvalidValidatorSetBinding,
+                    )
                 })?;
                 EventId::parse(event_id).map_err(|_| {
-                    TradeAgreementAttestationError::InvalidValidatorSetBinding(
-                        "validator_set_event_id",
+                    TradeAgreementAttestationError::new(
+                        TradeAgreementAttestationErrorKind::InvalidValidatorSetBinding,
                     )
                 })?;
                 Ok(())
             }
             (None, None) => Ok(()),
-            (Some(_), None) => Err(TradeAgreementAttestationError::MissingValidatorSetBinding(
-                "validator_set_event_id",
-            )),
-            (None, Some(_)) => Err(TradeAgreementAttestationError::MissingValidatorSetBinding(
-                "validator_set_addr",
+            (Some(_), None) | (None, Some(_)) => Err(TradeAgreementAttestationError::new(
+                TradeAgreementAttestationErrorKind::MissingValidatorSetBinding,
             )),
         }
     }
@@ -94,14 +99,20 @@ impl TradeAgreementAttestationPolicy {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TradeAgreementAttestationValidatorSetBinding {
     pub validator_set_addr: String,
     pub validator_set_event_id: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+impl core::fmt::Debug for TradeAgreementAttestationValidatorSetBinding {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str("TradeAgreementAttestationValidatorSetBinding([redacted])")
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TradeAgreementAttestationStatementV1 {
     pub protocol_id: String,
@@ -121,7 +132,13 @@ pub struct TradeAgreementAttestationStatementV1 {
     pub validator_set: Option<TradeAgreementAttestationValidatorSetBinding>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+impl core::fmt::Debug for TradeAgreementAttestationStatementV1 {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str("TradeAgreementAttestationStatementV1([redacted])")
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TradeAgreementAttestationReportV1 {
     pub report_version: u16,
@@ -133,20 +150,78 @@ pub struct TradeAgreementAttestationReportV1 {
     pub proof_identity_hash: String,
 }
 
-#[derive(Debug, Error)]
-pub enum TradeAgreementAttestationError {
-    #[error("agreement claim is missing")]
+impl core::fmt::Debug for TradeAgreementAttestationReportV1 {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str("TradeAgreementAttestationReportV1([redacted])")
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TradeAgreementAttestationErrorKind {
     MissingAgreementClaim,
-    #[error("attestation policy is missing {0}")]
-    MissingValidatorSetBinding(&'static str),
-    #[error("attestation policy has invalid {0}")]
-    InvalidValidatorSetBinding(&'static str),
-    #[error("invalid configured hash field")]
+    MissingValidatorSetBinding,
+    InvalidValidatorSetBinding,
     InvalidHashField,
-    #[error("trade protocol error: {0}")]
-    TradeProtocol(#[from] radroots_event::trade::TradeProtocolError),
-    #[error("serde error: {0}")]
-    Serde(#[from] serde_json::Error),
+    TradeProtocol,
+    Encoding,
+}
+
+impl TradeAgreementAttestationErrorKind {
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::MissingAgreementClaim => "agreement_claim_missing",
+            Self::MissingValidatorSetBinding => "validator_set_binding_missing",
+            Self::InvalidValidatorSetBinding => "validator_set_binding_invalid",
+            Self::InvalidHashField => "configured_hash_invalid",
+            Self::TradeProtocol => "trade_protocol_invalid",
+            Self::Encoding => "attestation_encoding_failed",
+        }
+    }
+}
+
+impl core::fmt::Display for TradeAgreementAttestationErrorKind {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str(match self {
+            Self::MissingAgreementClaim => "agreement claim is missing",
+            Self::MissingValidatorSetBinding => "attestation policy is incomplete",
+            Self::InvalidValidatorSetBinding => "attestation policy is invalid",
+            Self::InvalidHashField => "configured hash field is invalid",
+            Self::TradeProtocol => "trade protocol input is invalid",
+            Self::Encoding => "attestation encoding failed",
+        })
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Error)]
+#[error("{kind}")]
+pub struct TradeAgreementAttestationError {
+    kind: TradeAgreementAttestationErrorKind,
+}
+
+impl TradeAgreementAttestationError {
+    const fn new(kind: TradeAgreementAttestationErrorKind) -> Self {
+        Self { kind }
+    }
+
+    #[must_use]
+    pub const fn kind(self) -> TradeAgreementAttestationErrorKind {
+        self.kind
+    }
+
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        self.kind.code()
+    }
+}
+
+impl core::fmt::Debug for TradeAgreementAttestationError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("TradeAgreementAttestationError")
+            .field("kind", &self.kind)
+            .finish()
+    }
 }
 
 pub fn attest_projection_claim(
@@ -160,7 +235,9 @@ pub fn attest_projection_claim(
         .iter()
         .any(|claim| claim.claim_mutation_id() == claim_mutation_id)
     {
-        return Err(TradeAgreementAttestationError::MissingAgreementClaim);
+        return Err(TradeAgreementAttestationError::new(
+            TradeAgreementAttestationErrorKind::MissingAgreementClaim,
+        ));
     }
     let statement = TradeAgreementAttestationStatementV1 {
         protocol_id: RHI_AGREEMENT_ATTESTATION_PROTOCOL_ID.to_owned(),
@@ -248,7 +325,9 @@ fn validate_optional_hash32(value: &Option<String>) -> Result<(), TradeAgreement
 fn validate_hash32(value: &str) -> Result<(), TradeAgreementAttestationError> {
     let stripped = value.strip_prefix("0x").unwrap_or(value);
     if stripped.len() != 64 || !stripped.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(TradeAgreementAttestationError::InvalidHashField);
+        return Err(TradeAgreementAttestationError::new(
+            TradeAgreementAttestationErrorKind::InvalidHashField,
+        ));
     }
     Ok(())
 }
@@ -257,10 +336,92 @@ fn hash_canonical_value(
     domain: &[u8],
     value: &impl Serialize,
 ) -> Result<String, TradeAgreementAttestationError> {
-    let value = serde_json::to_value(value)?;
-    let canonical = canonical_jcs_value(&value)?;
+    let value = serde_json::to_value(value).map_err(|_| {
+        TradeAgreementAttestationError::new(TradeAgreementAttestationErrorKind::Encoding)
+    })?;
+    let canonical = canonical_jcs_value(&value).map_err(|_| {
+        TradeAgreementAttestationError::new(TradeAgreementAttestationErrorKind::TradeProtocol)
+    })?;
     let mut hasher = Sha256::new();
     hasher.update(domain);
     hasher.update(canonical.as_bytes());
     Ok(format!("{:x}", hasher.finalize()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn public_failures_are_closed_source_free_and_redacted() {
+        for kind in [
+            TradeAgreementAttestationErrorKind::MissingAgreementClaim,
+            TradeAgreementAttestationErrorKind::MissingValidatorSetBinding,
+            TradeAgreementAttestationErrorKind::InvalidValidatorSetBinding,
+            TradeAgreementAttestationErrorKind::InvalidHashField,
+            TradeAgreementAttestationErrorKind::TradeProtocol,
+            TradeAgreementAttestationErrorKind::Encoding,
+        ] {
+            let error = TradeAgreementAttestationError::new(kind);
+            assert_eq!(error.kind(), kind);
+            assert!(!error.code().is_empty());
+            assert!(std::error::Error::source(&error).is_none());
+            let rendered = format!("{error} {error:?}");
+            for forbidden in [
+                "validator_set_addr",
+                "validator_set_event_id",
+                "serde_json",
+                "TradeProtocolError",
+                "/tmp/",
+            ] {
+                assert!(!rendered.contains(forbidden));
+            }
+        }
+    }
+
+    #[test]
+    fn policy_failures_discard_field_values_and_dependency_causes() {
+        let missing_policy = TradeAgreementAttestationPolicy {
+            validator_set_addr: Some("secret:coordinate".to_owned()),
+            ..TradeAgreementAttestationPolicy::default()
+        };
+        assert_eq!(
+            format!("{missing_policy:?}"),
+            "TradeAgreementAttestationPolicy([redacted])"
+        );
+        let missing = missing_policy.validate().expect_err("partial binding");
+        assert_eq!(
+            missing.kind(),
+            TradeAgreementAttestationErrorKind::MissingValidatorSetBinding
+        );
+
+        let invalid = TradeAgreementAttestationPolicy {
+            validator_set_addr: Some("secret:coordinate".to_owned()),
+            validator_set_event_id: Some("secret:event".to_owned()),
+            ..TradeAgreementAttestationPolicy::default()
+        }
+        .validate()
+        .expect_err("invalid binding");
+        assert_eq!(
+            invalid.kind(),
+            TradeAgreementAttestationErrorKind::InvalidValidatorSetBinding
+        );
+
+        let hash = TradeAgreementAttestationPolicy {
+            expected_statement_contract_hash: Some("secret:hash".to_owned()),
+            ..TradeAgreementAttestationPolicy::default()
+        }
+        .validate()
+        .expect_err("invalid hash");
+        assert_eq!(
+            hash.kind(),
+            TradeAgreementAttestationErrorKind::InvalidHashField
+        );
+
+        let rendered = format!("{missing:?} {invalid:?} {hash:?}");
+        assert!(!rendered.contains("secret"));
+        assert!(!rendered.contains("coordinate"));
+        assert!(!rendered.contains("event"));
+        assert!(!rendered.contains("hash"));
+    }
 }

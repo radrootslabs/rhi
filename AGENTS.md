@@ -277,6 +277,11 @@
 - Prefer pure transformations, explicit state machines, validated newtypes,
   tagged serialized enums, narrow side-effect boundaries, and private or
   `pub(crate)` visibility.
+- Keep every implementation module private and expose intended library names
+  only through the curated crate root. Regenerate and byte-compare
+  `contracts/api_baselines/rhi.txt` whenever that public surface changes.
+- Public errors must use RHI-owned stable classifications with redacted
+  Display and Debug output and no raw dependency-owned source chain.
 - Use `thiserror` for library/domain errors and `anyhow` only at binary, xtask,
   or one-shot composition boundaries. Avoid production `unwrap`/`expect` and
   environment-dependent `Default`; ordinary `Debug` must never expose secrets.

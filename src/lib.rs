@@ -1,9 +1,11 @@
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+#![forbid(unsafe_code)]
+#![doc = include_str!("../README")]
 
-pub mod adapters;
+mod adapters;
 mod cli_v1;
 mod config_v1;
-pub mod features;
+mod features;
 mod identity_credential;
 mod identity_envelope;
 mod runtime_context;
@@ -13,6 +15,7 @@ mod state_maintenance;
 mod state_metadata;
 mod state_repository;
 
+pub use adapters::nostr::event::NostrEventAdapter;
 pub use cli_v1::{
     RhiBootstrapProfileV1, RhiCliInvocationV1, RhiCliOutputModeV1, RhiCliV1Error,
     RhiCliV1ErrorKind, RhiCommandV1, RhiConfigCommandV1, RhiIdentityCommandV1, RhiMetricsCommandV1,
@@ -24,6 +27,15 @@ pub use config_v1::{
     RHI_CONFIG_SCHEMA_VERSION, RhiConfigDefaultAuthority, RhiConfigDocumentV1, RhiConfigProfile,
     RhiConfigV1Error, RhiConfigV1ErrorKind, RhiConfigValueSource, RhiEffectiveConfigV1,
     RhiRuntimeThreadLimitsV1, parse_rhi_config_v1,
+};
+pub use features::trade_agreement_attestation::{
+    RHI_AGREEMENT_ATTESTATION_PROOF_SYSTEM_LOCAL_STATEMENT_HASH,
+    RHI_AGREEMENT_ATTESTATION_PROTOCOL_ID, RHI_AGREEMENT_ATTESTATION_REPORT_VERSION,
+    TradeAgreementAttestationBackend, TradeAgreementAttestationError,
+    TradeAgreementAttestationErrorKind, TradeAgreementAttestationPolicy,
+    TradeAgreementAttestationReportV1, TradeAgreementAttestationStatementV1,
+    TradeAgreementAttestationValidatorSetBinding, attest_projection_claim,
+    trade_mutation_subscription_kinds,
 };
 pub use identity_credential::{
     RHI_WRAPPING_CREDENTIAL_ARTIFACT_BYTES, RHI_WRAPPING_CREDENTIAL_CONTRACT_VERSION,

@@ -1,11 +1,19 @@
+use core::fmt;
+
 use nostr::{Event, Kind};
 use radroots_event_codec::decode::job::{JobEventBorrow, JobEventLike};
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct NostrEventAdapter<'a> {
     evt: &'a Event,
     id_hex: String,
     author_hex: String,
+}
+
+impl fmt::Debug for NostrEventAdapter<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("NostrEventAdapter([redacted])")
+    }
 }
 
 impl<'a> NostrEventAdapter<'a> {
@@ -100,6 +108,7 @@ mod tests {
         let tags = vec![Tag::custom(TagKind::p(), vec![recipient_hex.clone()])];
         let event = build_event(&keys, Kind::Custom(5322), tags);
         let adapter = NostrEventAdapter::new(&event);
+        assert_eq!(format!("{adapter:?}"), "NostrEventAdapter([redacted])");
 
         assert_eq!(JobEventBorrow::raw_id(&adapter), event.id.to_hex());
         assert_eq!(

@@ -1,1 +1,1 @@
-pub mod nostr;
+pub(crate) mod nostr;
