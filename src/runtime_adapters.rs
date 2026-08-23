@@ -412,6 +412,15 @@ impl RhiRuntimeAdapters {
         self.supervisor.task_count()
     }
 
+    pub(crate) async fn shutdown(&mut self) -> Result<(), ()> {
+        self.supervisor.request_cancellation();
+        self.supervisor
+            .supervise()
+            .await
+            .map(|_| ())
+            .map_err(|_| ())
+    }
+
     #[cfg(test)]
     pub(crate) fn supervisor_mut(&mut self) -> &mut TaskSupervisor {
         &mut self.supervisor

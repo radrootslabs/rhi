@@ -7,16 +7,19 @@ use std::{
 };
 
 use radroots_service_sqlite::{
-    BackupCreatedAtUnixMs, IntegrityCheckedAtUnixMs, MigrationAppliedAtUnixSeconds,
-    MigrationBuildIdentity, OpenMode, ServiceBackupManifest, ServiceSqliteConnectionOptions,
-    ServiceSqliteHost, ServiceSqliteIntegrityReport, ServiceSqlitePaths, initialize_database,
+    BackupCreatedAtUnixMs, ExistingServiceDatabaseIntent, IntegrityCheckedAtUnixMs,
+    MigrationAppliedAtUnixSeconds, MigrationBuildIdentity, OpenMode, ServiceBackupManifest,
+    ServiceSqliteApplicationId, ServiceSqliteConnectionOptions, ServiceSqliteHost,
+    ServiceSqliteIntegrityReport, ServiceSqlitePaths, initialize_database,
 };
 use sqlx::{ConnectOptions, Connection, SqliteConnection, sqlite::SqliteConnectOptions};
 
 use crate::{
-    RHI_STATE_SCHEMA_VERSION, RhiRuntimeContext, RhiStateMaintenanceError,
-    RhiStateMaintenanceErrorKind, RhiStateMetadata, RhiStateRepositories, rhi_migration_catalog,
-    rhi_schema_catalog, validate_rhi_state_catalogs,
+    RHI_STATE_APPLICATION_ID, RHI_STATE_BASE_SCHEMA_VERSION, RHI_STATE_SCHEMA_VERSION,
+    RhiConfigApplyError, RhiConfigApplyErrorKind, RhiConfigApplyOutcome, RhiConfigDocumentV1,
+    RhiRuntimeContext, RhiStateMaintenanceError, RhiStateMaintenanceErrorKind, RhiStateMetadata,
+    RhiStateRepositories, rhi_migration_catalog, rhi_schema_catalog, state_config,
+    validate_rhi_state_catalogs,
 };
 
 /// Stable lifecycle mode of one opened RHI state host.
@@ -132,6 +135,9 @@ pub struct RhiStateHost {
 }
 
 impl RhiStateHost {
+    pub(crate) const fn sqlite_host(&self) -> &ServiceSqliteHost {
+        &self.host
+    }
     /// Returns the lifecycle mode selected when this host was opened.
     #[must_use]
     pub const fn mode(&self) -> RhiStateHostMode {
@@ -219,7 +225,7 @@ pub async fn initialize_rhi_state(
     let authority = initialize_database(
         &paths,
         OpenMode::Initialize,
-        metadata.database(),
+        metadata.initial_database_metadata(),
         &schema,
         initialize_empty_catalog,
     )
@@ -242,7 +248,19 @@ pub async fn initialize_rhi_state(
     if !exact_migration_outcome(outcome) {
         return Err(close_error(&host, RhiStateHostErrorKind::Catalog).await);
     }
-    host.close()
+    let state = RhiStateHost {
+        host,
+        mode: RhiStateHostMode::ReadWriteExisting,
+        metadata: metadata.clone(),
+    };
+    if state_config::bind_or_verify(&state, metadata, applied_at, build)
+        .await
+        .is_err()
+    {
+        return Err(close_error(&state.host, RhiStateHostErrorKind::Initialize).await);
+    }
+    state
+        .close()
         .await
         .map_err(|_| RhiStateHostError::new(RhiStateHostErrorKind::Initialize))
 }
@@ -250,8 +268,8 @@ pub async fn initialize_rhi_state(
 /// Opens an already initialized RHI catalog with exclusive writer authority.
 ///
 /// Missing state is never created. Migration time and build identity remain
-/// explicit injected evidence even while the baseline migration catalog is
-/// empty.
+/// explicit injected evidence for every governed migration or exact-current
+/// reopen.
 pub async fn open_rhi_state_read_write(
     runtime: &RhiRuntimeContext,
     metadata: &RhiStateMetadata,
@@ -278,11 +296,125 @@ pub async fn open_rhi_state_read_write(
     if !exact_migration_outcome(outcome) {
         return Err(close_error(&host, RhiStateHostErrorKind::Catalog).await);
     }
-    Ok(RhiStateHost {
+    let state = RhiStateHost {
         host,
         mode: RhiStateHostMode::ReadWriteExisting,
         metadata: metadata.clone(),
-    })
+    };
+    if state_config::bind_or_verify(&state, metadata, applied_at, build)
+        .await
+        .is_err()
+    {
+        return Err(close_error(&state.host, RhiStateHostErrorKind::InvalidEvidence).await);
+    }
+    Ok(state)
+}
+
+/// Opens existing RHI state from configuration intent and discovers source identity.
+///
+/// Missing state is never created. Source generation and database creation time
+/// are read under the same retained writer authority returned in the host.
+pub async fn open_rhi_state_read_write_from_config(
+    runtime: &RhiRuntimeContext,
+    configuration: &RhiConfigDocumentV1,
+    applied_at: MigrationAppliedAtUnixSeconds,
+    build: &MigrationBuildIdentity,
+) -> Result<RhiStateHost, RhiStateHostError> {
+    let paths = state_paths(runtime)?;
+    let intent = existing_intent(&paths)?;
+    let (migrations, schema) = catalogs()?;
+    let (opened, outcome) = ServiceSqliteHost::open_read_write_existing_with_intent(
+        &paths,
+        &intent,
+        &migrations,
+        &schema,
+        ServiceSqliteConnectionOptions::reviewed(),
+        applied_at,
+        build,
+        &[],
+    )
+    .await
+    .map_err(|_| RhiStateHostError::new(RhiStateHostErrorKind::ReadWriteOpen))?;
+    if !exact_migration_outcome(outcome) {
+        let (host, _) = opened.into_parts();
+        return Err(close_error(&host, RhiStateHostErrorKind::Catalog).await);
+    }
+    let (host, actual) = opened.into_parts();
+    let metadata = match RhiStateMetadata::from_existing_database(runtime, configuration, &actual) {
+        Ok(metadata) => metadata,
+        Err(_) => {
+            return Err(close_error(&host, RhiStateHostErrorKind::InvalidEvidence).await);
+        }
+    };
+    if require_migration_build(&metadata, build).is_err() {
+        return Err(close_error(&host, RhiStateHostErrorKind::InvalidEvidence).await);
+    }
+    let state = RhiStateHost {
+        host,
+        mode: RhiStateHostMode::ReadWriteExisting,
+        metadata,
+    };
+    if state_config::bind_or_verify(&state, state.metadata(), applied_at, build)
+        .await
+        .is_err()
+    {
+        return Err(close_error(&state.host, RhiStateHostErrorKind::InvalidEvidence).await);
+    }
+    Ok(state)
+}
+
+/// Applies one admitted RHI configuration while the service is offline.
+///
+/// The function obtains exclusive writer authority, verifies the current
+/// durable binding, appends only bounded digest/public-identity/build evidence,
+/// and explicitly closes state before returning. It never stores raw TOML,
+/// paths, URLs, credential references, or protected identity material.
+pub async fn apply_rhi_configuration(
+    runtime: &RhiRuntimeContext,
+    current: &RhiConfigDocumentV1,
+    candidate: &RhiConfigDocumentV1,
+    applied_at: MigrationAppliedAtUnixSeconds,
+    build: &MigrationBuildIdentity,
+) -> Result<RhiConfigApplyOutcome, RhiConfigApplyError> {
+    let state = open_rhi_state_read_write_from_config(runtime, current, applied_at, build)
+        .await
+        .map_err(|_| RhiConfigApplyError::new(RhiConfigApplyErrorKind::Binding))?;
+    let candidate_metadata = match state_config::metadata_for_configuration(
+        runtime,
+        candidate,
+        state.metadata().initial_database_metadata(),
+    ) {
+        Ok(metadata) => metadata,
+        Err(error) => return Err(close_apply_error(&state, error.kind()).await),
+    };
+    if require_migration_build(&candidate_metadata, build).is_err() {
+        return Err(close_apply_error(&state, RhiConfigApplyErrorKind::InvalidInput).await);
+    }
+    let outcome = state_config::append_configuration(
+        &state,
+        state.metadata(),
+        &candidate_metadata,
+        applied_at,
+        build,
+    )
+    .await;
+    let closed = state.close().await;
+    if closed.is_err() {
+        Err(RhiConfigApplyError::new(RhiConfigApplyErrorKind::Close))
+    } else {
+        outcome
+    }
+}
+
+async fn close_apply_error(
+    state: &RhiStateHost,
+    fallback: RhiConfigApplyErrorKind,
+) -> RhiConfigApplyError {
+    if state.close().await.is_err() {
+        RhiConfigApplyError::new(RhiConfigApplyErrorKind::Close)
+    } else {
+        RhiConfigApplyError::new(fallback)
+    }
 }
 
 /// Opens an already initialized RHI catalog for immutable inspection.
@@ -303,11 +435,18 @@ pub async fn open_rhi_state_inspection(
     )
     .await
     .map_err(|_| RhiStateHostError::new(RhiStateHostErrorKind::InspectionOpen))?;
-    Ok(RhiStateHost {
+    let state = RhiStateHost {
         host,
         mode: RhiStateHostMode::ReadOnlyInspection,
         metadata: metadata.clone(),
-    })
+    };
+    if state_config::verify_binding(&state, metadata)
+        .await
+        .is_err()
+    {
+        return Err(close_error(&state.host, RhiStateHostErrorKind::InvalidEvidence).await);
+    }
+    Ok(state)
 }
 
 pub(crate) fn state_paths(
@@ -325,7 +464,12 @@ pub(crate) fn require_metadata(
     let matches = metadata.matches_runtime(runtime)
         && database.service() == runtime.context().service()
         && database.instance() == runtime.context().instance()
-        && database.state_schema_version().get() == RHI_STATE_SCHEMA_VERSION;
+        && database.state_schema_version().get() == RHI_STATE_BASE_SCHEMA_VERSION
+        && metadata
+            .database_identity()
+            .supported_state_schema_version()
+            .get()
+            == RHI_STATE_SCHEMA_VERSION;
     matches
         .then_some(())
         .ok_or_else(|| RhiStateHostError::new(RhiStateHostErrorKind::InvalidEvidence))
@@ -347,9 +491,23 @@ fn require_migration_build(
 }
 
 fn exact_migration_outcome(outcome: radroots_service_sqlite::MigrationApplicationOutcome) -> bool {
-    outcome.initial_version() == RHI_STATE_SCHEMA_VERSION
+    (RHI_STATE_BASE_SCHEMA_VERSION..=RHI_STATE_SCHEMA_VERSION).contains(&outcome.initial_version())
         && outcome.final_version() == RHI_STATE_SCHEMA_VERSION
-        && outcome.applied_count() == 0
+        && outcome.applied_count() == RHI_STATE_SCHEMA_VERSION - outcome.initial_version()
+}
+
+fn existing_intent(
+    paths: &ServiceSqlitePaths,
+) -> Result<ExistingServiceDatabaseIntent, RhiStateHostError> {
+    let version = core::num::NonZeroU32::new(RHI_STATE_SCHEMA_VERSION)
+        .ok_or_else(|| RhiStateHostError::new(RhiStateHostErrorKind::Catalog))?;
+    let application = ServiceSqliteApplicationId::new(RHI_STATE_APPLICATION_ID)
+        .map_err(|_| RhiStateHostError::new(RhiStateHostErrorKind::Catalog))?;
+    Ok(ExistingServiceDatabaseIntent::new(
+        paths,
+        version,
+        application,
+    ))
 }
 
 async fn close_error(

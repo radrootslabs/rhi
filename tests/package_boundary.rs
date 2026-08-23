@@ -10,6 +10,9 @@ const FEATURES: &str = include_str!("../src/features/mod.rs");
 const RUNTIME_ADAPTERS: &str = include_str!("../src/runtime_adapters.rs");
 const RUNTIME_ADAPTER_CONTRACT: &str =
     include_str!("../contracts/services_hardening/runtime_adapters.v1.json");
+const RUNTIME_FOUNDATION: &str = include_str!("../src/runtime_foundation.rs");
+const RUNTIME_FOUNDATION_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/runtime_foundation.v1.json");
 const PUBLIC_API: &str = include_str!("../contracts/api_baselines/rhi.txt");
 const SOURCES: &[&str] = &[
     include_str!("../src/adapters/nostr/event.rs"),
@@ -20,7 +23,9 @@ const SOURCES: &[&str] = &[
     include_str!("../src/identity_envelope.rs"),
     include_str!("../src/runtime_context.rs"),
     include_str!("../src/runtime_adapters.rs"),
+    include_str!("../src/runtime_foundation.rs"),
     include_str!("../src/state_catalog.rs"),
+    include_str!("../src/state_config.rs"),
     include_str!("../src/state_host.rs"),
     include_str!("../src/state_maintenance.rs"),
     include_str!("../src/state_metadata.rs"),
@@ -81,7 +86,9 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "identity_envelope",
         "runtime_context",
         "runtime_adapters",
+        "runtime_foundation",
         "state_catalog",
+        "state_config",
         "state_host",
         "state_maintenance",
         "state_metadata",
@@ -113,6 +120,11 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "RhiTransportAdapters",
         "RhiCredentialAccess",
         "RhiIdentityAccess",
+        "RhiRuntimeFoundation",
+        "RhiRuntimeReadiness",
+        "open_rhi_runtime_foundation",
+        "apply_rhi_configuration",
+        "RhiConfigApplyOutcome",
         "WallClock",
         "MonotonicClock",
         "EntropySource",
@@ -170,7 +182,42 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .lines()
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
-    assert_eq!(public_error_count, 11);
+    assert_eq!(public_error_count, 13);
+}
+
+#[test]
+fn runtime_foundation_is_existing_only_passive_and_process_neutral() {
+    let contract: serde_json::Value =
+        serde_json::from_str(RUNTIME_FOUNDATION_CONTRACT).expect("runtime foundation contract");
+    assert_eq!(contract["schema"], "radroots.rhi.runtime-foundation");
+    assert_eq!(contract["schema_version"], 1);
+    assert_eq!(contract["state_open"]["initialize_if_missing"], false);
+    assert_eq!(
+        contract["state_open"]["durable_configuration_binding_required"],
+        true
+    );
+    assert_eq!(contract["transport"]["invoked_during_foundation"], false);
+    assert_eq!(contract["task_ownership"]["task_handles_exposed"], false);
+    for required in [
+        "open_rhi_state_read_write_from_config",
+        "RhiIdentityEnvelopeBinding::from_configuration",
+        ".identity_credential()",
+        "startup_readiness(&configuration)",
+    ] {
+        assert!(RUNTIME_FOUNDATION.contains(required));
+    }
+    for forbidden in [
+        "tokio::runtime",
+        "tokio::signal",
+        "signal_hook",
+        "tracing_subscriber",
+        "std::process::exit",
+        ".fetch(",
+        ".subscribe(",
+        ".deliver(",
+    ] {
+        assert!(!RUNTIME_FOUNDATION.contains(forbidden));
+    }
 }
 
 #[test]
@@ -259,6 +306,12 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "Constructing the adapter set performs no clock read",
         "no signal handler, Tokio runtime, logger, or process-exit policy",
         "[`runtime_adapters.v1.json`](contracts/services_hardening/runtime_adapters.v1.json)",
+        "## Existing-state runtime foundation",
+        "opens only an already initialized database",
+        "No evidence source, live subscription, or publication sink is",
+        "[`runtime_foundation.v1.json`](contracts/services_hardening/runtime_foundation.v1.json)",
+        "at most 1,024 consecutive generations",
+        "never stores raw TOML, paths, relay URLs, credential",
     ] {
         assert!(README.contains(required), "README is missing {required}");
     }

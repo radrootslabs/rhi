@@ -65,7 +65,7 @@ fn migration_evidence() -> (MigrationAppliedAtUnixSeconds, MigrationBuildIdentit
         "test-target",
         "service-host",
         1,
-        1,
+        rhi::RHI_STATE_SCHEMA_VERSION,
         1,
         1,
         1,

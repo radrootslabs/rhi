@@ -13,8 +13,8 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    RHI_CONFIG_SCHEMA_VERSION, RHI_STATE_SCHEMA_VERSION, RhiBootstrapProfileV1,
-    RhiConfigDocumentV1, RhiConfigProfile, RhiRuntimeContext,
+    RHI_CONFIG_SCHEMA_VERSION, RHI_STATE_BASE_SCHEMA_VERSION, RHI_STATE_SCHEMA_VERSION,
+    RhiBootstrapProfileV1, RhiConfigDocumentV1, RhiConfigProfile, RhiRuntimeContext,
 };
 
 const NORMALIZED_CONFIG_DIGEST_DOMAIN: &[u8] = b"radroots.rhi.normalized_config.v1\0";
@@ -158,6 +158,7 @@ impl RhiStatePolicyVersions {
 pub struct RhiStateMetadata {
     paths: ServiceSqlitePaths,
     database: ServiceDatabaseMetadata,
+    database_identity: ServiceDatabaseIdentity,
     configuration: RhiNormalizedConfigDigest,
     evidence_policy: RhiEvidencePolicyDigest,
     identity: RhiExpectedPublicIdentity,
@@ -178,7 +179,7 @@ impl RhiStateMetadata {
             .map_err(|_| RhiStateMetadataError::new(RhiStateMetadataErrorKind::Paths))?;
         let application_id = ServiceSqliteApplicationId::new(RHI_STATE_APPLICATION_ID)
             .map_err(|_| RhiStateMetadataError::new(RhiStateMetadataErrorKind::Invariant))?;
-        let state_schema_version = core::num::NonZeroU32::new(RHI_STATE_SCHEMA_VERSION)
+        let state_schema_version = core::num::NonZeroU32::new(RHI_STATE_BASE_SCHEMA_VERSION)
             .ok_or_else(|| RhiStateMetadataError::new(RhiStateMetadataErrorKind::Invariant))?;
         let database = ServiceDatabaseMetadata::new(
             &paths,
@@ -188,6 +189,15 @@ impl RhiStateMetadata {
             application_id,
         )
         .map_err(|_| RhiStateMetadataError::new(RhiStateMetadataErrorKind::Database))?;
+        let supported_state_schema_version =
+            core::num::NonZeroU32::new(RHI_STATE_SCHEMA_VERSION)
+                .ok_or_else(|| RhiStateMetadataError::new(RhiStateMetadataErrorKind::Invariant))?;
+        let database_identity = ServiceDatabaseIdentity::new(
+            &paths,
+            source_generation,
+            supported_state_schema_version,
+            application_id,
+        );
         let normalized = configuration.normalized();
         let configuration_digest = normalized_config_digest(configuration.profile(), normalized)?;
         let evidence_policy = evidence_policy_digest(normalized)?;
@@ -209,6 +219,7 @@ impl RhiStateMetadata {
         Ok(Self {
             paths,
             database,
+            database_identity,
             configuration: configuration_digest,
             evidence_policy,
             identity,
@@ -216,16 +227,47 @@ impl RhiStateMetadata {
         })
     }
 
-    /// Returns the shared immutable database metadata.
+    pub(crate) fn from_existing_database(
+        runtime: &RhiRuntimeContext,
+        configuration: &RhiConfigDocumentV1,
+        actual: &ServiceDatabaseMetadata,
+    ) -> Result<Self, RhiStateMetadataError> {
+        let expected_application = ServiceSqliteApplicationId::new(RHI_STATE_APPLICATION_ID)
+            .map_err(|_| RhiStateMetadataError::new(RhiStateMetadataErrorKind::Invariant))?;
+        if actual.service() != runtime.context().service()
+            || actual.instance() != runtime.context().instance()
+            || actual.application_id() != expected_application
+            || actual.state_schema_version().get() < RHI_STATE_BASE_SCHEMA_VERSION
+            || actual.state_schema_version().get() > RHI_STATE_SCHEMA_VERSION
+        {
+            return Err(RhiStateMetadataError::new(
+                RhiStateMetadataErrorKind::Database,
+            ));
+        }
+        Self::new(
+            runtime,
+            configuration,
+            actual.source_generation(),
+            actual.created_at_unix_ms(),
+        )
+    }
+
+    /// Returns the immutable shared schema-v1 initialization metadata.
+    #[must_use]
+    pub const fn initial_database_metadata(&self) -> &ServiceDatabaseMetadata {
+        &self.database
+    }
+
+    /// Returns the immutable shared schema-v1 initialization metadata.
     #[must_use]
     pub const fn database(&self) -> &ServiceDatabaseMetadata {
-        &self.database
+        self.initial_database_metadata()
     }
 
     /// Returns the reopen identity derived from the immutable database metadata.
     #[must_use]
     pub fn database_identity(&self) -> ServiceDatabaseIdentity {
-        self.database.identity()
+        self.database_identity.clone()
     }
 
     /// Returns the normalized configuration digest.

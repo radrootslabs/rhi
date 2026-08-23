@@ -198,6 +198,15 @@
   readiness. Raw pools, connections, or cloneable write authority never escape
   typed RHI repositories; live clients mutate only through the Unix admin
   boundary and offline state operations must prove that no daemon writer exists.
+- Create-new state begins at the shared schema-v1 baseline and applies the
+  governed RHI schema-v2 configuration-binding migration. Retain at most 1,024
+  consecutive immutable configuration generations containing only normalized
+  config/evidence-policy digests, public identity, exact contract versions,
+  injected apply time, and bounded build identity. Never persist raw TOML,
+  paths, URLs, credential references, or protected identity material. Ordinary
+  startup must use intent-open, discover source generation under retained
+  authority, and match the latest durable binding; configuration apply is an
+  exclusive offline operation.
 - Never hold a database transaction while waiting for a source, relay, DNS,
   identity provider, clock, entropy, signing, reduction, or backoff.
 - Never prune active jobs/outboxes, migration history, current identity/policy
@@ -221,6 +230,12 @@
   independently verified encrypted-identity access, with no fallback or
   generation. The adapter set owns one private shared `TaskSupervisor` and
   exposes no task handle or concrete transport handle.
+- The existing-state runtime foundation must verify durable configuration
+  before credential/identity access and must contact no event source,
+  subscriber, or publication sink. Its passive initial readiness may prove
+  only existing state, durable configuration, and verified identity. Recovery,
+  connectivity, listeners, presence desired state, signals, logging, and the
+  final supervised graph remain with their later owning checkpoints.
 - Library code must not install signals, create a runtime, install logging,
   call process exit, or detach an authoritative task. Those process authorities
   remain exclusively with the final binary checkpoint.

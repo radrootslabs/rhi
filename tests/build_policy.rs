@@ -27,7 +27,7 @@ fn source_lock_metadata_is_exact_and_nix_is_absent() {
     ));
     for field in [
         "config_contract_version = 1",
-        "state_contract_version = 1",
+        "state_contract_version = 2",
         "admin_contract_version = 1",
         "status_contract_version = 1",
         "provider_contract_version = 1",
@@ -93,7 +93,7 @@ fn source_lock_binds_the_current_cargo_lock() {
     assert!(!SOURCE_LOCK.contains("flake_lock_sha256"));
     assert!(!SOURCE_LOCK.contains("lib_revision ="));
     assert!(SOURCE_LOCK.ends_with(
-        "[contract_versions]\nconfig = 1\nstate = 1\nadmin = 1\nstatus = 1\nprovider = 1\n"
+        "[contract_versions]\nconfig = 1\nstate = 2\nadmin = 1\nstatus = 1\nprovider = 1\n"
     ));
 }
 

@@ -5,10 +5,10 @@ use std::{error::Error, path::Path};
 use radroots_storage::event::SourceGeneration;
 use rhi::{
     RHI_ADMIN_CONTRACT_VERSION, RHI_CONFIG_SCHEMA_VERSION, RHI_PROVIDER_CONTRACT_VERSION,
-    RHI_STATE_APPLICATION_ID, RHI_STATE_SCHEMA_VERSION, RHI_STATUS_CONTRACT_VERSION,
-    RadrootsHostEnvironment, RadrootsPathResolver, RadrootsPlatform, RhiConfigProfile,
-    RhiStateMetadata, RhiStateMetadataErrorKind, parse_rhi_cli_v1_from, parse_rhi_config_v1,
-    resolve_rhi_runtime_context,
+    RHI_STATE_APPLICATION_ID, RHI_STATE_BASE_SCHEMA_VERSION, RHI_STATE_SCHEMA_VERSION,
+    RHI_STATUS_CONTRACT_VERSION, RadrootsHostEnvironment, RadrootsPathResolver, RadrootsPlatform,
+    RhiConfigProfile, RhiStateMetadata, RhiStateMetadataErrorKind, parse_rhi_cli_v1_from,
+    parse_rhi_config_v1, resolve_rhi_runtime_context,
 };
 
 const EXAMPLE: &str = include_str!("../contracts/services_hardening/config.v1.example.toml");
@@ -63,6 +63,13 @@ fn exact_database_configuration_identity_and_policy_bindings_are_frozen() {
     assert_eq!(database.source_generation().as_bytes(), &[0x5a; 32]);
     assert_eq!(
         database.state_schema_version().get(),
+        RHI_STATE_BASE_SCHEMA_VERSION
+    );
+    assert_eq!(
+        metadata
+            .database_identity()
+            .supported_state_schema_version()
+            .get(),
         RHI_STATE_SCHEMA_VERSION
     );
     assert_eq!(database.created_at_unix_ms(), 1_725_000_000_000);

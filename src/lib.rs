@@ -10,7 +10,9 @@ mod identity_credential;
 mod identity_envelope;
 mod runtime_adapters;
 mod runtime_context;
+mod runtime_foundation;
 mod state_catalog;
+mod state_config;
 mod state_host;
 mod state_maintenance;
 mod state_metadata;
@@ -71,15 +73,27 @@ pub use runtime_context::{
     RhiRuntimeContext, RhiRuntimeContextError, RhiRuntimeContextErrorKind,
     resolve_rhi_runtime_context,
 };
+pub use runtime_foundation::{
+    RHI_RUNTIME_FOUNDATION_CONTRACT_VERSION, RhiRuntimeFoundation, RhiRuntimeFoundationError,
+    RhiRuntimeFoundationErrorKind, RhiRuntimePrerequisite, RhiRuntimeReadiness,
+    RhiRuntimeReadinessReason, open_rhi_runtime_foundation,
+};
 pub use state_catalog::{
-    RHI_MIGRATION_CATALOG_SHA256, RHI_STATE_SCHEMA_CATALOG_SHA256, RHI_STATE_SCHEMA_VERSION,
-    RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT, RHI_STATE_SCHEMA_VERSION_1_SHA256,
+    RHI_MIGRATION_CATALOG_SHA256, RHI_STATE_BASE_SCHEMA_VERSION, RHI_STATE_SCHEMA_CATALOG_SHA256,
+    RHI_STATE_SCHEMA_VERSION, RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT,
+    RHI_STATE_SCHEMA_VERSION_1_SHA256, RHI_STATE_SCHEMA_VERSION_2_MIGRATION_SHA256,
+    RHI_STATE_SCHEMA_VERSION_2_OBJECT_COUNT, RHI_STATE_SCHEMA_VERSION_2_SHA256,
     RhiStateCatalogError, RhiStateCatalogErrorKind, rhi_migration_catalog, rhi_schema_catalog,
     validate_rhi_state_catalogs,
 };
+pub use state_config::{
+    RHI_CONFIG_BINDING_MAX_GENERATIONS, RhiConfigApplyError, RhiConfigApplyErrorKind,
+    RhiConfigApplyOutcome,
+};
 pub use state_host::{
-    RhiStateHost, RhiStateHostError, RhiStateHostErrorKind, RhiStateHostMode, initialize_rhi_state,
-    open_rhi_state_inspection, open_rhi_state_read_write,
+    RhiStateHost, RhiStateHostError, RhiStateHostErrorKind, RhiStateHostMode,
+    apply_rhi_configuration, initialize_rhi_state, open_rhi_state_inspection,
+    open_rhi_state_read_write, open_rhi_state_read_write_from_config,
 };
 pub use state_maintenance::{
     RhiStagedStateRestore, RhiStateMaintenanceError, RhiStateMaintenanceErrorKind,

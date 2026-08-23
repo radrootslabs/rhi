@@ -1,0 +1,47 @@
+{
+  "schema": "radroots.rhi.runtime-foundation",
+  "schema_version": 1,
+  "contract_version": 1,
+  "state_open": {
+    "mode": "read_write_existing",
+    "intent_discovers_source_generation": true,
+    "initialize_if_missing": false,
+    "durable_configuration_binding_required": true,
+    "raw_sqlite_authority_exposed": false
+  },
+  "identity_startup": {
+    "order": ["credential", "encrypted_identity"],
+    "existing_only": true,
+    "independently_verified": true,
+    "protected_values_exposed": false
+  },
+  "transport": {
+    "invoked_during_foundation": false,
+    "source_contact_before_durable_configuration": false,
+    "publication_before_durable_configuration": false
+  },
+  "initial_satisfaction": [
+    "existing_state",
+    "durable_configuration",
+    "verified_identity"
+  ],
+  "deferred": [
+    "reconciliation_recovery",
+    "source_connectivity",
+    "source_subscription",
+    "publication_recovery",
+    "admin_listener",
+    "operations_listener",
+    "presence_desired_state",
+    "signals",
+    "logging",
+    "final_supervised_task_graph"
+  ],
+  "task_ownership": {
+    "shared_supervisor": "radroots_service_host::TaskSupervisor",
+    "task_handles_exposed": false,
+    "library_runtime_creation": false,
+    "signal_installation": false,
+    "process_exit": false
+  }
+}
