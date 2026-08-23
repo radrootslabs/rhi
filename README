@@ -104,6 +104,14 @@ authority until explicit idempotent close. Missing state is never initialized
 by an open operation. No raw host, pool, connection, transaction, executor, or
 path escapes the RHI wrapper.
 
+One sealed RHI state-metadata capability now binds that lifecycle to the exact
+service and instance, nonzero source generation, `RDRH` SQLite application ID,
+schema version, creation time, fully normalized configuration digest,
+contract-defined evidence-policy digest, expected service public identity, and
+configuration/state/admin/status/provider contract versions. Its fields are
+immutable; ordinary Debug and errors redact paths, identities, generations,
+and digests.
+
 Validate the standalone crate through extbuild:
 
 ```text

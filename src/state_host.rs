@@ -4,15 +4,14 @@ use core::fmt;
 use std::{error::Error, path::PathBuf};
 
 use radroots_service_sqlite::{
-    MigrationAppliedAtUnixSeconds, MigrationBuildIdentity, OpenMode, ServiceDatabaseIdentity,
-    ServiceDatabaseMetadata, ServiceSqliteConnectionOptions, ServiceSqliteHost, ServiceSqlitePaths,
-    initialize_database,
+    MigrationAppliedAtUnixSeconds, MigrationBuildIdentity, OpenMode,
+    ServiceSqliteConnectionOptions, ServiceSqliteHost, ServiceSqlitePaths, initialize_database,
 };
 use sqlx::{ConnectOptions, Connection, SqliteConnection, sqlite::SqliteConnectOptions};
 
 use crate::{
-    RHI_STATE_SCHEMA_VERSION, RhiRuntimeContext, rhi_migration_catalog, rhi_schema_catalog,
-    validate_rhi_state_catalogs,
+    RHI_STATE_SCHEMA_VERSION, RhiRuntimeContext, RhiStateMetadata, rhi_migration_catalog,
+    rhi_schema_catalog, validate_rhi_state_catalogs,
 };
 
 /// Stable lifecycle mode of one opened RHI state host.
@@ -124,6 +123,7 @@ impl Error for RhiStateHostError {}
 pub struct RhiStateHost {
     host: ServiceSqliteHost,
     mode: RhiStateHostMode,
+    metadata: RhiStateMetadata,
 }
 
 impl RhiStateHost {
@@ -131,6 +131,12 @@ impl RhiStateHost {
     #[must_use]
     pub const fn mode(&self) -> RhiStateHostMode {
         self.mode
+    }
+
+    /// Returns the immutable RHI metadata bound to this host session.
+    #[must_use]
+    pub const fn metadata(&self) -> &RhiStateMetadata {
+        &self.metadata
     }
 
     /// Drains the shared host and explicitly releases retained authority.
@@ -159,7 +165,7 @@ impl fmt::Debug for RhiStateHost {
 /// configuration, evidence-policy, identity, and contract-version bindings.
 pub async fn initialize_rhi_state(
     runtime: &RhiRuntimeContext,
-    metadata: &ServiceDatabaseMetadata,
+    metadata: &RhiStateMetadata,
 ) -> Result<(), RhiStateHostError> {
     let paths = state_paths(runtime)?;
     require_metadata(runtime, metadata)?;
@@ -167,7 +173,7 @@ pub async fn initialize_rhi_state(
     let mut authority = initialize_database(
         &paths,
         OpenMode::Initialize,
-        metadata,
+        metadata.database(),
         &schema,
         initialize_empty_catalog,
     )
@@ -187,16 +193,17 @@ pub async fn initialize_rhi_state(
 /// empty.
 pub async fn open_rhi_state_read_write(
     runtime: &RhiRuntimeContext,
-    identity: &ServiceDatabaseIdentity,
+    metadata: &RhiStateMetadata,
     applied_at: MigrationAppliedAtUnixSeconds,
     build: &MigrationBuildIdentity,
 ) -> Result<RhiStateHost, RhiStateHostError> {
     let paths = state_paths(runtime)?;
-    require_identity(runtime, identity)?;
+    require_metadata(runtime, metadata)?;
+    let identity = metadata.database_identity();
     let (migrations, schema) = catalogs()?;
     let (host, outcome) = ServiceSqliteHost::open_read_write_existing(
         &paths,
-        identity,
+        &identity,
         &migrations,
         &schema,
         ServiceSqliteConnectionOptions::reviewed(),
@@ -216,20 +223,22 @@ pub async fn open_rhi_state_read_write(
     Ok(RhiStateHost {
         host,
         mode: RhiStateHostMode::ReadWriteExisting,
+        metadata: metadata.clone(),
     })
 }
 
 /// Opens an already initialized RHI catalog for immutable inspection.
 pub async fn open_rhi_state_inspection(
     runtime: &RhiRuntimeContext,
-    identity: &ServiceDatabaseIdentity,
+    metadata: &RhiStateMetadata,
 ) -> Result<RhiStateHost, RhiStateHostError> {
     let paths = state_paths(runtime)?;
-    require_identity(runtime, identity)?;
+    require_metadata(runtime, metadata)?;
+    let identity = metadata.database_identity();
     let (migrations, schema) = catalogs()?;
     let host = ServiceSqliteHost::open_read_only_inspection(
         &paths,
-        identity,
+        &identity,
         &migrations,
         &schema,
         ServiceSqliteConnectionOptions::reviewed(),
@@ -239,6 +248,7 @@ pub async fn open_rhi_state_inspection(
     Ok(RhiStateHost {
         host,
         mode: RhiStateHostMode::ReadOnlyInspection,
+        metadata: metadata.clone(),
     })
 }
 
@@ -249,23 +259,13 @@ fn state_paths(runtime: &RhiRuntimeContext) -> Result<ServiceSqlitePaths, RhiSta
 
 fn require_metadata(
     runtime: &RhiRuntimeContext,
-    metadata: &ServiceDatabaseMetadata,
+    metadata: &RhiStateMetadata,
 ) -> Result<(), RhiStateHostError> {
-    let matches = metadata.service() == runtime.context().service()
-        && metadata.instance() == runtime.context().instance()
-        && metadata.state_schema_version().get() == RHI_STATE_SCHEMA_VERSION;
-    matches
-        .then_some(())
-        .ok_or_else(|| RhiStateHostError::new(RhiStateHostErrorKind::InvalidEvidence))
-}
-
-fn require_identity(
-    runtime: &RhiRuntimeContext,
-    identity: &ServiceDatabaseIdentity,
-) -> Result<(), RhiStateHostError> {
-    let matches = identity.service() == runtime.context().service()
-        && identity.instance() == runtime.context().instance()
-        && identity.supported_state_schema_version().get() == RHI_STATE_SCHEMA_VERSION;
+    let database = metadata.database();
+    let matches = metadata.matches_runtime(runtime)
+        && database.service() == runtime.context().service()
+        && database.instance() == runtime.context().instance()
+        && database.state_schema_version().get() == RHI_STATE_SCHEMA_VERSION;
     matches
         .then_some(())
         .ok_or_else(|| RhiStateHostError::new(RhiStateHostErrorKind::InvalidEvidence))

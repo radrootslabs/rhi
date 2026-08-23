@@ -62,7 +62,7 @@ fn shared_service_sqlite_is_the_only_catalog_authority() {
 }
 
 #[test]
-fn shared_storage_test_evidence_is_exactly_source_locked() {
+fn shared_storage_generation_type_is_exactly_source_locked() {
     assert!(MANIFEST.contains(
         "radroots_storage = { git = \"https://github.com/radrootslabs/lib\", rev = \"7d7b454b4c9ed86569671993bd03ca868b676665\", version = \"=0.1.0-alpha\", default-features = false }"
     ));

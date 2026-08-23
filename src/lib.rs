@@ -9,6 +9,7 @@ pub mod identity_storage;
 mod runtime_context;
 mod state_catalog;
 mod state_host;
+mod state_metadata;
 
 pub use cli_v1::{
     RhiBootstrapProfileV1, RhiCliInvocationV1, RhiCliOutputModeV1, RhiCliV1Error,
@@ -40,4 +41,10 @@ pub use state_catalog::{
 pub use state_host::{
     RhiStateHost, RhiStateHostError, RhiStateHostErrorKind, RhiStateHostMode, initialize_rhi_state,
     open_rhi_state_inspection, open_rhi_state_read_write,
+};
+pub use state_metadata::{
+    RHI_ADMIN_CONTRACT_VERSION, RHI_PROVIDER_CONTRACT_VERSION, RHI_STATE_APPLICATION_ID,
+    RHI_STATUS_CONTRACT_VERSION, RhiEvidencePolicyDigest, RhiExpectedPublicIdentity,
+    RhiNormalizedConfigDigest, RhiStateMetadata, RhiStateMetadataError, RhiStateMetadataErrorKind,
+    RhiStatePolicyVersions,
 };

@@ -1,18 +1,18 @@
 #![forbid(unsafe_code)]
 #![cfg(any(target_os = "linux", target_os = "macos"))]
 
-use std::{error::Error, fs, num::NonZeroU32, os::unix::fs::PermissionsExt, path::Path};
+use std::{error::Error, fs, os::unix::fs::PermissionsExt, path::Path};
 
-use radroots_service_sqlite::{
-    MigrationAppliedAtUnixSeconds, MigrationBuildIdentity, ServiceDatabaseMetadata,
-    ServiceSqliteApplicationId, ServiceSqlitePaths,
-};
+use radroots_service_sqlite::{MigrationAppliedAtUnixSeconds, MigrationBuildIdentity};
 use radroots_storage::event::SourceGeneration;
 use rhi::{
-    RHI_STATE_SCHEMA_VERSION, RadrootsHostEnvironment, RadrootsPathResolver, RadrootsPlatform,
-    RhiStateHostErrorKind, RhiStateHostMode, initialize_rhi_state, open_rhi_state_inspection,
-    open_rhi_state_read_write, parse_rhi_cli_v1_from, resolve_rhi_runtime_context,
+    RadrootsHostEnvironment, RadrootsPathResolver, RadrootsPlatform, RhiConfigProfile,
+    RhiStateHostErrorKind, RhiStateHostMode, RhiStateMetadata, initialize_rhi_state,
+    open_rhi_state_inspection, open_rhi_state_read_write, parse_rhi_cli_v1_from,
+    parse_rhi_config_v1, resolve_rhi_runtime_context,
 };
+
+const EXAMPLE: &str = include_str!("../contracts/services_hardening/config.v1.example.toml");
 
 const HOST_SOURCE: &str = include_str!("../src/state_host.rs");
 const LIB_SOURCE: &str = include_str!("../src/lib.rs");
@@ -43,14 +43,14 @@ fn prepare_state_directory(runtime: &rhi::RhiRuntimeContext) {
     fs::set_permissions(directory, fs::Permissions::from_mode(0o700)).expect("state mode");
 }
 
-fn metadata(runtime: &rhi::RhiRuntimeContext) -> ServiceDatabaseMetadata {
-    let paths = ServiceSqlitePaths::from_runtime_context(runtime.context()).expect("SQLite paths");
-    ServiceDatabaseMetadata::new(
-        &paths,
+fn metadata(runtime: &rhi::RhiRuntimeContext) -> RhiStateMetadata {
+    let configuration = parse_rhi_config_v1(EXAMPLE.as_bytes(), RhiConfigProfile::RepoLocal)
+        .expect("configuration");
+    RhiStateMetadata::new(
+        runtime,
+        &configuration,
         SourceGeneration::new([0x5a; 32]).expect("generation"),
-        NonZeroU32::new(RHI_STATE_SCHEMA_VERSION).expect("schema version"),
         1_725_000_000_000,
-        ServiceSqliteApplicationId::new(0x5248_4931).expect("test application ID"),
     )
     .expect("metadata")
 }
@@ -80,7 +80,6 @@ async fn initialize_is_create_new_and_both_existing_open_modes_close_explicitly(
     let runtime = runtime(directory.path(), "primary");
     prepare_state_directory(&runtime);
     let metadata = metadata(&runtime);
-    let identity = metadata.identity();
     let state = runtime.artifacts().state_database();
     let lock = runtime.artifacts().state_lock();
 
@@ -105,7 +104,7 @@ async fn initialize_is_create_new_and_both_existing_open_modes_close_explicitly(
     assert_eq!(duplicate.kind(), RhiStateHostErrorKind::Initialize);
 
     let (applied_at, build) = migration_evidence();
-    let writer = open_rhi_state_read_write(&runtime, &identity, applied_at, &build)
+    let writer = open_rhi_state_read_write(&runtime, &metadata, applied_at, &build)
         .await
         .expect("existing writable state");
     assert_eq!(writer.mode(), RhiStateHostMode::ReadWriteExisting);
@@ -114,20 +113,20 @@ async fn initialize_is_create_new_and_both_existing_open_modes_close_explicitly(
         "RhiStateHost { mode: ReadWriteExisting, state: \"[sealed]\" }"
     );
 
-    let contended = open_rhi_state_inspection(&runtime, &identity)
+    let contended = open_rhi_state_inspection(&runtime, &metadata)
         .await
         .expect_err("inspection must not bypass active writer authority");
     assert_eq!(contended.kind(), RhiStateHostErrorKind::InspectionOpen);
     writer.close().await.expect("writer close");
     writer.close().await.expect("idempotent writer close");
 
-    let inspection = open_rhi_state_inspection(&runtime, &identity)
+    let inspection = open_rhi_state_inspection(&runtime, &metadata)
         .await
         .expect("existing inspection state");
     assert_eq!(inspection.mode(), RhiStateHostMode::ReadOnlyInspection);
     inspection.close().await.expect("inspection close");
 
-    let writer = open_rhi_state_read_write(&runtime, &identity, applied_at, &build)
+    let writer = open_rhi_state_read_write(&runtime, &metadata, applied_at, &build)
         .await
         .expect("authority reacquisition after explicit close");
     writer.close().await.expect("reopened writer close");
@@ -140,10 +139,9 @@ async fn missing_state_and_mismatched_evidence_fail_before_database_creation() {
     let secondary = runtime(directory.path(), "secondary");
     prepare_state_directory(&primary);
     let primary_metadata = metadata(&primary);
-    let primary_identity = primary_metadata.identity();
     let (applied_at, build) = migration_evidence();
 
-    let missing = open_rhi_state_read_write(&primary, &primary_identity, applied_at, &build)
+    let missing = open_rhi_state_read_write(&primary, &primary_metadata, applied_at, &build)
         .await
         .expect_err("missing state is never created by open");
     assert_eq!(missing.kind(), RhiStateHostErrorKind::ReadWriteOpen);

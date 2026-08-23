@@ -213,6 +213,10 @@ impl RhiConfigDocumentV1 {
         &self.effective
     }
 
+    pub(crate) const fn normalized(&self) -> &Value {
+        &self.normalized
+    }
+
     /// Returns the exact number of configured relay bindings.
     #[must_use]
     pub fn relay_count(&self) -> usize {
