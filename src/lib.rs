@@ -8,6 +8,7 @@ pub mod host_identity;
 pub mod identity_storage;
 mod runtime_context;
 mod state_catalog;
+mod state_host;
 
 pub use cli_v1::{
     RhiBootstrapProfileV1, RhiCliInvocationV1, RhiCliOutputModeV1, RhiCliV1Error,
@@ -35,4 +36,8 @@ pub use state_catalog::{
     RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT, RHI_STATE_SCHEMA_VERSION_1_SHA256,
     RhiStateCatalogError, RhiStateCatalogErrorKind, rhi_migration_catalog, rhi_schema_catalog,
     validate_rhi_state_catalogs,
+};
+pub use state_host::{
+    RhiStateHost, RhiStateHostError, RhiStateHostErrorKind, RhiStateHostMode, initialize_rhi_state,
+    open_rhi_state_inspection, open_rhi_state_read_write,
 };

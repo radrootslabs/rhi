@@ -63,6 +63,7 @@ rand = { version = "0.9" }
 serde = { version = "1", default-features = false }
 serde_json = { version = "1", default-features = false }
 sha2 = { version = "0.10" }
+sqlx = { version = "0.9.0", default-features = false, features = ["sqlite-bundled"] }
 thiserror = { version = "2" }
 tempfile = { version = "3" }
 toml = { version = "0.8" }
@@ -70,3 +71,5 @@ url = "2"
 zeroize = { version = "1" }
 
 [dev-dependencies]
+radroots_storage = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha", default-features = false }
+tokio = { version = "1", default-features = false, features = ["macros", "rt-multi-thread"] }

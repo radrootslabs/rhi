@@ -96,6 +96,14 @@ initialization and existing-only host lifecycle remain separate boundaries.
 Service-owned evidence and attestation tables and their ordered migrations are
 introduced only by their owning later checkpoints.
 
+The sealed RHI state-host lifecycle now reserves and initializes a missing
+canonical database only through an explicit create-new operation. Ordinary
+writable and immutable inspection modes open existing state only, validate the
+exact schema and migration identities, and retain mutually exclusive shared
+authority until explicit idempotent close. Missing state is never initialized
+by an open operation. No raw host, pool, connection, transaction, executor, or
+path escapes the RHI wrapper.
+
 Validate the standalone crate through extbuild:
 
 ```text
