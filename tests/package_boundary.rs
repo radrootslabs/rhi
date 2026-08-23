@@ -42,6 +42,23 @@ fn shared_host_implementations_do_not_escape_the_public_api() {
 }
 
 #[test]
+fn state_catalog_module_is_private_and_root_api_is_curated() {
+    assert!(ROOT.contains("mod state_catalog;"));
+    assert!(!ROOT.contains("pub mod state_catalog;"));
+    for required in [
+        "rhi_migration_catalog",
+        "rhi_schema_catalog",
+        "validate_rhi_state_catalogs",
+        "RhiStateCatalogError",
+    ] {
+        assert!(
+            ROOT.contains(required),
+            "RHI root API is missing {required}"
+        );
+    }
+}
+
+#[test]
 fn human_verification_contract_is_extbuild_only_through_rcld_170() {
     for required in [
         "cargo extbuild doctor",

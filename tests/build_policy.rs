@@ -49,6 +49,19 @@ fn shared_host_packages_are_exactly_source_locked() {
 }
 
 #[test]
+fn shared_service_sqlite_is_the_only_catalog_authority() {
+    assert!(MANIFEST.contains(
+        "radroots_service_sqlite = { git = \"https://github.com/radrootslabs/lib\", rev = \"7d7b454b4c9ed86569671993bd03ca868b676665\", version = \"=0.1.0-alpha\" }"
+    ));
+    for forbidden in ["rusqlite", "libsqlite3-sys"] {
+        assert!(
+            !MANIFEST.contains(forbidden),
+            "RHI must not introduce alternate SQLite authority `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn source_lock_binds_the_current_cargo_lock() {
     let digest = lower_hex(&Sha256::digest(include_bytes!("../Cargo.lock")));
     assert!(SOURCE_LOCK.starts_with(

@@ -80,6 +80,22 @@ injected host environment defined by `radroots_runtime_paths`; repo-local uses
 one explicit absolute base and the same `services/rhi/<instance>` namespace.
 Path resolution performs no directory creation or filesystem I/O.
 
+## Governed SQLite catalog
+
+RHI owns one `state.sqlite` per service instance. Its clean-slate baseline is
+schema version one and contains only the six shared immutable service-metadata
+and append-only migration-ledger objects supplied by `radroots_service_sqlite`.
+The future migration catalog is empty at this checkpoint. Exact literal
+SHA-256 values bind the migration history, schema-v1 object snapshot, and the
+schema catalog that joins those two identities. RHI validates all three before
+they can become database authority.
+
+This catalog layer performs no filesystem or SQLite I/O and owns no pool,
+connection, transaction, query, or migration executor. Explicit create-new
+initialization and existing-only host lifecycle remain separate boundaries.
+Service-owned evidence and attestation tables and their ordered migrations are
+introduced only by their owning later checkpoints.
+
 Validate the standalone crate through extbuild:
 
 ```text

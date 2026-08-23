@@ -7,6 +7,7 @@ pub mod features;
 pub mod host_identity;
 pub mod identity_storage;
 mod runtime_context;
+mod state_catalog;
 
 pub use cli_v1::{
     RhiBootstrapProfileV1, RhiCliInvocationV1, RhiCliOutputModeV1, RhiCliV1Error,
@@ -28,4 +29,10 @@ pub use radroots_runtime_paths::{
 pub use runtime_context::{
     RhiRuntimeContext, RhiRuntimeContextError, RhiRuntimeContextErrorKind,
     resolve_rhi_runtime_context,
+};
+pub use state_catalog::{
+    RHI_MIGRATION_CATALOG_SHA256, RHI_STATE_SCHEMA_CATALOG_SHA256, RHI_STATE_SCHEMA_VERSION,
+    RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT, RHI_STATE_SCHEMA_VERSION_1_SHA256,
+    RhiStateCatalogError, RhiStateCatalogErrorKind, rhi_migration_catalog, rhi_schema_catalog,
+    validate_rhi_state_catalogs,
 };
