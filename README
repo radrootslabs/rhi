@@ -34,6 +34,29 @@ exact `toml` or `safe_default` origin for every leaf and the governed authority
 behind each safe default. Parsing performs no filesystem, environment,
 identity, database, clock, entropy, logging, DNS, or network operation.
 
+## Hardened v1 command admission
+
+`parse_rhi_cli_v1_from` parses the bootstrap and closed command tree exactly
+once. Every invocation explicitly selects `service-host`, `interactive`, or
+`repo-local`, a validated instance, and optionally an absolute configuration
+path. Repo-local selection additionally requires one absolute base root and
+that root is forbidden for the other profiles. Human output is the default;
+governed JSON output is selected explicitly.
+
+The command inventory covers daemon run; config init, validate, show, schema,
+and apply; state init, status, backup, restore, verify, and migrate; service
+identity init, status, and public export; service status and metrics snapshot;
+reconciliation status, jobs, and refresh; source listing; trade projection and
+report queries; publication backlog, targets, and retry; desired-presence
+inspection, render, and refresh; and doctor. The parser performs no command
+execution. Later ordered steps bind exact command inputs and each offline,
+daemon, or live Unix-admin authority.
+
+Ordinary `run` accepts no identity-generation, identity-path, log-path,
+database-path, worker, environment-file, or arbitrary path-leaf flag. Identity
+rekey and replacement are not commands; rotation is a create-new offline
+artifact plus governed configuration apply.
+
 Use the repository-owned Nix lanes for validation:
 
 ```text

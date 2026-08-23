@@ -223,8 +223,8 @@
   client, or the daemon. Config validation/schema and pre-service initialization
   are offline. State init/restore/verify/migrate and initial identity
   provisioning require proof that no writer lock exists.
-- Detailed status, redacted effective config, online backup, identity
-  status/rekey/replace, reconciliation/job/source status, bounded trade/report
+- Detailed status, redacted effective config, online backup, identity status
+  and public export, reconciliation/job/source status, bounded trade/report
   queries, publication/target retry or refresh, metrics snapshot, and presence
   status/refresh use bounded, versioned HTTP/JSON over a permissioned Unix
   socket while live. Do not add TCP admin, browser auth, CORS, direct writable

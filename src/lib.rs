@@ -2,6 +2,7 @@
 
 pub mod adapters;
 pub mod cli;
+mod cli_v1;
 pub mod config;
 mod config_v1;
 pub mod features;
@@ -14,6 +15,12 @@ pub mod paths;
 pub mod rhi;
 
 pub use cli::Args as cli_args;
+pub use cli_v1::{
+    RHI_INSTANCE_ID_MAX_BYTES, RhiBootstrapProfileV1, RhiCliInvocationV1, RhiCliOutputModeV1,
+    RhiCliV1Error, RhiCliV1ErrorKind, RhiCommandV1, RhiConfigCommandV1, RhiIdentityCommandV1,
+    RhiMetricsCommandV1, RhiPresenceCommandV1, RhiPublicationCommandV1, RhiReconciliationCommandV1,
+    RhiSourcesCommandV1, RhiStateCommandV1, RhiTradeCommandV1, parse_rhi_cli_v1_from,
+};
 pub use config_v1::{
     RHI_CONFIG_DOCUMENT_MAX_UTF8_BYTES, RHI_CONFIG_EFFECTIVE_MAX_UTF8_BYTES, RHI_CONFIG_SCHEMA,
     RHI_CONFIG_SCHEMA_VERSION, RhiConfigDefaultAuthority, RhiConfigDocumentV1, RhiConfigProfile,
