@@ -256,6 +256,15 @@ impl RhiStateMetadata {
         ServiceSqlitePaths::from_runtime_context(runtime.context())
             .is_ok_and(|paths| paths == self.paths)
     }
+
+    pub(crate) fn matches_configuration(&self, configuration: &RhiConfigDocumentV1) -> bool {
+        normalized_config_digest(configuration.profile(), configuration.normalized())
+            .is_ok_and(|digest| digest == self.configuration)
+            && evidence_policy_digest(configuration.normalized())
+                .is_ok_and(|digest| digest == self.evidence_policy)
+            && expected_identity(configuration.normalized())
+                .is_ok_and(|identity| identity == self.identity)
+    }
 }
 
 impl fmt::Debug for RhiStateMetadata {

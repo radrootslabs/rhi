@@ -61,6 +61,7 @@ futures-executor = { version = "0.3" }
 jsonschema = { version = "0.48.1", default-features = false }
 nostr = { version = "0.44.7", features = ["nip49"] }
 rand = { version = "0.9" }
+rustix = { version = "1", features = ["fs", "process", "std"] }
 serde = { version = "1", default-features = false }
 serde_json = { version = "1", default-features = false }
 sha2 = { version = "0.10" }

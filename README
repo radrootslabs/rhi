@@ -112,6 +112,15 @@ configuration/state/admin/status/provider contract versions. Its fields are
 immutable; ordinary Debug and errors redact paths, identities, generations,
 and digests.
 
+The governed encrypted-file identity boundary accepts only the shared
+version-2 `radroots_secrets` envelope, binds its authenticated context to the
+service role, expected public key, payload schema, and separately named
+wrapping-credential reference, and releases a zeroizing identity only after
+the derived public key matches configuration. Offline provisioning is
+create-new and caller-supplied; ordinary startup never generates an identity,
+legacy envelopes are rejected, and RHI state backups contain no envelope,
+wrapping credential, or plaintext identity.
+
 Validate the standalone crate through extbuild:
 
 ```text
