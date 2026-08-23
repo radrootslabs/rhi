@@ -10,8 +10,8 @@ use radroots_service_sqlite::{
 use sqlx::{ConnectOptions, Connection, SqliteConnection, sqlite::SqliteConnectOptions};
 
 use crate::{
-    RHI_STATE_SCHEMA_VERSION, RhiRuntimeContext, RhiStateMetadata, rhi_migration_catalog,
-    rhi_schema_catalog, validate_rhi_state_catalogs,
+    RHI_STATE_SCHEMA_VERSION, RhiRuntimeContext, RhiStateMetadata, RhiStateRepositories,
+    rhi_migration_catalog, rhi_schema_catalog, validate_rhi_state_catalogs,
 };
 
 /// Stable lifecycle mode of one opened RHI state host.
@@ -137,6 +137,12 @@ impl RhiStateHost {
     #[must_use]
     pub const fn metadata(&self) -> &RhiStateMetadata {
         &self.metadata
+    }
+
+    /// Returns the sealed family of typed repository capabilities.
+    #[must_use]
+    pub const fn repositories(&self) -> RhiStateRepositories<'_> {
+        RhiStateRepositories::new(self)
     }
 
     /// Drains the shared host and explicitly releases retained authority.

@@ -7,9 +7,9 @@ use radroots_service_sqlite::{MigrationAppliedAtUnixSeconds, MigrationBuildIdent
 use radroots_storage::event::SourceGeneration;
 use rhi::{
     RadrootsHostEnvironment, RadrootsPathResolver, RadrootsPlatform, RhiConfigProfile,
-    RhiStateHostErrorKind, RhiStateHostMode, RhiStateMetadata, initialize_rhi_state,
-    open_rhi_state_inspection, open_rhi_state_read_write, parse_rhi_cli_v1_from,
-    parse_rhi_config_v1, resolve_rhi_runtime_context,
+    RhiStateHostErrorKind, RhiStateHostMode, RhiStateMetadata, RhiStateRepositoryKind,
+    initialize_rhi_state, open_rhi_state_inspection, open_rhi_state_read_write,
+    parse_rhi_cli_v1_from, parse_rhi_config_v1, resolve_rhi_runtime_context,
 };
 
 const EXAMPLE: &str = include_str!("../contracts/services_hardening/config.v1.example.toml");
@@ -124,6 +124,83 @@ async fn initialize_is_create_new_and_both_existing_open_modes_close_explicitly(
         .await
         .expect("existing inspection state");
     assert_eq!(inspection.mode(), RhiStateHostMode::ReadOnlyInspection);
+    let repositories = inspection.repositories();
+    assert_eq!(
+        format!("{repositories:?}"),
+        "RhiStateRepositories { mode: ReadOnlyInspection, state: \"[sealed]\" }"
+    );
+    assert_eq!(
+        repositories.sources().kind(),
+        RhiStateRepositoryKind::Source
+    );
+    assert_eq!(
+        repositories.source_cursors().kind(),
+        RhiStateRepositoryKind::SourceCursor
+    );
+    assert_eq!(
+        repositories.source_completions().kind(),
+        RhiStateRepositoryKind::SourceCompletion
+    );
+    assert_eq!(
+        repositories.signed_events().kind(),
+        RhiStateRepositoryKind::SignedEvent
+    );
+    assert_eq!(
+        repositories.mutations().kind(),
+        RhiStateRepositoryKind::Mutation
+    );
+    assert_eq!(
+        repositories.provenance().kind(),
+        RhiStateRepositoryKind::Provenance
+    );
+    assert_eq!(
+        repositories.dirty_trades().kind(),
+        RhiStateRepositoryKind::DirtyTrade
+    );
+    assert_eq!(
+        repositories.reconciliation_jobs().kind(),
+        RhiStateRepositoryKind::ReconciliationJob
+    );
+    assert_eq!(
+        repositories.reconciliation_attempts().kind(),
+        RhiStateRepositoryKind::ReconciliationAttempt
+    );
+    assert_eq!(
+        repositories.evidence_manifests().kind(),
+        RhiStateRepositoryKind::EvidenceManifest
+    );
+    assert_eq!(
+        repositories.projections().kind(),
+        RhiStateRepositoryKind::Projection
+    );
+    assert_eq!(
+        repositories.reports().kind(),
+        RhiStateRepositoryKind::Report
+    );
+    assert_eq!(
+        repositories.supersessions().kind(),
+        RhiStateRepositoryKind::Supersession
+    );
+    assert_eq!(
+        repositories.signed_attestation_events().kind(),
+        RhiStateRepositoryKind::SignedAttestationEvent
+    );
+    assert_eq!(
+        repositories.publication_outbox().kind(),
+        RhiStateRepositoryKind::PublicationOutbox
+    );
+    assert_eq!(
+        repositories.publication_targets().kind(),
+        RhiStateRepositoryKind::PublicationTarget
+    );
+    assert_eq!(
+        repositories.publication_attempts().kind(),
+        RhiStateRepositoryKind::PublicationAttempt
+    );
+    assert_eq!(
+        repositories.desired_presence().kind(),
+        RhiStateRepositoryKind::DesiredPresence
+    );
     inspection.close().await.expect("inspection close");
 
     let writer = open_rhi_state_read_write(&runtime, &metadata, applied_at, &build)

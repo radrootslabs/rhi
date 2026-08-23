@@ -1,0 +1,35 @@
+{
+  "schema": "radroots.rhi.state-repository-topology",
+  "schema_version": 1,
+  "contract_version": 1,
+  "repository_count": 18,
+  "construction": "sealed_to_open_rhi_state_host",
+  "raw_sqlite_authority_exposed": false,
+  "repositories": [
+    { "kind": "source", "backing_table": "evidence_reconciliation_sources", "write_class": "append_only" },
+    { "kind": "source_cursor", "backing_table": "relay_checkpoints", "write_class": "compare_and_swap" },
+    { "kind": "source_completion", "backing_table": "evidence_reconciliation_sources", "write_class": "append_only" },
+    { "kind": "signed_event", "backing_table": "nostr_events", "write_class": "append_only" },
+    { "kind": "mutation", "backing_table": "trade_mutations", "write_class": "append_only" },
+    { "kind": "provenance", "backing_table": "relay_observations", "write_class": "append_only" },
+    { "kind": "dirty_trade", "backing_table": "trade_dirty_generations", "write_class": "compare_and_swap" },
+    { "kind": "reconciliation_job", "backing_table": "reconciliation_jobs", "write_class": "compare_and_swap" },
+    { "kind": "reconciliation_attempt", "backing_table": "evidence_reconciliations", "write_class": "append_only" },
+    { "kind": "evidence_manifest", "backing_table": "evidence_manifests", "write_class": "immutable" },
+    { "kind": "projection", "backing_table": "trade_projections", "write_class": "immutable" },
+    { "kind": "report", "backing_table": "attestation_reports", "write_class": "immutable" },
+    { "kind": "supersession", "backing_table": "attestation_reports", "write_class": "append_only" },
+    { "kind": "signed_attestation_event", "backing_table": "signed_attestation_events", "write_class": "immutable" },
+    { "kind": "publication_outbox", "backing_table": "publication_outbox", "write_class": "compare_and_swap" },
+    { "kind": "publication_target", "backing_table": "publication_targets", "write_class": "compare_and_swap" },
+    { "kind": "publication_attempt", "backing_table": "publication_attempts", "write_class": "append_only" },
+    { "kind": "desired_presence", "backing_table": "presence_desired_state", "write_class": "compare_and_swap" }
+  ],
+  "deferred_behavior": [
+    "schema_migration_and_verification",
+    "repository_crud",
+    "backup_restore_and_recovery",
+    "network_io",
+    "task_supervision"
+  ]
+}

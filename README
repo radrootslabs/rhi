@@ -139,6 +139,18 @@ credential remain excluded from the state-backup contract. Actual online
 backup, offline restore, and recovery execution remain owned by their later
 ordered checkpoint and are not claimed by this boundary proof.
 
+RHI's state surface is partitioned into eighteen distinct non-forgeable typed
+repository capabilities bound to one already-opened `RhiStateHost`. Their
+closed topology covers source results, cursors, completions, admitted signed
+events, canonical mutations, provenance, dirty generations, reconciliation
+jobs and attempts, immutable manifests/projections/reports, supersession,
+signed attestation events, publication outbox/targets/attempts, and desired
+presence. Each capability has one exact backing-table identity and an
+append-only, compare-and-swap, or immutable write class. It exposes no raw
+pool, connection, transaction, SQL, path, or cloneable write authority.
+Schema migration and verification, CRUD behavior, backup/restore, network I/O,
+and task supervision remain owned by their later ordered checkpoints.
+
 Validate the standalone crate through extbuild:
 
 ```text

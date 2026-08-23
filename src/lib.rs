@@ -10,6 +10,7 @@ mod runtime_context;
 mod state_catalog;
 mod state_host;
 mod state_metadata;
+mod state_repository;
 
 pub use cli_v1::{
     RhiBootstrapProfileV1, RhiCliInvocationV1, RhiCliOutputModeV1, RhiCliV1Error,
@@ -60,4 +61,16 @@ pub use state_metadata::{
     RHI_STATUS_CONTRACT_VERSION, RhiEvidencePolicyDigest, RhiExpectedPublicIdentity,
     RhiNormalizedConfigDigest, RhiStateMetadata, RhiStateMetadataError, RhiStateMetadataErrorKind,
     RhiStatePolicyVersions,
+};
+pub use state_repository::{
+    RHI_STATE_REPOSITORY_CONTRACT_VERSION, RHI_STATE_REPOSITORY_COUNT,
+    RhiDesiredPresenceRepository, RhiDirtyTradeRepository, RhiEvidenceManifestRepository,
+    RhiMutationRepository, RhiProjectionRepository, RhiProvenanceRepository,
+    RhiPublicationAttemptRepository, RhiPublicationOutboxRepository,
+    RhiPublicationTargetRepository, RhiReconciliationAttemptRepository,
+    RhiReconciliationJobRepository, RhiReportRepository, RhiSignedAttestationEventRepository,
+    RhiSignedEventRepository, RhiSourceCompletionRepository, RhiSourceCursorRepository,
+    RhiSourceRepository, RhiStateRepositories, RhiStateRepositoryDescriptor,
+    RhiStateRepositoryKind, RhiStateRepositoryWriteClass, RhiSupersessionRepository,
+    rhi_state_repository_descriptors,
 };
