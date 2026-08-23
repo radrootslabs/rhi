@@ -77,6 +77,7 @@ pub struct RhiIdentityEnvelopeBinding {
     envelope_path: PathBuf,
     credential_reference: ServiceCredentialArtifactName,
     expected_identity: RhiExpectedPublicIdentity,
+    state_paths: radroots_service_sqlite::ServiceSqlitePaths,
 }
 
 impl RhiIdentityEnvelopeBinding {
@@ -111,6 +112,7 @@ impl RhiIdentityEnvelopeBinding {
             envelope_path: path,
             credential_reference,
             expected_identity: metadata.expected_identity().clone(),
+            state_paths: metadata.paths().clone(),
         })
     }
 
@@ -138,6 +140,11 @@ impl RhiIdentityEnvelopeBinding {
 
     pub(crate) fn encrypted_envelope_path(&self) -> Option<&Path> {
         Some(self.envelope_path.as_path())
+    }
+
+    pub(crate) fn matches_runtime(&self, runtime: &crate::RhiRuntimeContext) -> bool {
+        radroots_service_sqlite::ServiceSqlitePaths::from_runtime_context(runtime.context())
+            .is_ok_and(|paths| paths == self.state_paths)
     }
 }
 
@@ -275,7 +282,29 @@ const fn envelope_error(
 /// Sealed zeroizing wrapping credential resolved only by the governed credential boundary.
 pub struct RhiWrappingCredential(Zeroizing<[u8; WRAPPING_CREDENTIAL_BYTES]>);
 
+/// Non-forgeable proof that owns credential bytes admitted by the governed resolver.
+pub(crate) struct RhiCredentialResolutionProof {
+    credential: Zeroizing<[u8; WRAPPING_CREDENTIAL_BYTES]>,
+}
+
+impl fmt::Debug for RhiCredentialResolutionProof {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("RhiCredentialResolutionProof([sealed])")
+    }
+}
+
 impl RhiWrappingCredential {
+    pub(crate) fn from_resolution(
+        proof: RhiCredentialResolutionProof,
+    ) -> Result<Self, RhiEncryptedIdentityEnvelopeError> {
+        if proof.credential.iter().all(|byte| *byte == 0) {
+            return Err(envelope_error(
+                RhiEncryptedIdentityEnvelopeErrorKind::InvalidCredential,
+            ));
+        }
+        Ok(Self(proof.credential))
+    }
+
     fn expose<T>(&self, use_credential: impl FnOnce(&[u8; 32]) -> T) -> T {
         use_credential(&self.0)
     }
@@ -432,6 +461,17 @@ pub fn open_rhi_encrypted_identity(
     futures_executor::block_on(open_decoded_envelope(
         binding, credential, envelope, &context,
     ))
+}
+
+pub(crate) fn load_resolved_wrapping_credential(
+    path: &Path,
+) -> Result<RhiWrappingCredential, RhiEncryptedIdentityEnvelopeError> {
+    ensure_supported_platform()?;
+    validate_requested_path(path)?;
+    let encoded = Zeroizing::new(read_existing_exact(path, WRAPPING_CREDENTIAL_BYTES)?);
+    let mut credential = Zeroizing::new([0_u8; WRAPPING_CREDENTIAL_BYTES]);
+    credential.copy_from_slice(&encoded);
+    RhiWrappingCredential::from_resolution(RhiCredentialResolutionProof { credential })
 }
 
 fn require_wire_version(encoded: &[u8]) -> Result<(), RhiEncryptedIdentityEnvelopeError> {
@@ -836,7 +876,11 @@ mod native {
             file.write_all(encoded)
                 .and_then(|()| file.sync_all())
                 .map_err(|_| envelope_error(RhiEncryptedIdentityEnvelopeErrorKind::Io))?;
-            file_identity(&file, Some(encoded.len()))?;
+            file_identity(
+                &file,
+                Some(encoded.len()),
+                RHI_ENCRYPTED_IDENTITY_ENVELOPE_MAX_BYTES,
+            )?;
             validate_current_binding(
                 &path,
                 &parent,
@@ -844,6 +888,7 @@ mod native {
                 &file,
                 identity,
                 encoded.len(),
+                RHI_ENCRYPTED_IDENTITY_ENVELOPE_MAX_BYTES,
             )?;
             parent
                 .sync_all()
@@ -855,6 +900,7 @@ mod native {
                 &file,
                 identity,
                 encoded.len(),
+                RHI_ENCRYPTED_IDENTITY_ENVELOPE_MAX_BYTES,
             )
         })();
         if result.is_err() {
@@ -864,6 +910,21 @@ mod native {
     }
 
     pub(super) fn read_existing(path: &Path) -> Result<Vec<u8>, RhiEncryptedIdentityEnvelopeError> {
+        read_existing_bounded(path, RHI_ENCRYPTED_IDENTITY_ENVELOPE_MAX_BYTES, None)
+    }
+
+    pub(super) fn read_existing_exact(
+        path: &Path,
+        expected_length: usize,
+    ) -> Result<Vec<u8>, RhiEncryptedIdentityEnvelopeError> {
+        read_existing_bounded(path, expected_length, Some(expected_length))
+    }
+
+    fn read_existing_bounded(
+        path: &Path,
+        maximum_length: usize,
+        expected_length: Option<usize>,
+    ) -> Result<Vec<u8>, RhiEncryptedIdentityEnvelopeError> {
         let path = ArtifactPath::parse(path)?;
         let parent = open_parent(&path.parent_path, false)?;
         let parent_identity = directory_identity(&parent, false)?;
@@ -885,7 +946,7 @@ mod native {
         let mut file = File::from(descriptor);
         let status = fstat(&file)
             .map_err(|_| envelope_error(RhiEncryptedIdentityEnvelopeErrorKind::InsecureArtifact))?;
-        let length = validate_file_status(&status, None)?;
+        let length = validate_file_status(&status, expected_length, maximum_length)?;
         let identity = status_identity(
             &status,
             RhiEncryptedIdentityEnvelopeErrorKind::InsecureArtifact,
@@ -902,7 +963,15 @@ mod native {
                 RhiEncryptedIdentityEnvelopeErrorKind::InsecureArtifact,
             ));
         }
-        validate_current_binding(&path, &parent, parent_identity, &file, identity, length)?;
+        validate_current_binding(
+            &path,
+            &parent,
+            parent_identity,
+            &file,
+            identity,
+            length,
+            maximum_length,
+        )?;
         Ok(encoded)
     }
 
@@ -961,10 +1030,11 @@ mod native {
     fn file_identity(
         file: &File,
         expected_length: Option<usize>,
+        maximum_length: usize,
     ) -> Result<Identity, RhiEncryptedIdentityEnvelopeError> {
         let status = fstat(file)
             .map_err(|_| envelope_error(RhiEncryptedIdentityEnvelopeErrorKind::InsecureArtifact))?;
-        validate_file_status(&status, expected_length)?;
+        validate_file_status(&status, expected_length, maximum_length)?;
         status_identity(
             &status,
             RhiEncryptedIdentityEnvelopeErrorKind::InsecureArtifact,
@@ -996,6 +1066,7 @@ mod native {
     fn validate_file_status(
         status: &rustix::fs::Stat,
         expected_length: Option<usize>,
+        maximum_length: usize,
     ) -> Result<usize, RhiEncryptedIdentityEnvelopeError> {
         let mode = native_mode(status.st_mode) & 0o777;
         let length = usize::try_from(status.st_size)
@@ -1005,7 +1076,7 @@ mod native {
             || status.st_uid != geteuid().as_raw()
             || !matches!(mode, 0o400 | 0o600)
             || length == 0
-            || length > RHI_ENCRYPTED_IDENTITY_ENVELOPE_MAX_BYTES
+            || length > maximum_length
             || expected_length.is_some_and(|expected| expected != length)
         {
             return Err(envelope_error(
@@ -1022,6 +1093,7 @@ mod native {
         held_file: &File,
         expected_file: Identity,
         expected_length: usize,
+        maximum_length: usize,
     ) -> Result<(), RhiEncryptedIdentityEnvelopeError> {
         let current_parent = open_parent(&path.parent_path, false)?;
         if directory_identity(held_parent, false)? != expected_parent
@@ -1040,8 +1112,8 @@ mod native {
             )
             .map_err(|_| envelope_error(RhiEncryptedIdentityEnvelopeErrorKind::InsecureArtifact))?,
         );
-        if file_identity(held_file, Some(expected_length))? != expected_file
-            || file_identity(&current_file, Some(expected_length))? != expected_file
+        if file_identity(held_file, Some(expected_length), maximum_length)? != expected_file
+            || file_identity(&current_file, Some(expected_length), maximum_length)? != expected_file
         {
             return Err(envelope_error(
                 RhiEncryptedIdentityEnvelopeErrorKind::InsecureArtifact,
@@ -1091,7 +1163,7 @@ mod native {
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-use native::{persist_create_new, read_existing, validate_requested_path};
+use native::{persist_create_new, read_existing, read_existing_exact, validate_requested_path};
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 const fn ensure_supported_platform() -> Result<(), RhiEncryptedIdentityEnvelopeError> {
@@ -1124,6 +1196,16 @@ fn persist_create_new(
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn read_existing(_path: &Path) -> Result<Vec<u8>, RhiEncryptedIdentityEnvelopeError> {
+    Err(envelope_error(
+        RhiEncryptedIdentityEnvelopeErrorKind::UnsupportedPlatform,
+    ))
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn read_existing_exact(
+    _path: &Path,
+    _expected_length: usize,
+) -> Result<Vec<u8>, RhiEncryptedIdentityEnvelopeError> {
     Err(envelope_error(
         RhiEncryptedIdentityEnvelopeErrorKind::UnsupportedPlatform,
     ))

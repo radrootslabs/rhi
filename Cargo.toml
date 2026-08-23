@@ -45,7 +45,6 @@ workspace = true
 [dependencies]
 radroots_event = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha", features = ["serde"] }
 radroots_event_codec = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha", features = ["json"] }
-radroots_identity = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha" }
 radroots_nostr = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha", features = ["events"] }
 radroots_protocol = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha" }
 radroots_runtime_paths = { git = "https://github.com/radrootslabs/lib", rev = "7d7b454b4c9ed86569671993bd03ca868b676665", version = "=0.1.0-alpha" }
@@ -59,8 +58,7 @@ chacha20poly1305 = { version = "0.10" }
 clap = { version = "4", features = ["derive"] }
 futures-executor = { version = "0.3" }
 jsonschema = { version = "0.48.1", default-features = false }
-nostr = { version = "0.44.7", features = ["nip49"] }
-rand = { version = "0.9" }
+nostr = { version = "0.44.7" }
 rustix = { version = "1", features = ["fs", "process", "std"] }
 serde = { version = "1", default-features = false }
 serde_json = { version = "1", default-features = false }

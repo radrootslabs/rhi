@@ -4,9 +4,8 @@ pub mod adapters;
 mod cli_v1;
 mod config_v1;
 pub mod features;
-pub mod host_identity;
+mod identity_credential;
 mod identity_envelope;
-pub mod identity_storage;
 mod runtime_context;
 mod state_catalog;
 mod state_host;
@@ -23,6 +22,11 @@ pub use config_v1::{
     RHI_CONFIG_SCHEMA_VERSION, RhiConfigDefaultAuthority, RhiConfigDocumentV1, RhiConfigProfile,
     RhiConfigV1Error, RhiConfigV1ErrorKind, RhiConfigValueSource, RhiEffectiveConfigV1,
     RhiRuntimeThreadLimitsV1, parse_rhi_config_v1,
+};
+pub use identity_credential::{
+    RHI_WRAPPING_CREDENTIAL_ARTIFACT_BYTES, RHI_WRAPPING_CREDENTIAL_CONTRACT_VERSION,
+    RhiCredentialResolutionError, RhiCredentialResolutionErrorKind,
+    resolve_rhi_wrapping_credential,
 };
 pub use identity_envelope::{
     RHI_ENCRYPTED_IDENTITY_BACKUP_INCLUDED, RHI_ENCRYPTED_IDENTITY_ENVELOPE_CONTRACT_VERSION,

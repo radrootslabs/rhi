@@ -257,6 +257,10 @@ impl RhiStateMetadata {
             .is_ok_and(|paths| paths == self.paths)
     }
 
+    pub(crate) const fn paths(&self) -> &ServiceSqlitePaths {
+        &self.paths
+    }
+
     pub(crate) fn matches_configuration(&self, configuration: &RhiConfigDocumentV1) -> bool {
         normalized_config_digest(configuration.profile(), configuration.normalized())
             .is_ok_and(|digest| digest == self.configuration)

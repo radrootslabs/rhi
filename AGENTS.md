@@ -183,6 +183,11 @@
   wrapping credential. Do not add plaintext or adjacent keys, implicit identity,
   or ordinary-run generation/replacement. Validate expected public-key and
   policy bindings before readiness.
+- Resolve the wrapping credential only from the validated fixed artifact name
+  beneath the same instance's canonical secrets root. The resolver is
+  read-existing-only, accepts no caller path or bytes, and supports only
+  service-host and repo-local profiles. The governed envelope and credential
+  are excluded from state backups.
 - Do not read, reseal, import, or migrate prototype or legacy identity-envelope
   formats. Missing, wrong, legacy, or misbound envelopes and wrapping
   credentials fail closed.
@@ -254,8 +259,8 @@
   sensitive evidence, private identifiers, paths, upstream errors, and
   equivalent protected material out of config, logs, status, metrics, audit,
   fixtures, packages, process arguments, environment contracts, error strings,
-  and backups. A governed backup may contain the encrypted identity envelope
-  but never the material needed to unwrap it.
+  and backups. Governed state backups contain neither the encrypted identity
+  envelope nor any material needed to unwrap it.
 - Backup and restore must preserve writer-lock, manifest, digest, integrity,
   schema, service, instance, identity, policy, permission, fsync, atomic-rename,
   and protected-material-exclusion invariants. Orphaned or impossible state

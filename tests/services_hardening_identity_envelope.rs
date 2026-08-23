@@ -95,6 +95,8 @@ fn implementation_uses_shared_envelopes_and_seals_credential_resolution() {
     }
     assert!(LIB_SOURCE.contains("mod identity_envelope;"));
     assert!(!LIB_SOURCE.contains("pub mod identity_envelope;"));
+    assert!(ENVELOPE_SOURCE.contains("pub(crate) struct RhiCredentialResolutionProof"));
+    assert!(ENVELOPE_SOURCE.contains("pub(crate) fn from_resolution("));
 }
 
 #[test]

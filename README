@@ -63,8 +63,8 @@ artifact plus governed configuration apply.
 
 One validated CLI invocation resolves through `RhiRuntimeContext`, which owns
 the shared typed `RuntimeContext`, exact common artifacts, the validated
-`service.identity.ncrypt` credential path, and the explicit or canonical
-configuration selection. The service identity is fixed to `rhi`; the instance
+`service.identity.ncrypt` encrypted identity artifact path, and the explicit or
+canonical configuration selection. The service identity is fixed to `rhi`; the instance
 comes only from `InstanceId`; profile and repo-local-root provenance are the
 closed `bootstrap_cli` vocabulary. Callers cannot construct or mutate another
 path set, override artifact names, or obtain a public path report.
@@ -120,6 +120,15 @@ the derived public key matches configuration. Offline provisioning is
 create-new and caller-supplied; ordinary startup never generates an identity,
 legacy envelopes are rejected, and RHI state backups contain no envelope,
 wrapping credential, or plaintext identity.
+
+The separately governed wrapping-credential resolver derives exactly one
+validated artifact name from the admitted identity binding and resolves it only
+beneath the same runtime context's canonical instance secrets root. It accepts
+only an existing 32-byte, owner-controlled, single-link regular file for
+service-host and repo-local profiles. It never accepts caller paths or bytes,
+creates credentials or directories, consults environment or process arguments,
+or falls back to an adjacent envelope sibling. The former prototype identity
+and adjacent-key storage APIs are not part of the crate surface.
 
 Validate the standalone crate through extbuild:
 
