@@ -130,6 +130,15 @@ creates credentials or directories, consults environment or process arguments,
 or falls back to an adjacent envelope sibling. The former prototype identity
 and adjacent-key storage APIs are not part of the crate surface.
 
+The wave-two composition proof binds configuration, runtime paths, immutable
+state metadata, the encrypted identity, and its separately resolved credential
+to one service instance. It proves that state initialization and existing-only
+open do not persist the identity secret, credential, encrypted-envelope wire
+material, or credential reference in `state.sqlite`. The envelope and
+credential remain excluded from the state-backup contract. Actual online
+backup, offline restore, and recovery execution remain owned by their later
+ordered checkpoint and are not claimed by this boundary proof.
+
 Validate the standalone crate through extbuild:
 
 ```text
