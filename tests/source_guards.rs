@@ -94,7 +94,7 @@ fn rhi_release_product_surface_has_no_order_or_receipt_modules() {
 fn rhi_agreement_attestation_is_release_product_optional_infrastructure() {
     let worker = read_repo_file("src/features/trade_agreement_attestation.rs");
     let lib = read_repo_file("src/lib.rs");
-    let cli = read_repo_file("src/cli.rs");
+    let cli = read_repo_file("src/cli_v1.rs");
     let config = read_repo_file("src/config.rs");
 
     for required in [
@@ -132,10 +132,10 @@ fn rhi_agreement_attestation_is_release_product_optional_infrastructure() {
         "RHI service presence must advertise canonical release-product trade mutation kinds"
     );
     assert!(
-        cli.contains("attestation-smoke")
-            && !cli.contains("proof-smoke")
+        !cli.contains("AttestationSmoke")
+            && !cli.contains("ProofSmoke")
             && !cli.contains("remote-prove"),
-        "RHI CLI must expose only release-product agreement attestation smoke command"
+        "RHI CLI must not retain prototype smoke commands"
     );
     assert!(
         config.contains("settings.config.trade_agreement_attestation.validate()?"),
@@ -145,20 +145,24 @@ fn rhi_agreement_attestation_is_release_product_optional_infrastructure() {
 
 #[test]
 fn rhi_state_paths_are_named_for_agreement_attestation() {
-    let paths = read_repo_file("src/paths.rs");
     let config = read_repo_file("src/config.rs");
-    let main = read_repo_file("src/main.rs");
+    let context = read_repo_file("src/runtime_context.rs");
 
-    for source in [paths.as_str(), config.as_str(), main.as_str()] {
-        assert!(
-            source.contains("trade-agreement-attestation"),
-            "RHI runtime state paths must use agreement-attestation naming"
-        );
+    assert!(
+        config.contains("trade-agreement-attestation"),
+        "transitional RHI state paths must use agreement-attestation naming"
+    );
+    for source in [config.as_str(), context.as_str()] {
         assert!(
             !source.contains("trade-listing"),
             "RHI runtime state paths must not retain trade-listing naming"
         );
     }
+    assert!(
+        context.contains("default_service_instance_artifacts")
+            && context.contains("service.identity.ncrypt"),
+        "RHI path authority must derive exact common and credential artifacts"
+    );
 }
 
 fn read_repo_file(relative_path: &str) -> String {

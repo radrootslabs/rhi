@@ -1,31 +1,37 @@
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 pub mod adapters;
-pub mod cli;
 mod cli_v1;
 pub mod config;
 mod config_v1;
 pub mod features;
 pub mod host_identity;
 pub mod host_nostr;
-pub mod host_paths;
 pub mod host_runtime;
 pub mod identity_storage;
-pub mod paths;
 pub mod rhi;
+mod runtime_context;
 
-pub use cli::Args as cli_args;
 pub use cli_v1::{
-    RHI_INSTANCE_ID_MAX_BYTES, RhiBootstrapProfileV1, RhiCliInvocationV1, RhiCliOutputModeV1,
-    RhiCliV1Error, RhiCliV1ErrorKind, RhiCommandV1, RhiConfigCommandV1, RhiIdentityCommandV1,
-    RhiMetricsCommandV1, RhiPresenceCommandV1, RhiPublicationCommandV1, RhiReconciliationCommandV1,
-    RhiSourcesCommandV1, RhiStateCommandV1, RhiTradeCommandV1, parse_rhi_cli_v1_from,
+    RhiBootstrapProfileV1, RhiCliInvocationV1, RhiCliOutputModeV1, RhiCliV1Error,
+    RhiCliV1ErrorKind, RhiCommandV1, RhiConfigCommandV1, RhiIdentityCommandV1, RhiMetricsCommandV1,
+    RhiPresenceCommandV1, RhiPublicationCommandV1, RhiReconciliationCommandV1, RhiSourcesCommandV1,
+    RhiStateCommandV1, RhiTradeCommandV1, parse_rhi_cli_v1_from,
 };
 pub use config_v1::{
     RHI_CONFIG_DOCUMENT_MAX_UTF8_BYTES, RHI_CONFIG_EFFECTIVE_MAX_UTF8_BYTES, RHI_CONFIG_SCHEMA,
     RHI_CONFIG_SCHEMA_VERSION, RhiConfigDefaultAuthority, RhiConfigDocumentV1, RhiConfigProfile,
     RhiConfigV1Error, RhiConfigV1ErrorKind, RhiConfigValueSource, RhiEffectiveConfigV1,
     RhiRuntimeThreadLimitsV1, parse_rhi_config_v1,
+};
+pub use radroots_runtime_paths::{
+    INSTANCE_ID_MAX_BYTES, InstanceId, RadrootsHostEnvironment, RadrootsPathProfile,
+    RadrootsPathResolver, RadrootsPlatform, RadrootsServiceInstanceArtifacts, RuntimeContext,
+    RuntimeContextSource, ServiceId,
+};
+pub use runtime_context::{
+    RhiRuntimeContext, RhiRuntimeContextError, RhiRuntimeContextErrorKind,
+    resolve_rhi_runtime_context,
 };
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -186,11 +192,8 @@ async fn wait_for_shutdown_or_stopped(handle: crate::rhi::RhiHandle) -> RunRhiWa
     }
 }
 
-pub async fn run_rhi(settings: &config::Settings, args: &cli_args) -> Result<()> {
-    let identity = load_service_identity(
-        args.service.identity.as_deref(),
-        args.service.allow_generate_identity,
-    )?;
+pub async fn run_rhi(settings: &config::Settings, context: &RhiRuntimeContext) -> Result<()> {
+    let identity = load_service_identity(context.identity_path())?;
     let keys = identity.keys().clone();
     let agreement_attestation_runtime =
         TradeAgreementAttestationRuntime::load(TradeAgreementAttestationRuntimeConfig {
@@ -279,9 +282,8 @@ mod tests {
         bootstrap_presence, build_authored_service_profile_event, release_product_handler_kinds,
         run_rhi, run_rhi_bootstrap_hook, run_rhi_wait_hook,
     };
-    use crate::{cli_args, config};
+    use crate::{config, parse_rhi_cli_v1_from, resolve_rhi_runtime_context};
     use radroots_event::envelope::kind::TRADE_MUTATION_EVENT_KINDS;
-    use std::path::PathBuf;
     use std::sync::atomic::Ordering;
     use tokio::sync::{Mutex, MutexGuard};
 
@@ -300,7 +302,10 @@ mod tests {
         guard
     }
 
-    fn settings_with_relays(relays: Vec<String>) -> config::Settings {
+    fn settings_with_relays(
+        relays: Vec<String>,
+        context: &crate::RhiRuntimeContext,
+    ) -> config::Settings {
         config::Settings {
             metadata: serde_json::from_str(r#"{"name":"rhi-test"}"#).expect("metadata"),
             config: config::Configuration {
@@ -326,8 +331,13 @@ mod tests {
                         jitter_ms: 0,
                     },
                     state: config::SubscriberStateConfig {
-                        path: unique_state_path("settings"),
-                        ..Default::default()
+                        path: context
+                            .context()
+                            .paths()
+                            .state()
+                            .join("trade-agreement-attestation/state.json"),
+                        replay_window_secs: 24 * 60 * 60,
+                        replay_overlap_secs: 5 * 60,
                     },
                 },
                 trade_agreement_attestation:
@@ -336,43 +346,46 @@ mod tests {
         }
     }
 
-    fn args_for_identity(path: PathBuf) -> cli_args {
-        cli_args {
-            command: None,
-            service: crate::host_runtime::ServiceCliArgs {
-                config: Some(PathBuf::from("config.toml")),
-                identity: Some(path),
-                allow_generate_identity: true,
-            },
-        }
+    fn context_for_root(root: &std::path::Path) -> crate::RhiRuntimeContext {
+        let root = root.to_str().expect("UTF-8 temp root");
+        let invocation = parse_rhi_cli_v1_from([
+            "rhi",
+            "--profile",
+            "repo-local",
+            "--instance",
+            "default",
+            "--repo-local-root",
+            root,
+            "run",
+        ])
+        .expect("invocation");
+        resolve_rhi_runtime_context(
+            &crate::RadrootsPathResolver::new(
+                crate::RadrootsPlatform::Linux,
+                crate::RadrootsHostEnvironment::default(),
+            ),
+            &invocation,
+        )
+        .expect("context")
     }
 
-    fn unique_identity_path(suffix: &str) -> PathBuf {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("time")
-            .as_nanos();
-        std::env::temp_dir().join(format!("rhi-{suffix}-{nanos}.secret.json"))
-    }
-
-    fn unique_state_path(suffix: &str) -> PathBuf {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("time")
-            .as_nanos();
-        std::env::temp_dir()
-            .join(format!("rhi-state-{suffix}-{nanos}"))
-            .join("state.json")
+    fn provision_identity(context: &crate::RhiRuntimeContext) {
+        crate::identity_storage::store_encrypted_identity(
+            context.identity_path(),
+            &crate::host_identity::RadrootsIdentity::generate(),
+        )
+        .expect("identity");
     }
 
     #[tokio::test]
     async fn run_rhi_starts_and_stops_without_relays() {
         let _guard = test_guard().await;
         RUN_RHI_AUTO_STOP.store(true, Ordering::Relaxed);
-        let identity_path = unique_identity_path("no-relays");
-        let args = args_for_identity(identity_path);
-        let settings = settings_with_relays(Vec::new());
-        run_rhi(&settings, &args).await.expect("run rhi");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let context = context_for_root(temp.path());
+        provision_identity(&context);
+        let settings = settings_with_relays(Vec::new(), &context);
+        run_rhi(&settings, &context).await.expect("run rhi");
     }
 
     #[tokio::test]
@@ -382,10 +395,11 @@ mod tests {
         *run_rhi_bootstrap_hook()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Ok(()));
-        let identity_path = unique_identity_path("relays");
-        let args = args_for_identity(identity_path);
-        let settings = settings_with_relays(vec!["wss://relay.example.com".to_string()]);
-        run_rhi(&settings, &args).await.expect("run rhi");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let context = context_for_root(temp.path());
+        provision_identity(&context);
+        let settings = settings_with_relays(vec!["wss://relay.example.com".to_string()], &context);
+        run_rhi(&settings, &context).await.expect("run rhi");
         assert_eq!(release_product_handler_kinds(), TRADE_MUTATION_EVENT_KINDS);
     }
 
@@ -395,10 +409,11 @@ mod tests {
         *run_rhi_wait_hook()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(RunRhiWaitOutcome::Stopped);
-        let identity_path = unique_identity_path("wait-hook");
-        let args = args_for_identity(identity_path);
-        let settings = settings_with_relays(Vec::new());
-        run_rhi(&settings, &args).await.expect("run rhi");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let context = context_for_root(temp.path());
+        provision_identity(&context);
+        let settings = settings_with_relays(Vec::new(), &context);
+        run_rhi(&settings, &context).await.expect("run rhi");
     }
 
     #[tokio::test]

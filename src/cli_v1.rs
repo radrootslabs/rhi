@@ -6,9 +6,7 @@ use std::fmt;
 use std::path::{Component, Path, PathBuf};
 
 use clap::{Parser, Subcommand, ValueEnum};
-
-/// Maximum encoded length of an RHI instance identifier.
-pub const RHI_INSTANCE_ID_MAX_BYTES: usize = 128;
+use radroots_runtime_paths::InstanceId;
 
 /// The exact bootstrap profile selected by the operator.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -178,7 +176,7 @@ impl Error for RhiCliV1Error {}
 /// A validated one-pass RHI bootstrap and command selection.
 pub struct RhiCliInvocationV1 {
     profile: RhiBootstrapProfileV1,
-    instance: Box<str>,
+    instance: InstanceId,
     repo_local_root: Option<PathBuf>,
     config_path: Option<PathBuf>,
     output_mode: RhiCliOutputModeV1,
@@ -194,7 +192,7 @@ impl RhiCliInvocationV1 {
 
     /// Returns the validated instance identifier.
     #[must_use]
-    pub fn instance(&self) -> &str {
+    pub const fn instance(&self) -> &InstanceId {
         &self.instance
     }
 
@@ -262,7 +260,8 @@ where
     let instance = parsed
         .instance
         .ok_or_else(|| RhiCliV1Error::new(RhiCliV1ErrorKind::InvalidArguments))?;
-    validate_instance(&instance)?;
+    let instance = InstanceId::new(instance)
+        .map_err(|_| RhiCliV1Error::new(RhiCliV1ErrorKind::InvalidInstance))?;
     validate_bootstrap_paths(
         profile,
         parsed.repo_local_root.as_deref(),
@@ -271,28 +270,12 @@ where
 
     Ok(RhiCliInvocationV1 {
         profile,
-        instance: instance.into_boxed_str(),
+        instance,
         repo_local_root: parsed.repo_local_root,
         config_path: parsed.config,
         output_mode: parsed.output.into(),
         command: parsed.command.into(),
     })
-}
-
-fn validate_instance(value: &str) -> Result<(), RhiCliV1Error> {
-    let bytes = value.as_bytes();
-    let is_boundary = |byte: u8| byte.is_ascii_lowercase() || byte.is_ascii_digit();
-    if bytes.is_empty()
-        || bytes.len() > RHI_INSTANCE_ID_MAX_BYTES
-        || !is_boundary(bytes[0])
-        || !is_boundary(bytes[bytes.len() - 1])
-        || !bytes
-            .iter()
-            .all(|byte| is_boundary(*byte) || matches!(*byte, b'-' | b'_'))
-    {
-        return Err(RhiCliV1Error::new(RhiCliV1ErrorKind::InvalidInstance));
-    }
-    Ok(())
 }
 
 fn validate_bootstrap_paths(
@@ -652,7 +635,7 @@ mod tests {
                 "run",
             ])
             .expect("host profile");
-            assert_eq!(invocation.instance(), "north-01");
+            assert_eq!(invocation.instance().as_str(), "north-01");
             assert_eq!(
                 invocation.config_path(),
                 Some(Path::new("/etc/radroots/rhi.toml"))
@@ -696,7 +679,7 @@ mod tests {
             assert_eq!(error.kind(), RhiCliV1ErrorKind::InvalidInstance);
         }
 
-        let exact = "a".repeat(RHI_INSTANCE_ID_MAX_BYTES);
+        let exact = "a".repeat(radroots_runtime_paths::INSTANCE_ID_MAX_BYTES);
         assert!(
             parse_rhi_cli_v1_from([
                 "rhi",
@@ -708,7 +691,7 @@ mod tests {
             ])
             .is_ok()
         );
-        let overlong = "a".repeat(RHI_INSTANCE_ID_MAX_BYTES + 1);
+        let overlong = "a".repeat(radroots_runtime_paths::INSTANCE_ID_MAX_BYTES + 1);
         assert_eq!(
             parse_rhi_cli_v1_from([
                 "rhi",

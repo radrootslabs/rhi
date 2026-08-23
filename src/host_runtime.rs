@@ -2,21 +2,9 @@
 
 use core::future::Future;
 use core::time::Duration;
-use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use clap::{ArgAction, Args, ValueHint};
 use serde::{Deserialize, Serialize};
-
-#[derive(Args, Debug, Clone)]
-pub struct ServiceCliArgs {
-    #[arg(long, value_name = "PATH", value_hint = ValueHint::FilePath)]
-    pub config: Option<PathBuf>,
-    #[arg(long, value_name = "PATH", value_hint = ValueHint::FilePath)]
-    pub identity: Option<PathBuf>,
-    #[arg(long, action = ArgAction::SetTrue)]
-    pub allow_generate_identity: bool,
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct NostrServiceConfig {

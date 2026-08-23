@@ -245,8 +245,9 @@ pub enum TradeAgreementAttestationRuntimeError {
 impl Default for TradeAgreementAttestationRuntimeConfig {
     fn default() -> Self {
         Self {
-            state_path: crate::paths::default_subscriber_state_path_for_process()
-                .expect("resolve canonical rhi agreement-attestation state path"),
+            // In-memory runtimes never construct persistence from this value.
+            // Persistent runtimes must receive their context-derived path.
+            state_path: PathBuf::new(),
             replay_window_secs: 24 * 60 * 60,
             replay_overlap_secs: 5 * 60,
         }
@@ -774,25 +775,6 @@ pub struct TradeAgreementAttestationSmokeResponse {
     pub error: Option<String>,
 }
 
-pub async fn run_smoke_cli_command(command: crate::cli::Command) -> anyhow::Result<()> {
-    let crate::cli::Command::AttestationSmoke { input, output } = command;
-    let request_bytes = read_input(input.as_deref())?;
-    let response = handle_smoke_request_bytes(&request_bytes).await;
-    let response_bytes = serde_json::to_vec_pretty(&response)?;
-    write_output(output.as_deref(), &response_bytes)?;
-    if response.ok {
-        Ok(())
-    } else {
-        Err(anyhow!(
-            "{}",
-            response
-                .error
-                .as_deref()
-                .unwrap_or("attestation smoke request failed")
-        ))
-    }
-}
-
 pub async fn handle_smoke_request_bytes(bytes: &[u8]) -> TradeAgreementAttestationSmokeResponse {
     match serde_json::from_slice::<TradeAgreementAttestationSmokeRequest>(bytes) {
         Ok(request) if request.protocol_id == RHI_AGREEMENT_ATTESTATION_PROTOCOL_ID => {
@@ -828,25 +810,6 @@ pub async fn handle_smoke_request_bytes(bytes: &[u8]) -> TradeAgreementAttestati
             capabilities: Vec::new(),
             error: Some(error.to_string()),
         },
-    }
-}
-
-fn read_input(path: Option<&Path>) -> anyhow::Result<Vec<u8>> {
-    match path {
-        Some(path) => std::fs::read(path).map_err(anyhow::Error::from),
-        None => std::io::read_to_string(std::io::stdin())
-            .map(|value| value.into_bytes())
-            .map_err(anyhow::Error::from),
-    }
-}
-
-fn write_output(path: Option<&Path>, bytes: &[u8]) -> anyhow::Result<()> {
-    match path {
-        Some(path) => std::fs::write(path, bytes).map_err(anyhow::Error::from),
-        None => {
-            println!("{}", String::from_utf8_lossy(bytes));
-            Ok(())
-        }
     }
 }
 

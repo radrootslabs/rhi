@@ -4,7 +4,7 @@ use std::error::Error;
 use std::path::Path;
 
 use rhi::{
-    RHI_INSTANCE_ID_MAX_BYTES, RhiBootstrapProfileV1, RhiCliOutputModeV1, RhiCliV1ErrorKind,
+    INSTANCE_ID_MAX_BYTES, RhiBootstrapProfileV1, RhiCliOutputModeV1, RhiCliV1ErrorKind,
     RhiCommandV1, RhiConfigCommandV1, RhiIdentityCommandV1, RhiMetricsCommandV1,
     RhiPresenceCommandV1, RhiPublicationCommandV1, RhiReconciliationCommandV1, RhiSourcesCommandV1,
     RhiStateCommandV1, RhiTradeCommandV1, parse_rhi_cli_v1_from,
@@ -158,12 +158,12 @@ fn bootstrap_values_are_explicit_bounded_and_cross_bound() {
     ])
     .expect("repo-local invocation");
     assert_eq!(repo.profile(), RhiBootstrapProfileV1::RepoLocal);
-    assert_eq!(repo.instance(), "review_01");
+    assert_eq!(repo.instance().as_str(), "review_01");
     assert_eq!(repo.repo_local_root(), Some(Path::new("/repo/radroots")));
     assert_eq!(repo.config_path(), Some(Path::new("/repo/config/rhi.toml")));
     assert_eq!(repo.output_mode(), RhiCliOutputModeV1::Json);
 
-    let exact = "a".repeat(RHI_INSTANCE_ID_MAX_BYTES);
+    let exact = "a".repeat(INSTANCE_ID_MAX_BYTES);
     assert!(
         parse_rhi_cli_v1_from([
             "rhi",
@@ -175,7 +175,7 @@ fn bootstrap_values_are_explicit_bounded_and_cross_bound() {
         ])
         .is_ok()
     );
-    let over = "a".repeat(RHI_INSTANCE_ID_MAX_BYTES + 1);
+    let over = "a".repeat(INSTANCE_ID_MAX_BYTES + 1);
     assert_eq!(
         parse_rhi_cli_v1_from([
             "rhi",

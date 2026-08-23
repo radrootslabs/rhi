@@ -35,23 +35,12 @@ pub fn encrypted_identity_key_path(path: impl AsRef<Path>) -> PathBuf {
     encrypted_identity_wrapping_key_path(path)
 }
 
-pub fn load_service_identity(
-    path: Option<&Path>,
-    allow_generate: bool,
-) -> Result<RadrootsIdentity, IdentityError> {
-    let path = path.map(Path::to_path_buf).unwrap_or_else(|| {
-        crate::paths::default_identity_path_for_process()
-            .expect("resolve canonical rhi identity path")
-    });
+pub fn load_service_identity(path: &Path) -> Result<RadrootsIdentity, IdentityError> {
+    let path = path.to_path_buf();
     if path.exists() {
         return load_encrypted_identity(path);
     }
-    if !allow_generate {
-        return Err(IdentityError::GenerationNotAllowed(path));
-    }
-    let identity = RadrootsIdentity::generate();
-    store_encrypted_identity(path, &identity)?;
-    Ok(identity)
+    Err(IdentityError::GenerationNotAllowed(path))
 }
 
 struct RhiFileKeyWrapping {

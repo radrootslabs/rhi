@@ -1,13 +1,14 @@
-use crate::host_nostr::Metadata;
-use crate::host_runtime::{BackoffConfig, NostrServiceConfig};
-use anyhow::{Context, Result, bail};
-use serde::{Deserialize, Serialize};
+//! Transitional runtime settings materialization under the sealed path context.
+
 use std::path::{Path, PathBuf};
 
+use anyhow::{Context, Result, bail};
+use serde::{Deserialize, Serialize};
+
+use crate::RhiRuntimeContext;
 use crate::features::trade_agreement_attestation::TradeAgreementAttestationPolicy;
-use crate::paths::{
-    RhiRuntimePaths, default_subscriber_state_path_for_process, resolve_runtime_paths_with_resolver,
-};
+use crate::host_nostr::Metadata;
+use crate::host_runtime::{BackoffConfig, NostrServiceConfig};
 
 fn default_replay_window_secs() -> u64 {
     24 * 60 * 60
@@ -21,7 +22,7 @@ fn default_logging_filter() -> String {
     "info".to_owned()
 }
 
-fn default_logging_stdout() -> bool {
+const fn default_logging_stdout() -> bool {
     true
 }
 
@@ -35,21 +36,19 @@ pub struct LoggingConfig {
 #[derive(Debug, Deserialize, Clone, Default)]
 #[serde(default, deny_unknown_fields)]
 struct RawLoggingConfig {
-    pub output_dir: Option<PathBuf>,
-    pub filter: Option<String>,
-    pub stdout: Option<bool>,
+    filter: Option<String>,
+    stdout: Option<bool>,
 }
 
 impl RawLoggingConfig {
-    fn into_logging_config(self, paths: &RhiRuntimePaths) -> Result<LoggingConfig> {
+    fn into_logging_config(self, context: &RhiRuntimeContext) -> Result<LoggingConfig> {
         let filter = self.filter.unwrap_or_else(default_logging_filter);
         let filter = filter.trim();
         if filter.is_empty() {
             bail!("logging.filter must not be empty");
         }
-
         Ok(LoggingConfig {
-            output_dir: self.output_dir.unwrap_or_else(|| paths.logs_dir.clone()),
+            output_dir: context.context().paths().logs().to_path_buf(),
             filter: filter.to_owned(),
             stdout: self.stdout.unwrap_or_else(default_logging_stdout),
         })
@@ -59,27 +58,27 @@ impl RawLoggingConfig {
 #[derive(Debug, Deserialize, Clone, Default)]
 #[serde(default, deny_unknown_fields)]
 struct RawRelaysConfig {
-    pub urls: Vec<String>,
+    urls: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
 #[serde(default, deny_unknown_fields)]
 struct RawNostrConfig {
-    pub nip89: RawNip89Config,
+    nip89: RawNip89Config,
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
 #[serde(default, deny_unknown_fields)]
 struct RawNip89Config {
-    pub identifier: Option<String>,
-    pub extra_tags: Vec<Vec<String>>,
+    identifier: Option<String>,
+    extra_tags: Vec<Vec<String>>,
 }
 
 #[derive(Debug, Clone)]
 struct RawServiceConfig {
-    pub logging: LoggingConfig,
-    pub relays: RawRelaysConfig,
-    pub nostr: RawNostrConfig,
+    logging: LoggingConfig,
+    relays: RawRelaysConfig,
+    nostr: RawNostrConfig,
 }
 
 impl RawServiceConfig {
@@ -98,34 +97,29 @@ pub struct Configuration {
     #[serde(flatten)]
     pub service: NostrServiceConfig,
     pub logging: LoggingConfig,
-    #[serde(default)]
     pub subscriber: SubscriberConfig,
     #[serde(default)]
     pub trade_agreement_attestation: TradeAgreementAttestationPolicy,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubscriberConfig {
-    #[serde(default)]
     pub backoff: BackoffConfig,
-    #[serde(default)]
     pub state: SubscriberStateConfig,
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
 #[serde(default, deny_unknown_fields)]
 struct RawSubscriberConfig {
-    #[serde(default)]
-    pub backoff: BackoffConfig,
-    #[serde(default)]
-    pub state: RawSubscriberStateConfig,
+    backoff: BackoffConfig,
+    state: RawSubscriberStateConfig,
 }
 
 impl RawSubscriberConfig {
-    fn into_subscriber_config(self, paths: &RhiRuntimePaths) -> SubscriberConfig {
+    fn into_subscriber_config(self, context: &RhiRuntimeContext) -> SubscriberConfig {
         SubscriberConfig {
             backoff: self.backoff,
-            state: self.state.into_subscriber_state_config(paths),
+            state: self.state.into_subscriber_state_config(context),
         }
     }
 }
@@ -140,18 +134,15 @@ pub struct SubscriberStateConfig {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 struct RawSubscriberStateConfig {
-    #[serde(default)]
-    pub path: Option<PathBuf>,
     #[serde(default = "default_replay_window_secs")]
-    pub replay_window_secs: u64,
+    replay_window_secs: u64,
     #[serde(default = "default_replay_overlap_secs")]
-    pub replay_overlap_secs: u64,
+    replay_overlap_secs: u64,
 }
 
 impl Default for RawSubscriberStateConfig {
     fn default() -> Self {
         Self {
-            path: None,
             replay_window_secs: default_replay_window_secs(),
             replay_overlap_secs: default_replay_overlap_secs(),
         }
@@ -159,24 +150,16 @@ impl Default for RawSubscriberStateConfig {
 }
 
 impl RawSubscriberStateConfig {
-    fn into_subscriber_state_config(self, paths: &RhiRuntimePaths) -> SubscriberStateConfig {
+    fn into_subscriber_state_config(self, context: &RhiRuntimeContext) -> SubscriberStateConfig {
         SubscriberStateConfig {
-            path: self
-                .path
-                .unwrap_or_else(|| paths.subscriber_state_path.clone()),
+            path: context
+                .context()
+                .paths()
+                .state()
+                .join("trade-agreement-attestation")
+                .join("state.json"),
             replay_window_secs: self.replay_window_secs,
             replay_overlap_secs: self.replay_overlap_secs,
-        }
-    }
-}
-
-impl Default for SubscriberStateConfig {
-    fn default() -> Self {
-        Self {
-            path: default_subscriber_state_path_for_process()
-                .expect("resolve canonical rhi subscriber state path"),
-            replay_window_secs: default_replay_window_secs(),
-            replay_overlap_secs: default_replay_overlap_secs(),
         }
     }
 }
@@ -184,35 +167,34 @@ impl Default for SubscriberStateConfig {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 struct RawSettings {
-    pub metadata: Metadata,
+    metadata: Metadata,
     #[serde(default)]
-    pub logging: RawLoggingConfig,
+    logging: RawLoggingConfig,
     #[serde(default)]
-    pub relays: RawRelaysConfig,
+    relays: RawRelaysConfig,
     #[serde(default)]
-    pub nostr: RawNostrConfig,
+    nostr: RawNostrConfig,
     #[serde(default)]
-    pub subscriber: RawSubscriberConfig,
+    subscriber: RawSubscriberConfig,
     #[serde(default)]
-    pub trade_agreement_attestation: TradeAgreementAttestationPolicy,
+    trade_agreement_attestation: TradeAgreementAttestationPolicy,
 }
 
 impl RawSettings {
-    fn into_settings(self, paths: &RhiRuntimePaths) -> Result<Settings> {
-        let logging = self.logging.into_logging_config(paths)?;
+    fn into_settings(self, context: &RhiRuntimeContext) -> Result<Settings> {
+        let logging = self.logging.into_logging_config(context)?;
         let service = RawServiceConfig {
             logging: logging.clone(),
             relays: self.relays,
             nostr: self.nostr,
         }
         .into_service_config();
-
         Ok(Settings {
             metadata: self.metadata,
             config: Configuration {
                 service,
                 logging,
-                subscriber: self.subscriber.into_subscriber_config(paths),
+                subscriber: self.subscriber.into_subscriber_config(context),
                 trade_agreement_attestation: self.trade_agreement_attestation,
             },
         })
@@ -225,167 +207,62 @@ pub struct Settings {
     pub config: Configuration,
 }
 
-fn load_settings_from_path_with_resolver(
-    path: &Path,
-    resolver: &crate::host_paths::RadrootsPathResolver,
-    profile: crate::host_paths::RadrootsPathProfile,
-    repo_local_root: Option<&Path>,
-) -> Result<Settings> {
-    let paths = resolve_runtime_paths_with_resolver(resolver, profile, repo_local_root)?;
+/// Loads transitional runtime settings with all paths supplied by one sealed context.
+///
+/// The final versioned configuration parser is [`crate::parse_rhi_config_v1`].
+/// This adapter remains only until the legacy runtime is removed in Step 168;
+/// it accepts no path overrides and performs no ambient environment selection.
+pub fn load_settings_from_path(path: &Path, context: &RhiRuntimeContext) -> Result<Settings> {
     let raw = std::fs::read_to_string(path)
         .with_context(|| format!("read configuration from {}", path.display()))?;
     let settings: RawSettings =
         toml::from_str(&raw).with_context(|| format!("parse configuration {}", path.display()))?;
-    let settings = settings.into_settings(&paths)?;
+    let settings = settings.into_settings(context)?;
     settings.config.trade_agreement_attestation.validate()?;
     Ok(settings)
 }
 
-pub fn load_settings_from_path(path: &Path) -> Result<Settings> {
-    let (profile, repo_local_root) = crate::paths::process_path_selection()?;
-    load_settings_from_path_with_resolver(
-        path,
-        &crate::host_paths::RadrootsPathResolver::current(),
-        profile,
-        repo_local_root.as_deref(),
-    )
-}
-
 #[cfg(test)]
 mod tests {
-    use super::load_settings_from_path_with_resolver;
-    use crate::features::trade_agreement_attestation::TradeAgreementAttestationBackend;
-    use crate::host_paths::{
-        RadrootsHostEnvironment, RadrootsPathOverrides, RadrootsPathProfile, RadrootsPathResolver,
-        RadrootsPlatform, RadrootsRuntimeNamespace,
+    use std::path::{Path, PathBuf};
+
+    use crate::{
+        RadrootsHostEnvironment, RadrootsPathResolver, RadrootsPlatform, parse_rhi_cli_v1_from,
+        resolve_rhi_runtime_context,
     };
-    use crate::paths::{
-        default_subscriber_state_path_for_process, resolve_runtime_paths_with_resolver,
-        runtime_contract_with_resolver,
-    };
-    use std::path::PathBuf;
 
-    fn linux_resolver() -> RadrootsPathResolver {
-        RadrootsPathResolver::new(
-            RadrootsPlatform::Linux,
-            RadrootsHostEnvironment {
-                home_dir: Some(PathBuf::from("/home/treesap")),
-                ..RadrootsHostEnvironment::default()
-            },
+    use super::load_settings_from_path;
+
+    fn context() -> crate::RhiRuntimeContext {
+        let invocation = parse_rhi_cli_v1_from([
+            "rhi",
+            "--profile",
+            "interactive",
+            "--instance",
+            "default",
+            "run",
+        ])
+        .expect("invocation");
+        resolve_rhi_runtime_context(
+            &RadrootsPathResolver::new(
+                RadrootsPlatform::Linux,
+                RadrootsHostEnvironment {
+                    home_dir: Some(PathBuf::from("/home/operator")),
+                    xdg_config_home: Some(PathBuf::from("/xdg/config")),
+                    xdg_data_home: Some(PathBuf::from("/xdg/data")),
+                    xdg_state_home: Some(PathBuf::from("/xdg/state")),
+                    xdg_cache_home: Some(PathBuf::from("/xdg/cache")),
+                    xdg_runtime_dir: Some(PathBuf::from("/xdg/run")),
+                    ..RadrootsHostEnvironment::default()
+                },
+            ),
+            &invocation,
         )
+        .expect("context")
     }
 
     #[test]
-    fn worker_namespace_uses_canonical_interactive_roots() {
-        let namespace = RadrootsRuntimeNamespace::worker("rhi").expect("worker namespace");
-        let namespaced = linux_resolver()
-            .resolve(
-                RadrootsPathProfile::InteractiveUser,
-                &RadrootsPathOverrides::default(),
-            )
-            .expect("interactive_user roots")
-            .namespaced(&namespace);
-
-        assert_eq!(
-            namespaced.config,
-            PathBuf::from("/home/treesap/.radroots/config/workers/rhi")
-        );
-        assert_eq!(
-            namespaced.data,
-            PathBuf::from("/home/treesap/.radroots/data/workers/rhi")
-        );
-        assert_eq!(
-            namespaced.logs,
-            PathBuf::from("/home/treesap/.radroots/logs/workers/rhi")
-        );
-        assert_eq!(
-            namespaced.secrets,
-            PathBuf::from("/home/treesap/.radroots/secrets/workers/rhi")
-        );
-    }
-
-    #[test]
-    fn runtime_paths_follow_interactive_user_contract() {
-        let paths = resolve_runtime_paths_with_resolver(
-            &linux_resolver(),
-            RadrootsPathProfile::InteractiveUser,
-            None,
-        )
-        .expect("interactive_user paths should resolve");
-
-        assert_eq!(
-            paths.config_path,
-            PathBuf::from("/home/treesap/.radroots/config/workers/rhi/config.toml")
-        );
-        assert_eq!(
-            paths.logs_dir,
-            PathBuf::from("/home/treesap/.radroots/logs/workers/rhi")
-        );
-        assert_eq!(
-            paths.identity_path,
-            PathBuf::from("/home/treesap/.radroots/secrets/workers/rhi/identity.secret.json")
-        );
-        assert_eq!(
-            paths.subscriber_state_path,
-            PathBuf::from(
-                "/home/treesap/.radroots/data/workers/rhi/trade-agreement-attestation/state.json"
-            )
-        );
-    }
-
-    #[test]
-    fn runtime_paths_follow_service_host_contract() {
-        let resolver =
-            RadrootsPathResolver::new(RadrootsPlatform::Linux, RadrootsHostEnvironment::default());
-        let paths =
-            resolve_runtime_paths_with_resolver(&resolver, RadrootsPathProfile::ServiceHost, None)
-                .expect("service_host paths should resolve");
-
-        assert_eq!(
-            paths.config_path,
-            PathBuf::from("/etc/radroots/workers/rhi/config.toml")
-        );
-        assert_eq!(
-            paths.logs_dir,
-            PathBuf::from("/var/log/radroots/workers/rhi")
-        );
-        assert_eq!(
-            paths.identity_path,
-            PathBuf::from("/etc/radroots/secrets/workers/rhi/identity.secret.json")
-        );
-        assert_eq!(
-            paths.subscriber_state_path,
-            PathBuf::from("/var/lib/radroots/workers/rhi/trade-agreement-attestation/state.json")
-        );
-    }
-
-    #[test]
-    fn runtime_paths_follow_repo_local_contract() {
-        let repo_local_root = PathBuf::from("/repo/.local/radroots/dev/rhi");
-        let paths = resolve_runtime_paths_with_resolver(
-            &linux_resolver(),
-            RadrootsPathProfile::RepoLocal,
-            Some(repo_local_root.as_path()),
-        )
-        .expect("repo_local paths should resolve");
-
-        assert_eq!(
-            paths.config_path,
-            repo_local_root.join("config/workers/rhi/config.toml")
-        );
-        assert_eq!(paths.logs_dir, repo_local_root.join("logs/workers/rhi"));
-        assert_eq!(
-            paths.identity_path,
-            repo_local_root.join("secrets/workers/rhi/identity.secret.json")
-        );
-        assert_eq!(
-            paths.subscriber_state_path,
-            repo_local_root.join("data/workers/rhi/trade-agreement-attestation/state.json")
-        );
-    }
-
-    #[test]
-    fn load_settings_materializes_profile_defaults_when_paths_are_omitted() {
+    fn materializes_only_context_derived_paths() {
         let temp = tempfile::tempdir().expect("tempdir");
         let config_path = temp.path().join("config.toml");
         std::fs::write(
@@ -396,379 +273,42 @@ name = "rhi-test"
 
 [relays]
 urls = ["wss://relay.example.com"]
-
-[nostr.nip89]
-identifier = "rhi"
 
 [subscriber.state]
 replay_window_secs = 123
 replay_overlap_secs = 45
 "#,
         )
-        .expect("write config");
-
-        let settings = load_settings_from_path_with_resolver(
-            &config_path,
-            &linux_resolver(),
-            RadrootsPathProfile::InteractiveUser,
-            None,
-        )
-        .expect("load settings");
-
-        assert_eq!(
-            settings.config.service.logs_dir,
-            "/home/treesap/.radroots/logs/workers/rhi"
-        );
+        .expect("config");
+        let settings = load_settings_from_path(&config_path, &context()).expect("settings");
         assert_eq!(
             settings.config.logging.output_dir,
-            PathBuf::from("/home/treesap/.radroots/logs/workers/rhi")
-        );
-        assert_eq!(settings.config.logging.filter, "info");
-        assert!(settings.config.logging.stdout);
-        assert_eq!(
-            settings.config.service.relays,
-            vec!["wss://relay.example.com"]
-        );
-        assert_eq!(
-            settings.config.service.nip89_identifier.as_deref(),
-            Some("rhi")
+            Path::new("/xdg/state/radroots/logs/services/rhi/default")
         );
         assert_eq!(
             settings.config.subscriber.state.path,
-            PathBuf::from(
-                "/home/treesap/.radroots/data/workers/rhi/trade-agreement-attestation/state.json"
+            Path::new(
+                "/xdg/data/radroots/services/rhi/default/trade-agreement-attestation/state.json"
             )
         );
         assert_eq!(settings.config.subscriber.state.replay_window_secs, 123);
         assert_eq!(settings.config.subscriber.state.replay_overlap_secs, 45);
-        assert_eq!(
-            settings.config.trade_agreement_attestation.backend,
-            TradeAgreementAttestationBackend::LocalStatementHash
-        );
     }
 
     #[test]
-    fn load_settings_parses_trade_agreement_attestation_policy() {
+    fn path_leaf_overrides_are_rejected() {
         let temp = tempfile::tempdir().expect("tempdir");
-        let config_path = temp.path().join("config.toml");
-        std::fs::write(
-            &config_path,
-            r#"
-[metadata]
-name = "rhi-test"
-
-[logging]
-output_dir = "logs/rhi"
-filter = "warn"
-stdout = false
-
-[relays]
-urls = ["wss://relay.example.com"]
-
-[nostr.nip89]
-identifier = "rhi"
-extra_tags = [["t", "radroots"]]
-
-[subscriber.backoff]
-base_ms = 10
-max_ms = 100
-factor = 3
-jitter_ms = 5
-
-[subscriber.state]
-path = "state/trade-agreement-attestation.json"
-
-[trade_agreement_attestation]
-backend = "local_statement_hash"
-expected_statement_contract_hash = "0x1111111111111111111111111111111111111111111111111111111111111111"
-validator_set_addr = "30381:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd:018f3d99-7d35-7c0c-8a0f-7f3b645abcde"
-validator_set_event_id = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
-"#,
-        )
-        .expect("write config");
-
-        let settings = load_settings_from_path_with_resolver(
-            &config_path,
-            &linux_resolver(),
-            RadrootsPathProfile::InteractiveUser,
-            None,
-        )
-        .expect("load settings");
-
-        assert_eq!(settings.config.service.logs_dir, "logs/rhi");
-        assert_eq!(
-            settings.config.logging.output_dir,
-            PathBuf::from("logs/rhi")
-        );
-        assert_eq!(settings.config.logging.filter, "warn");
-        assert!(!settings.config.logging.stdout);
-        assert_eq!(
-            settings.config.service.relays,
-            vec!["wss://relay.example.com"]
-        );
-        assert_eq!(
-            settings.config.service.nip89_identifier.as_deref(),
-            Some("rhi")
-        );
-        assert_eq!(
-            settings.config.service.nip89_extra_tags,
-            vec![vec!["t".to_owned(), "radroots".to_owned()]]
-        );
-        assert_eq!(settings.config.subscriber.backoff.base_ms, 10);
-        assert_eq!(settings.config.subscriber.backoff.max_ms, 100);
-        assert_eq!(settings.config.subscriber.backoff.factor, 3);
-        assert_eq!(settings.config.subscriber.backoff.jitter_ms, 5);
-        assert_eq!(
-            settings.config.subscriber.state.path,
-            PathBuf::from("state/trade-agreement-attestation.json")
-        );
-        assert_eq!(
-            settings.config.trade_agreement_attestation.backend,
-            TradeAgreementAttestationBackend::LocalStatementHash
-        );
-        assert_eq!(
-            settings
-                .config
-                .trade_agreement_attestation
-                .expected_statement_contract_hash
-                .as_deref(),
-            Some("0x1111111111111111111111111111111111111111111111111111111111111111")
-        );
-        assert_eq!(
-            settings
-                .config
-                .trade_agreement_attestation
-                .validator_set_addr
-                .as_deref(),
-            Some(
-                "30381:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd:018f3d99-7d35-7c0c-8a0f-7f3b645abcde"
-            )
-        );
-        assert_eq!(
-            settings
-                .config
-                .trade_agreement_attestation
-                .validator_set_event_id
-                .as_deref(),
-            Some("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
-        );
-    }
-
-    #[test]
-    fn load_settings_rejects_invalid_statement_contract_hash() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        let config_path = temp.path().join("config.toml");
-        std::fs::write(
-            &config_path,
-            r#"
-[metadata]
-name = "rhi-test"
-
-[trade_agreement_attestation]
-backend = "local_statement_hash"
-expected_statement_contract_hash = "not-a-hash"
-"#,
-        )
-        .expect("write config");
-
-        let error = load_settings_from_path_with_resolver(
-            &config_path,
-            &linux_resolver(),
-            RadrootsPathProfile::InteractiveUser,
-            None,
-        )
-        .expect_err("invalid statement contract hash must fail");
-        let message = format!("{error:#}");
-        assert!(
-            message.contains("invalid configured hash field"),
-            "{message}"
-        );
-    }
-
-    #[test]
-    fn load_settings_rejects_partial_validator_set_binding() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        let config_path = temp.path().join("config.toml");
-        std::fs::write(
-            &config_path,
-            r#"
-[metadata]
-name = "rhi-test"
-
-[trade_agreement_attestation]
-backend = "local_statement_hash"
-validator_set_addr = "30381:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd:018f3d99-7d35-7c0c-8a0f-7f3b645abcde"
-"#,
-        )
-        .expect("write config");
-
-        let error = load_settings_from_path_with_resolver(
-            &config_path,
-            &linux_resolver(),
-            RadrootsPathProfile::InteractiveUser,
-            None,
-        )
-        .expect_err("partial validator-set binding must fail");
-        let message = format!("{error:#}");
-        assert!(
-            message.contains("attestation policy is missing validator_set_event_id"),
-            "{message}"
-        );
-    }
-
-    #[test]
-    fn old_config_roots_are_rejected() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        for (name, body, needle) in [
-            (
-                "config-root",
-                r#"
-[metadata]
-name = "rhi-test"
-
-[config]
-relays = ["wss://relay.example.com"]
-"#,
-                "unknown field `config`",
-            ),
-            (
-                "config-subscriber-backoff",
-                r#"
-[metadata]
-name = "rhi-test"
-
-[config.subscriber.backoff]
-base_ms = 10
-"#,
-                "unknown field `config`",
-            ),
-            (
-                "config-subscriber-state",
-                r#"
-[metadata]
-name = "rhi-test"
-
-[config.subscriber.state]
-replay_window_secs = 10
-"#,
-                "unknown field `config`",
-            ),
-            (
-                "config-trade-agreement-attestation",
-                r#"
-[metadata]
-name = "rhi-test"
-
-[config.trade_agreement_attestation]
-backend = "local_statement_hash"
-"#,
-                "unknown field `config`",
-            ),
+        for (name, extra) in [
+            ("logging", "[logging]\noutput_dir = \"/tmp/logs\"\n"),
+            ("state", "[subscriber.state]\npath = \"/tmp/state.json\"\n"),
         ] {
             let config_path = temp.path().join(format!("{name}.toml"));
-            std::fs::write(&config_path, body).expect("write config");
-
-            let error = load_settings_from_path_with_resolver(
+            std::fs::write(
                 &config_path,
-                &linux_resolver(),
-                RadrootsPathProfile::InteractiveUser,
-                None,
+                format!("[metadata]\nname = \"rhi-test\"\n\n{extra}"),
             )
-            .expect_err("old config root must fail");
-            let message = format!("{error:#}");
-            assert!(message.contains(needle), "{message}");
+            .expect("config");
+            assert!(load_settings_from_path(&config_path, &context()).is_err());
         }
-    }
-
-    #[test]
-    fn default_subscriber_state_path_is_canonical_for_current_process() {
-        let path =
-            default_subscriber_state_path_for_process().expect("resolve current process defaults");
-        assert!(path.ends_with("trade-agreement-attestation/state.json"));
-    }
-
-    #[test]
-    fn runtime_contract_output_matches_interactive_user_contract() {
-        let contract = runtime_contract_with_resolver(
-            &linux_resolver(),
-            RadrootsPathProfile::InteractiveUser,
-            None,
-        )
-        .expect("interactive-user contract");
-
-        assert_eq!(contract.active_profile, "interactive_user");
-        assert_eq!(contract.path_overrides.profile_source, "caller");
-        assert_eq!(contract.path_overrides.root_source, "host_defaults");
-        assert_eq!(contract.path_overrides.repo_local_root, None);
-        assert_eq!(contract.path_overrides.repo_local_root_source, None);
-        assert_eq!(
-            contract.path_overrides.subordinate_path_override_source,
-            "config_artifact"
-        );
-        assert_eq!(
-            contract.path_overrides.subordinate_path_override_keys,
-            vec![
-                "logging.output_dir".to_owned(),
-                "subscriber.state.path".to_owned(),
-            ]
-        );
-        assert_eq!(
-            contract.allowed_profiles,
-            vec![
-                "interactive_user".to_owned(),
-                "service_host".to_owned(),
-                "repo_local".to_owned(),
-            ]
-        );
-        assert_eq!(contract.default_shared_secret_backend, "encrypted_file");
-        assert_eq!(
-            contract.allowed_shared_secret_backends,
-            vec!["encrypted_file".to_owned()]
-        );
-        assert_eq!(
-            contract.canonical_config_path,
-            PathBuf::from("/home/treesap/.radroots/config/workers/rhi/config.toml")
-        );
-        assert_eq!(
-            contract.canonical_logs_dir,
-            PathBuf::from("/home/treesap/.radroots/logs/workers/rhi")
-        );
-        assert_eq!(
-            contract.canonical_identity_path,
-            PathBuf::from("/home/treesap/.radroots/secrets/workers/rhi/identity.secret.json")
-        );
-        assert_eq!(
-            contract.canonical_subscriber_state_path,
-            PathBuf::from(
-                "/home/treesap/.radroots/data/workers/rhi/trade-agreement-attestation/state.json"
-            )
-        );
-    }
-
-    #[test]
-    fn runtime_contract_output_matches_service_host_contract() {
-        let resolver =
-            RadrootsPathResolver::new(RadrootsPlatform::Linux, RadrootsHostEnvironment::default());
-        let contract =
-            runtime_contract_with_resolver(&resolver, RadrootsPathProfile::ServiceHost, None)
-                .expect("service-host contract");
-
-        assert_eq!(contract.active_profile, "service_host");
-        assert_eq!(
-            contract.canonical_config_path,
-            PathBuf::from("/etc/radroots/workers/rhi/config.toml")
-        );
-        assert_eq!(
-            contract.canonical_logs_dir,
-            PathBuf::from("/var/log/radroots/workers/rhi")
-        );
-        assert_eq!(
-            contract.canonical_identity_path,
-            PathBuf::from("/etc/radroots/secrets/workers/rhi/identity.secret.json")
-        );
-        assert_eq!(
-            contract.canonical_subscriber_state_path,
-            PathBuf::from("/var/lib/radroots/workers/rhi/trade-agreement-attestation/state.json")
-        );
     }
 }

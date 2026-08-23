@@ -21,9 +21,8 @@ instance, repo-local root, and config-path selection are CLI concerns and are
 not document fields.
 
 The current runtime loader and root `config.toml` remain transitional until
-their ordered replacement steps are complete. Existing environment and worker
-selectors are prototype evidence, not authority to change or weaken the v1
-contract.
+their ordered replacement steps are complete. Prototype environment and worker
+selectors are removed and are not compatibility authority.
 
 `parse_rhi_config_v1` is the strict in-memory admission boundary for the target
 document. It bounds original bytes before parsing, rejects malformed duplicate
@@ -56,6 +55,27 @@ Ordinary `run` accepts no identity-generation, identity-path, log-path,
 database-path, worker, environment-file, or arbitrary path-leaf flag. Identity
 rekey and replacement are not commands; rotation is a create-new offline
 artifact plus governed configuration apply.
+
+## Sealed service-instance paths
+
+One validated CLI invocation resolves through `RhiRuntimeContext`, which owns
+the shared typed `RuntimeContext`, exact common artifacts, the validated
+`service.identity.ncrypt` credential path, and the explicit or canonical
+configuration selection. The service identity is fixed to `rhi`; the instance
+comes only from `InstanceId`; profile and repo-local-root provenance are the
+closed `bootstrap_cli` vocabulary. Callers cannot construct or mutate another
+path set, override artifact names, or obtain a public path report.
+
+Service-host roots are exactly
+`/etc/radroots/services/rhi/<instance>`,
+`/var/lib/radroots/services/rhi/<instance>`,
+`/var/cache/radroots/services/rhi/<instance>`,
+`/var/log/radroots/services/rhi/<instance>`,
+`/run/radroots/services/rhi/<instance>`, and
+`/etc/radroots/secrets/services/rhi/<instance>`. Interactive roots consume the
+injected host environment defined by `radroots_runtime_paths`; repo-local uses
+one explicit absolute base and the same `services/rhi/<instance>` namespace.
+Path resolution performs no directory creation or filesystem I/O.
 
 Use the repository-owned Nix lanes for validation:
 
