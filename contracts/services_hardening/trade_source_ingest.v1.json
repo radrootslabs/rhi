@@ -32,7 +32,7 @@
   "admission": {
     "boundary": "admit_rhi_trade_mutation_event",
     "trade_id": "exact_requested_trade_id",
-    "deduplicate_by": "verified_event_id",
+    "deduplicate_by": ["verified_event_id", "verified_event_signature"],
     "ordering": ["created_at_unix_seconds_ascending", "event_id_bytes_ascending", "signature_bytes_ascending"],
     "rejected_event": "cannot_advance_checkpoint_or_dirty_generation"
   },

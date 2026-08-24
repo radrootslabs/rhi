@@ -23,11 +23,15 @@ use radroots_transport::{
 use rhi::{
     RadrootsHostEnvironment, RadrootsPathResolver, RadrootsPlatform, RhiConfigProfile,
     RhiStateMetadata, RhiTradeMutationAuthoredTimePolicy, RhiTradeMutationObservedAtUnixSeconds,
-    RhiTradeSourceAttempt, RhiTradeSourceCompletion, RhiTransportAdapters, TradeId,
-    UnixTimeSeconds, ingest_rhi_trade_source, initialize_rhi_state, open_rhi_state_read_write,
-    parse_rhi_cli_v1_from, parse_rhi_config_v1, resolve_rhi_runtime_context,
+    RhiTradeSourceAttempt, RhiTradeSourceCompletion, RhiTradeSourceIngestErrorKind,
+    RhiTransportAdapters, TradeId, UnixTimeSeconds, apply_rhi_configuration,
+    ingest_rhi_trade_source, initialize_rhi_state, open_rhi_state_read_write,
+    open_rhi_state_read_write_from_config, parse_rhi_cli_v1_from, parse_rhi_config_v1,
+    resolve_rhi_runtime_context,
 };
 use serde_json::Value;
+use sqlx::{ConnectOptions, Connection, Row, SqliteConnection, sqlite::SqliteConnectOptions};
+use tokio::sync::Barrier;
 
 const CONFIG: &str = include_str!("../contracts/services_hardening/config.v1.example.toml");
 const VECTOR: &str = include_str!("../contracts/conformance/vectors/trade_ingest_proposal.v1.json");
@@ -43,6 +47,7 @@ struct PageSpec {
 struct ScriptedTransport {
     pages: Arc<Mutex<VecDeque<PageSpec>>>,
     requests: Arc<Mutex<Vec<FetchRequest>>>,
+    fetch_barrier: Option<Arc<Barrier>>,
 }
 
 impl ScriptedTransport {
@@ -50,7 +55,13 @@ impl ScriptedTransport {
         Self {
             pages: Arc::new(Mutex::new(pages.into_iter().collect())),
             requests: Arc::new(Mutex::new(Vec::new())),
+            fetch_barrier: None,
         }
+    }
+
+    fn with_fetch_barrier(mut self, parties: usize) -> Self {
+        self.fetch_barrier = Some(Arc::new(Barrier::new(parties)));
+        self
     }
 
     fn requests(&self) -> Vec<FetchRequest> {
@@ -72,7 +83,11 @@ impl EventSource for ScriptedTransport {
             .expect("requests")
             .push(request.clone());
         let page = self.pages.lock().expect("pages").pop_front();
+        let fetch_barrier = self.fetch_barrier.clone();
         Box::pin(async move {
+            if let Some(barrier) = fetch_barrier {
+                barrier.wait().await;
+            }
             let spec = page.ok_or(radroots_transport::Error::UnsupportedOperation)?;
             let target = request.target_set().targets().first().expect("one target");
             let events = spec
@@ -225,6 +240,53 @@ fn attempt(request_id: &str, started_at: u64, observed_at: u64) -> RhiTradeSourc
         RhiTradeMutationAuthoredTimePolicy::new(0).expect("authored policy"),
     )
     .expect("attempt")
+}
+
+async fn offline_scalar(runtime: &rhi::RhiRuntimeContext, query: &'static str) -> i64 {
+    let options = SqliteConnectOptions::new()
+        .filename(runtime.artifacts().state_database())
+        .create_if_missing(false)
+        .disable_statement_logging();
+    let mut connection = SqliteConnection::connect_with(&options)
+        .await
+        .expect("offline connection");
+    let value = sqlx::query(query)
+        .fetch_one(&mut connection)
+        .await
+        .expect("offline scalar")
+        .try_get::<i64, _>(0)
+        .expect("scalar value");
+    connection.close().await.expect("offline close");
+    value
+}
+
+async fn offline_signed_event_keys(runtime: &rhi::RhiRuntimeContext) -> Vec<(Vec<u8>, Vec<u8>)> {
+    let options = SqliteConnectOptions::new()
+        .filename(runtime.artifacts().state_database())
+        .create_if_missing(false)
+        .disable_statement_logging();
+    let mut connection = SqliteConnection::connect_with(&options)
+        .await
+        .expect("offline connection");
+    let rows = sqlx::query(
+        "SELECT event_id, event_signature FROM nostr_events
+         ORDER BY event_id, event_signature",
+    )
+    .fetch_all(&mut connection)
+    .await
+    .expect("signed-event inventory");
+    let values = rows
+        .into_iter()
+        .map(|row| {
+            (
+                row.try_get::<Vec<u8>, _>("event_id").expect("event id"),
+                row.try_get::<Vec<u8>, _>("event_signature")
+                    .expect("event signature"),
+            )
+        })
+        .collect();
+    connection.close().await.expect("offline close");
+    values
 }
 
 #[tokio::test]
@@ -488,6 +550,339 @@ async fn configured_result_bound_retains_admitted_evidence_without_checkpoint() 
     assert!(outcome.dirty_generation_advanced());
 
     host.close().await.expect("close");
+}
+
+#[tokio::test]
+async fn signed_event_identity_permutations_preserve_both_signatures_and_canonical_state() {
+    let wire = vector_wire();
+    let first = resign_wire(&wire, 1);
+    let second = resign_wire(&wire, 2);
+    let first_json: Value = serde_json::from_str(&first).expect("first event");
+    let second_json: Value = serde_json::from_str(&second).expect("second event");
+    assert_eq!(first_json["id"], second_json["id"]);
+    assert_ne!(first_json["sig"], second_json["sig"]);
+
+    let mut inventories = Vec::new();
+    for (index, events) in [
+        vec![first.clone(), second.clone()],
+        vec![second.clone(), first.clone()],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let root = tempfile::tempdir().expect("root");
+        let runtime = runtime(root.path());
+        prepare_state_directory(&runtime);
+        let configuration = configuration();
+        let metadata = metadata(&runtime, &configuration);
+        let (applied_at, build) = migration_evidence();
+        initialize_rhi_state(&runtime, &metadata, applied_at, &build)
+            .await
+            .expect("initialize");
+        let host = open_rhi_state_read_write(&runtime, &metadata, applied_at, &build)
+            .await
+            .expect("writer");
+        let trade_id = TradeId::parse("11111111111111111111111111111111").expect("trade id");
+        let source = ScriptedTransport::new([PageSpec {
+            events,
+            state: FetchTargetState::Complete,
+            next: None,
+        }]);
+        let outcome = ingest_rhi_trade_source(
+            &host.repositories(),
+            &adapters(&source),
+            &configuration,
+            "trade-primary",
+            trade_id,
+            attempt(
+                &format!("signature-permutation-{index}"),
+                1_784_347_600 + index as u64,
+                1_784_347_600 + index as u64,
+            ),
+        )
+        .await
+        .expect("permutation ingest");
+        assert_eq!(outcome.completion(), RhiTradeSourceCompletion::Complete);
+        assert_eq!(outcome.admitted_events(), 2);
+        assert_eq!(outcome.duplicate_events(), 0);
+        assert_eq!(outcome.inserted_mutations(), 1);
+        assert_eq!(outcome.inserted_signed_events(), 2);
+        assert_eq!(outcome.inserted_observations(), 2);
+        assert_eq!(outcome.dirty_generation().expect("dirty").get(), 1);
+        assert!(outcome.dirty_generation_advanced());
+        host.close().await.expect("close");
+
+        assert_eq!(
+            offline_scalar(&runtime, "SELECT COUNT(*) FROM trade_mutations").await,
+            1
+        );
+        assert_eq!(
+            offline_scalar(&runtime, "SELECT COUNT(*) FROM nostr_events").await,
+            2
+        );
+        assert_eq!(
+            offline_scalar(&runtime, "SELECT COUNT(*) FROM relay_observations").await,
+            2
+        );
+        assert_eq!(
+            offline_scalar(&runtime, "SELECT COUNT(*) FROM relay_checkpoints").await,
+            1
+        );
+        inventories.push(offline_signed_event_keys(&runtime).await);
+    }
+    assert_eq!(inventories[0], inventories[1]);
+}
+
+#[tokio::test]
+async fn checkpoint_and_dirty_generation_survive_close_reopen_and_exact_replay() {
+    let root = tempfile::tempdir().expect("root");
+    let runtime = runtime(root.path());
+    prepare_state_directory(&runtime);
+    let configuration = configuration();
+    let metadata = metadata(&runtime, &configuration);
+    let (applied_at, build) = migration_evidence();
+    initialize_rhi_state(&runtime, &metadata, applied_at, &build)
+        .await
+        .expect("initialize");
+    let host = open_rhi_state_read_write(&runtime, &metadata, applied_at, &build)
+        .await
+        .expect("writer");
+    let trade_id = TradeId::parse("11111111111111111111111111111111").expect("trade id");
+    let wire = vector_wire();
+    let first_source = ScriptedTransport::new([PageSpec {
+        events: vec![wire.clone()],
+        state: FetchTargetState::Complete,
+        next: None,
+    }]);
+    let first = ingest_rhi_trade_source(
+        &host.repositories(),
+        &adapters(&first_source),
+        &configuration,
+        "trade-primary",
+        trade_id,
+        attempt("reopen-first", 1_784_347_700, 1_784_347_700),
+    )
+    .await
+    .expect("first ingest");
+    assert!(first.checkpoint_advanced());
+    assert!(first.dirty_generation_advanced());
+    host.close().await.expect("first close");
+
+    let reopened = open_rhi_state_read_write(&runtime, &metadata, applied_at, &build)
+        .await
+        .expect("reopen");
+    let replay_source = ScriptedTransport::new([PageSpec {
+        events: vec![wire],
+        state: FetchTargetState::Complete,
+        next: None,
+    }]);
+    let replay = ingest_rhi_trade_source(
+        &reopened.repositories(),
+        &adapters(&replay_source),
+        &configuration,
+        "trade-primary",
+        trade_id,
+        attempt("reopen-replay", 1_784_347_701, 1_784_347_701),
+    )
+    .await
+    .expect("replay after reopen");
+    assert_eq!(replay.inserted_mutations(), 0);
+    assert_eq!(replay.inserted_signed_events(), 0);
+    assert_eq!(replay.inserted_observations(), 1);
+    assert!(!replay.checkpoint_advanced());
+    assert_eq!(replay.dirty_generation().expect("dirty").get(), 1);
+    assert!(!replay.dirty_generation_advanced());
+    reopened.close().await.expect("second close");
+
+    assert_eq!(
+        offline_scalar(&runtime, "SELECT COUNT(*) FROM trade_mutations").await,
+        1
+    );
+    assert_eq!(
+        offline_scalar(&runtime, "SELECT COUNT(*) FROM nostr_events").await,
+        1
+    );
+    assert_eq!(
+        offline_scalar(&runtime, "SELECT COUNT(*) FROM relay_observations").await,
+        2
+    );
+    assert_eq!(
+        offline_scalar(&runtime, "SELECT generation FROM trade_dirty_generations").await,
+        1
+    );
+}
+
+#[tokio::test]
+async fn policy_change_dirties_existing_trade_once_and_starts_a_new_scoped_checkpoint() {
+    let root = tempfile::tempdir().expect("root");
+    let runtime = runtime(root.path());
+    prepare_state_directory(&runtime);
+    let current = configuration();
+    let changed = parse_rhi_config_v1(
+        CONFIG
+            .replacen(
+                "policy_id = \"production-primary\"",
+                "policy_id = \"production-secondary\"",
+                1,
+            )
+            .as_bytes(),
+        RhiConfigProfile::RepoLocal,
+    )
+    .expect("changed configuration");
+    let metadata = metadata(&runtime, &current);
+    let (applied_at, build) = migration_evidence();
+    initialize_rhi_state(&runtime, &metadata, applied_at, &build)
+        .await
+        .expect("initialize");
+    let host = open_rhi_state_read_write(&runtime, &metadata, applied_at, &build)
+        .await
+        .expect("writer");
+    let trade_id = TradeId::parse("11111111111111111111111111111111").expect("trade id");
+    let wire = vector_wire();
+    let first_source = ScriptedTransport::new([PageSpec {
+        events: vec![wire.clone()],
+        state: FetchTargetState::Complete,
+        next: None,
+    }]);
+    let first = ingest_rhi_trade_source(
+        &host.repositories(),
+        &adapters(&first_source),
+        &current,
+        "trade-primary",
+        trade_id,
+        attempt("policy-first", 1_784_347_800, 1_784_347_800),
+    )
+    .await
+    .expect("initial policy ingest");
+    assert_eq!(first.dirty_generation().expect("dirty").get(), 1);
+    host.close().await.expect("close before apply");
+
+    let changed_at = MigrationAppliedAtUnixSeconds::new(1_784_347_801).expect("policy time");
+    let (_, changed_build) = migration_evidence();
+    let applied = apply_rhi_configuration(&runtime, &current, &changed, changed_at, &changed_build)
+        .await
+        .expect("policy apply");
+    assert_eq!(applied.generation(), 2);
+    assert!(applied.changed());
+
+    let changed_host =
+        open_rhi_state_read_write_from_config(&runtime, &changed, changed_at, &changed_build)
+            .await
+            .expect("changed writer");
+    let changed_source = ScriptedTransport::new([PageSpec {
+        events: vec![wire],
+        state: FetchTargetState::Complete,
+        next: None,
+    }]);
+    let replay = ingest_rhi_trade_source(
+        &changed_host.repositories(),
+        &adapters(&changed_source),
+        &changed,
+        "trade-primary",
+        trade_id,
+        attempt("policy-replay", 1_784_347_802, 1_784_347_802),
+    )
+    .await
+    .expect("new-policy replay");
+    assert_eq!(replay.inserted_mutations(), 0);
+    assert_eq!(replay.inserted_signed_events(), 0);
+    assert_eq!(replay.inserted_observations(), 1);
+    assert!(replay.checkpoint_advanced());
+    assert_eq!(replay.dirty_generation().expect("dirty").get(), 2);
+    assert!(!replay.dirty_generation_advanced());
+    changed_host.close().await.expect("changed close");
+
+    assert_eq!(
+        offline_scalar(&runtime, "SELECT COUNT(*) FROM relay_checkpoints").await,
+        2
+    );
+    assert_eq!(
+        offline_scalar(&runtime, "SELECT generation FROM trade_dirty_generations").await,
+        2
+    );
+}
+
+#[tokio::test]
+async fn concurrent_source_attempts_commit_once_and_generation_conflict_rolls_back_loser() {
+    let root = tempfile::tempdir().expect("root");
+    let runtime = runtime(root.path());
+    prepare_state_directory(&runtime);
+    let configuration = configuration();
+    let metadata = metadata(&runtime, &configuration);
+    let (applied_at, build) = migration_evidence();
+    initialize_rhi_state(&runtime, &metadata, applied_at, &build)
+        .await
+        .expect("initialize");
+    let host = open_rhi_state_read_write(&runtime, &metadata, applied_at, &build)
+        .await
+        .expect("writer");
+    let trade_id = TradeId::parse("11111111111111111111111111111111").expect("trade id");
+    let wire = vector_wire();
+    let source = ScriptedTransport::new([
+        PageSpec {
+            events: vec![wire.clone()],
+            state: FetchTargetState::Complete,
+            next: None,
+        },
+        PageSpec {
+            events: vec![wire],
+            state: FetchTargetState::Complete,
+            next: None,
+        },
+    ])
+    .with_fetch_barrier(2);
+    let transports = adapters(&source);
+    let repositories = host.repositories();
+    let (first, second) = tokio::join!(
+        ingest_rhi_trade_source(
+            &repositories,
+            &transports,
+            &configuration,
+            "trade-primary",
+            trade_id,
+            attempt("concurrent-first", 1_784_347_900, 1_784_347_900),
+        ),
+        ingest_rhi_trade_source(
+            &repositories,
+            &transports,
+            &configuration,
+            "trade-primary",
+            trade_id,
+            attempt("concurrent-second", 1_784_347_901, 1_784_347_901),
+        ),
+    );
+    let results = [first, second];
+    assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+    let error = results
+        .iter()
+        .find_map(|result| result.as_ref().err())
+        .expect("generation conflict");
+    assert_eq!(
+        error.kind(),
+        RhiTradeSourceIngestErrorKind::GenerationConflict
+    );
+    host.close().await.expect("close");
+
+    assert_eq!(
+        offline_scalar(&runtime, "SELECT COUNT(*) FROM trade_mutations").await,
+        1
+    );
+    assert_eq!(
+        offline_scalar(&runtime, "SELECT COUNT(*) FROM nostr_events").await,
+        1
+    );
+    assert_eq!(
+        offline_scalar(&runtime, "SELECT COUNT(*) FROM relay_observations").await,
+        1
+    );
+    assert_eq!(
+        offline_scalar(&runtime, "SELECT COUNT(*) FROM relay_checkpoints").await,
+        1
+    );
+    assert_eq!(
+        offline_scalar(&runtime, "SELECT generation FROM trade_dirty_generations").await,
+        1
+    );
 }
 
 #[test]

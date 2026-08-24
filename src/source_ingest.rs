@@ -631,7 +631,7 @@ async fn fetch_source(
 
     candidates.sort_by(compare_candidate);
     let mut duplicate_events = 0_usize;
-    let mut admitted_event_ids = BTreeSet::new();
+    let mut admitted_signed_event_ids = BTreeSet::new();
     let mut admitted = Vec::with_capacity(candidates.len());
     let mut rejected_events = 0_usize;
     let mut cursor_candidate = None;
@@ -643,7 +643,9 @@ async fn fetch_source(
             attempt.authored_time_policy,
         ) {
             Ok(event) if event.mutation().trade_id == trade_id => {
-                if !admitted_event_ids.insert(*event.event_id().as_bytes()) {
+                if !admitted_signed_event_ids
+                    .insert((*event.event_id().as_bytes(), event.event_signature_bytes()))
+                {
                     duplicate_events = duplicate_events.saturating_add(1);
                     continue;
                 }

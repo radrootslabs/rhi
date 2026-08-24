@@ -101,7 +101,8 @@ machine contract is
 source and its read-authorized relay, then fetches the exact five trade-mutation
 kinds under the requested trade's indexed `#d` tag. It uses one absolute
 configured deadline, pages at no more than 1,000 events, and admits at most
-4,096 distinct event identities and 8 MiB of original event bytes per attempt.
+4,096 distinct signed-event identities (event ID plus signature) and 8 MiB of
+original event bytes per attempt.
 Every returned event still passes the sealed signature, identifier, mutation,
 tag, trade, and authored-time boundary before it can affect durable state.
 

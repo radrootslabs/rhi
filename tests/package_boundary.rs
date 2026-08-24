@@ -239,6 +239,10 @@ fn trade_source_ingest_is_exact_bounded_generation_fenced_and_sealed() {
         "exact_target_eose_before_deadline"
     );
     assert_eq!(
+        contract["admission"]["deduplicate_by"],
+        serde_json::json!(["verified_event_id", "verified_event_signature"])
+    );
+    assert_eq!(
         contract["checkpoint"]["scope"],
         serde_json::json!([
             "source_id",
@@ -514,7 +518,7 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "## Bounded relay-source ingestion",
         "[`trade_source_ingest.v1.json`](contracts/services_hardening/trade_source_ingest.v1.json)",
         "Only exact-target EOSE before the deadline is complete",
-        "4,096 distinct event identities and 8 MiB",
+        "4,096 distinct signed-event identities (event ID plus signature) and 8 MiB",
         "observation, and operational retry do not",
         "schema-v4 source-checkpoint and dirty-generation migration",
         "one canonical mutation",
