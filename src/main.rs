@@ -1,96 +1,71 @@
-#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+#![forbid(unsafe_code)]
 
-use std::path::PathBuf;
 use std::process::ExitCode;
 
-use rhi::{
-    RadrootsHostEnvironment, RadrootsPathResolver, RadrootsPlatform, RhiProcessResult,
-    parse_rhi_cli_v1_from, plan_rhi_cli_v1, resolve_rhi_runtime_context,
-};
+use rhi::{RhiLogRecord, RhiProcessResult};
+
+struct RhiOsSignalSource {
+    #[cfg(unix)]
+    interrupt: tokio::signal::unix::Signal,
+    #[cfg(unix)]
+    terminate: tokio::signal::unix::Signal,
+}
+
+impl RhiOsSignalSource {
+    fn new() -> Option<Self> {
+        #[cfg(unix)]
+        {
+            let interrupt =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt()).ok()?;
+            let terminate =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).ok()?;
+            Some(Self {
+                interrupt,
+                terminate,
+            })
+        }
+        #[cfg(not(unix))]
+        {
+            Some(Self {})
+        }
+    }
+}
+
+impl rhi::RhiProcessSignalSource for RhiOsSignalSource {
+    fn next_signal(&mut self) -> rhi::RhiProcessSignalFuture<'_> {
+        #[cfg(unix)]
+        {
+            Box::pin(async move {
+                tokio::select! {
+                    observed = self.interrupt.recv() => observed.map(|()| rhi::RhiProcessSignal::Interrupt),
+                    observed = self.terminate.recv() => observed.map(|()| rhi::RhiProcessSignal::Terminate),
+                }
+            })
+        }
+        #[cfg(not(unix))]
+        {
+            Box::pin(async move {
+                tokio::signal::ctrl_c()
+                    .await
+                    .ok()
+                    .map(|()| rhi::RhiProcessSignal::Interrupt)
+            })
+        }
+    }
+}
 
 fn main() -> ExitCode {
-    let invocation = match parse_rhi_cli_v1_from(std::env::args_os()) {
-        Ok(invocation) => invocation,
-        Err(_) => return emit_failure(RhiProcessResult::InputOrConfiguration),
-    };
-    exit_code_from_run(execute(invocation))
-}
-
-fn exit_code_from_run(result: Result<(), RhiProcessResult>) -> ExitCode {
-    match result {
-        Ok(()) => RhiProcessResult::Success.exit_code(),
-        Err(result) => emit_failure(result),
-    }
-}
-
-fn emit_failure(result: RhiProcessResult) -> ExitCode {
-    eprintln!("RHI command failed: {}", result.code());
-    result.exit_code()
-}
-
-fn execute(invocation: rhi::RhiCliInvocationV1) -> Result<(), RhiProcessResult> {
-    let _plan = plan_rhi_cli_v1(&invocation);
-    let resolver = RadrootsPathResolver::new(RadrootsPlatform::current(), host_environment());
-    let _context = resolve_rhi_runtime_context(&resolver, &invocation)
-        .map_err(|_| RhiProcessResult::InputOrConfiguration)?;
-    Err(RhiProcessResult::InputOrConfiguration)
-}
-
-fn host_environment() -> RadrootsHostEnvironment {
-    let path = |name| {
-        std::env::var_os(name)
-            .filter(|value| !value.is_empty())
-            .map(PathBuf::from)
-    };
-    RadrootsHostEnvironment {
-        home_dir: path("HOME"),
-        xdg_config_home: path("XDG_CONFIG_HOME"),
-        xdg_data_home: path("XDG_DATA_HOME"),
-        xdg_state_home: path("XDG_STATE_HOME"),
-        xdg_cache_home: path("XDG_CACHE_HOME"),
-        xdg_runtime_dir: path("XDG_RUNTIME_DIR"),
-        appdata_dir: path("APPDATA"),
-        localappdata_dir: path("LOCALAPPDATA"),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{execute, exit_code_from_run};
-    use rhi::{RhiProcessResult, parse_rhi_cli_v1_from};
-    use std::process::ExitCode;
-
-    #[test]
-    fn process_result_is_stable() {
-        assert_eq!(exit_code_from_run(Ok(())), ExitCode::SUCCESS);
-        assert_eq!(
-            exit_code_from_run(Err(RhiProcessResult::UnexpectedInternal)),
-            ExitCode::FAILURE
-        );
-    }
-
-    #[test]
-    fn admitted_command_fails_closed_without_creating_runtime_state() {
-        let root = tempfile::tempdir().expect("temporary repo-local root");
-        let invocation = parse_rhi_cli_v1_from([
-            "rhi",
-            "--profile",
-            "repo-local",
-            "--instance",
-            "default",
-            "--repo-local-root",
-            root.path().to_str().expect("UTF-8 test root"),
-            "run",
-        ])
-        .expect("valid invocation");
-
-        assert_eq!(
-            execute(invocation),
-            Err(RhiProcessResult::InputOrConfiguration)
-        );
-        assert_eq!(
-            std::fs::read_dir(root.path()).expect("read root").count(),
-            0
-        );
+    match rhi::parse_rhi_cli_v1_from(std::env::args_os()) {
+        Ok(invocation) => {
+            let result =
+                rhi::execute_rhi_cli_v1_with_signal_source(invocation, RhiOsSignalSource::new);
+            eprintln!("{}", RhiLogRecord::process_result(result));
+            result.exit_code()
+        }
+        Err(_) => {
+            let result = RhiProcessResult::InputOrConfiguration;
+            eprintln!("{}", RhiLogRecord::process_result(result));
+            result.exit_code()
+        }
     }
 }

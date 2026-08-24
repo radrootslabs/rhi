@@ -157,6 +157,52 @@ impl RhiEvidenceAttestationSupersession {
             event_id: EventId::from_bytes(attestation.event_id),
         }
     }
+
+    #[cfg(any(test, target_os = "linux", target_os = "macos"))]
+    pub(crate) fn from_persisted(
+        trade_id: &radroots_event::id::TradeId,
+        statement_sha256: [u8; 32],
+        event_id: [u8; 32],
+        canonical_report: &[u8],
+        canonical_event_json: &[u8],
+    ) -> Result<Self, RhiReconciliationAttestationError> {
+        let report = RadrootsRhiEvidenceReportV1::from_canonical_content(canonical_report)
+            .map_err(|_| failure(RhiReconciliationAttestationErrorKind::SupersessionInvalid))?;
+        if report.trade_id() != trade_id
+            || report.statement_digest().as_bytes() != &statement_sha256
+        {
+            return Err(failure(
+                RhiReconciliationAttestationErrorKind::SupersessionInvalid,
+            ));
+        }
+        let source = core::str::from_utf8(canonical_event_json)
+            .map_err(|_| failure(RhiReconciliationAttestationErrorKind::SupersessionInvalid))?;
+        let wire = Nip01EventWire::parse_json_unverified_with_limits(source, signed_event_limits())
+            .map_err(|_| failure(RhiReconciliationAttestationErrorKind::SupersessionInvalid))?;
+        let event = wire
+            .into_unverified_envelope()
+            .map_err(|_| failure(RhiReconciliationAttestationErrorKind::SupersessionInvalid))?;
+        if verify_id(&event) != Verification::IdVerified
+            || verify(&event) != Verification::Verified
+            || event.id().as_bytes() != &event_id
+            || *event.author() != report.issuer_public_key()
+        {
+            return Err(failure(
+                RhiReconciliationAttestationErrorKind::SupersessionInvalid,
+            ));
+        }
+        let typed = rhi_evidence_attestation_from_event(&event)
+            .map_err(|_| failure(RhiReconciliationAttestationErrorKind::SupersessionInvalid))?;
+        if typed.canonical_content() != report.canonical_content() {
+            return Err(failure(
+                RhiReconciliationAttestationErrorKind::SupersessionInvalid,
+            ));
+        }
+        Ok(Self {
+            report,
+            event_id: EventId::from_bytes(event_id),
+        })
+    }
 }
 
 impl fmt::Debug for RhiEvidenceAttestationSupersession {
@@ -545,6 +591,46 @@ mod tests {
                 .kind(),
             RhiReconciliationAttestationErrorKind::VerificationFailed
         );
+    }
+
+    #[test]
+    fn persisted_supersession_revalidates_canonical_report_and_signature() {
+        let value: serde_json::Value = serde_json::from_str(SIGNED_VECTOR).expect("signed vector");
+        let content = value["content"].as_str().expect("report content");
+        let report = RadrootsRhiEvidenceReportV1::from_canonical_content(content.as_bytes())
+            .expect("canonical report");
+        let event = verify_signed_event_plan(&vector_plan(), SIGNED_VECTOR.trim_end().as_bytes())
+            .expect("verified event");
+        let supersession = RhiEvidenceAttestationSupersession::from_persisted(
+            report.trade_id(),
+            *report.statement_digest().as_bytes(),
+            *event.id().as_bytes(),
+            content.as_bytes(),
+            SIGNED_VECTOR.trim_end().as_bytes(),
+        )
+        .expect("verified persisted supersession");
+        assert_eq!(
+            format!("{supersession:?}"),
+            "RhiEvidenceAttestationSupersession([redacted])"
+        );
+
+        for (statement, event_id) in [
+            ([0; 32], *event.id().as_bytes()),
+            (*report.statement_digest().as_bytes(), [0; 32]),
+        ] {
+            assert_eq!(
+                RhiEvidenceAttestationSupersession::from_persisted(
+                    report.trade_id(),
+                    statement,
+                    event_id,
+                    content.as_bytes(),
+                    SIGNED_VECTOR.trim_end().as_bytes(),
+                )
+                .expect_err("mismatched persisted identity")
+                .kind(),
+                RhiReconciliationAttestationErrorKind::SupersessionInvalid
+            );
+        }
     }
 
     #[test]

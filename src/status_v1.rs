@@ -189,8 +189,14 @@ impl RhiStatusBuildInfoV1 {
         target: Option<&str>,
         feature_profile: Option<&str>,
     ) -> Result<Self, RhiStatusError> {
-        let contract_versions = HostContractVersions::new(1, 10, 1, 1, 1)
-            .map_err(|_| RhiStatusError::new(RhiStatusErrorKind::InvalidBuildInfo))?;
+        let contract_versions = HostContractVersions::new(
+            crate::RHI_CONFIG_SCHEMA_VERSION,
+            crate::RHI_STATE_SCHEMA_VERSION,
+            crate::RHI_ADMIN_CONTRACT_VERSION,
+            crate::RHI_STATUS_CONTRACT_VERSION,
+            crate::RHI_PROVIDER_CONTRACT_VERSION,
+        )
+        .map_err(|_| RhiStatusError::new(RhiStatusErrorKind::InvalidBuildInfo))?;
         HostBuildInfo::from_compile_time(
             match mode {
                 RhiStatusBuildMode::Development => HostBuildMode::Development,

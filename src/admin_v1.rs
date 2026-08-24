@@ -1,19 +1,21 @@
 //! Exact RHI v1 Unix-admin route and model boundary.
 
-use core::{fmt, future::Future, pin::Pin, time::Duration};
-use std::{
-    collections::BTreeSet,
-    error::Error,
-    sync::{Arc, OnceLock},
-};
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use core::time::Duration;
+use core::{fmt, future::Future, pin::Pin};
+use std::{collections::BTreeSet, error::Error, sync::OnceLock};
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use std::sync::Arc;
+
+use radroots_service_host::{AdminCorrelationId, AdminOperationId, CancellationToken};
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use radroots_service_host::{
-    AdminCorrelationId, AdminError, AdminErrorCode, AdminErrorMessage, AdminHttpMethod,
-    AdminMutationRequest, AdminOperationId, AdminRequest, AdminRouteFailure,
-    AdminRouteFailureStatus, AdminRouteOutcome, AdminRouter as SharedAdminRouter,
-    AdminServer as SharedAdminServer, AdminServerError as SharedAdminServerError,
-    AdminTransportLimitValues, AdminTransportLimits, CancellationToken, UnixAdminSocketBinding,
-    UnixAdminSocketWriterAuthority,
+    AdminError, AdminErrorCode, AdminErrorMessage, AdminHttpMethod, AdminMutationRequest,
+    AdminRequest, AdminRouteFailure, AdminRouteFailureStatus, AdminRouteOutcome,
+    AdminRouter as SharedAdminRouter, AdminServer as SharedAdminServer,
+    AdminServerError as SharedAdminServerError, AdminTransportLimitValues, AdminTransportLimits,
+    UnixAdminSocketBinding, UnixAdminSocketWriterAuthority,
 };
 use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde_json::{Map, Value};
@@ -248,6 +250,7 @@ impl RhiAdminRoute {
         matches!(self.method(), RhiAdminMethod::Post)
     }
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     const fn host_method(self) -> AdminHttpMethod {
         match self.method() {
             RhiAdminMethod::Get => AdminHttpMethod::Get,
@@ -255,6 +258,7 @@ impl RhiAdminRoute {
         }
     }
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     const fn parameter_binding(self) -> Option<(&'static str, &'static str)> {
         match self {
             Self::TradeProjection | Self::TradeReportCurrent | Self::TradeReports => {
@@ -337,6 +341,7 @@ impl fmt::Debug for RhiAdminRequestDocument {
 pub struct RhiAdminResponseDocument {
     route: RhiAdminRoute,
     canonical_bytes: Box<[u8]>,
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     value: Value,
 }
 
@@ -368,6 +373,7 @@ impl RhiAdminResponseDocument {
         Ok(Self {
             route,
             canonical_bytes: canonical.into_boxed_slice(),
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
             value,
         })
     }
@@ -509,10 +515,12 @@ impl Error for RhiAdminRouterError {}
 ///
 /// let _ = RhiAdminRouter { inner: todo!() };
 /// ```
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub struct RhiAdminRouter {
     inner: SharedAdminRouter,
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 impl fmt::Debug for RhiAdminRouter {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self { inner } = self;
@@ -521,6 +529,7 @@ impl fmt::Debug for RhiAdminRouter {
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 impl RhiAdminRouter {
     fn into_inner(self) -> SharedAdminRouter {
         self.inner
@@ -595,6 +604,7 @@ pub struct RhiAdminServerError {
 }
 
 impl RhiAdminServerError {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     const fn new(kind: RhiAdminServerErrorKind) -> Self {
         Self { kind }
     }
@@ -633,10 +643,12 @@ impl Error for RhiAdminServerError {}
 /// the exact route inventory around the supplied domain handler, and uses the
 /// shared host's system entropy. The raw shared router and server never cross
 /// this boundary.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub struct RhiAdminServer {
     inner: SharedAdminServer,
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 impl RhiAdminServer {
     pub fn new<H>(
         configuration: &crate::RhiConfigDocumentV1,
@@ -673,6 +685,7 @@ impl RhiAdminServer {
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 impl fmt::Debug for RhiAdminServer {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("RhiAdminServer([sealed])")
@@ -680,11 +693,13 @@ impl fmt::Debug for RhiAdminServer {
 }
 
 /// Bound final RHI Unix-admin server through Step 209.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub struct RhiBoundAdminServer {
     inner: SharedAdminServer,
     binding: UnixAdminSocketBinding,
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 impl RhiBoundAdminServer {
     /// Serves until supervisor cancellation and then drains bounded connection work.
     pub async fn serve(
@@ -698,6 +713,7 @@ impl RhiBoundAdminServer {
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 impl fmt::Debug for RhiBoundAdminServer {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("RhiBoundAdminServer([sealed])")
@@ -707,6 +723,7 @@ impl fmt::Debug for RhiBoundAdminServer {
 /// Registers the final seven common and thirteen domain routes through Step 209.
 ///
 /// Live identity rekey and replace are absent by final offline-only policy.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn build_rhi_admin_router<H>(handler: Arc<H>) -> Result<RhiAdminRouter, RhiAdminRouterError>
 where
     H: RhiAdminHandler,
@@ -727,6 +744,7 @@ where
     Ok(RhiAdminRouter { inner: router })
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) fn admin_transport_limits(
     configuration: &crate::RhiConfigDocumentV1,
 ) -> Result<AdminTransportLimits, RhiAdminServerError> {
@@ -747,6 +765,18 @@ pub(crate) fn admin_transport_limits(
     AdminTransportLimits::new(values).map_err(|_| invalid_admin_configuration())
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub(crate) fn admit_admin_response_value(
+    route: RhiAdminRoute,
+    value: &Value,
+) -> Result<Box<[u8]>, RhiAdminDocumentError> {
+    let bytes = serde_json::to_vec(value)
+        .map_err(|_| RhiAdminDocumentError::new(RhiAdminDocumentErrorKind::Malformed))?;
+    RhiAdminResponseDocument::from_canonical_bytes(route, &bytes)
+        .map(|document| document.canonical_bytes)
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn admin_u64(value: &Value, pointer: &str) -> Result<u64, RhiAdminServerError> {
     value
         .pointer(pointer)
@@ -754,14 +784,17 @@ fn admin_u64(value: &Value, pointer: &str) -> Result<u64, RhiAdminServerError> {
         .ok_or_else(invalid_admin_configuration)
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn admin_u32(value: &Value, pointer: &str) -> Result<u32, RhiAdminServerError> {
     u32::try_from(admin_u64(value, pointer)?).map_err(|_| invalid_admin_configuration())
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 const fn invalid_admin_configuration() -> RhiAdminServerError {
     RhiAdminServerError::new(RhiAdminServerErrorKind::InvalidConfiguration)
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 const fn map_admin_server_error(error: SharedAdminServerError) -> RhiAdminServerError {
     let kind = match error {
         SharedAdminServerError::ListenerClone { .. }
@@ -774,6 +807,7 @@ const fn map_admin_server_error(error: SharedAdminServerError) -> RhiAdminServer
     RhiAdminServerError::new(kind)
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 async fn dispatch_route<H>(
     route: RhiAdminRoute,
     handler: Arc<H>,
@@ -796,6 +830,7 @@ where
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn failure(kind: RhiAdminHandlerErrorKind, invalid_request: bool) -> AdminRouteOutcome {
     let (status, code, message) = if invalid_request {
         (
@@ -845,6 +880,7 @@ fn failure(kind: RhiAdminHandlerErrorKind, invalid_request: bool) -> AdminRouteO
     ))
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn request_document(
     route: RhiAdminRoute,
     request: &AdminRequest,
@@ -885,6 +921,7 @@ fn request_document(
     })
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn query_model(route: RhiAdminRoute, query: Option<&str>) -> Result<Value, RhiAdminDocumentError> {
     let Some(query) = query else {
         return Ok(Value::Object(Map::new()));
@@ -927,6 +964,7 @@ fn query_model(route: RhiAdminRoute, query: Option<&str>) -> Result<Value, RhiAd
     Ok(Value::Object(output))
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn query_scalar(type_name: &str, value: String) -> Result<Value, RhiAdminDocumentError> {
     let descriptor = type_descriptor(type_name)?;
     match descriptor.get("kind").and_then(Value::as_str) {
@@ -956,6 +994,7 @@ fn query_scalar(type_name: &str, value: String) -> Result<Value, RhiAdminDocumen
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn percent_decode(value: &str) -> Result<String, RhiAdminDocumentError> {
     let bytes = value.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
@@ -981,6 +1020,7 @@ fn percent_decode(value: &str) -> Result<String, RhiAdminDocumentError> {
     String::from_utf8(decoded).map_err(|_| invalid_model_error())
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 const fn hex_nibble(byte: u8) -> Option<u8> {
     match byte {
         b'0'..=b'9' => Some(byte - b'0'),
@@ -990,6 +1030,7 @@ const fn hex_nibble(byte: u8) -> Option<u8> {
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn valid_percent_encoding(value: &str) -> bool {
     let bytes = value.as_bytes();
     let mut index = 0;
@@ -1017,6 +1058,7 @@ fn operator_contract() -> Result<&'static Value, RhiAdminDocumentError> {
         .ok_or_else(invalid_model_error)
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn operator_route_inventory_is_exact() -> bool {
     let Ok(contract) = operator_contract() else {
         return false;
@@ -1637,7 +1679,7 @@ impl<'de> Visitor<'de> for StrictValueVisitor {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
 mod tests {
     use super::*;
 

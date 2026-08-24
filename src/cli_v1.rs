@@ -25,7 +25,7 @@ pub enum RhiCliOutputModeV1 {
 }
 
 /// The exact governed top-level RHI command inventory.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub enum RhiCommandV1 {
     Run,
     Config(RhiConfigCommandV1),
@@ -42,22 +42,22 @@ pub enum RhiCommandV1 {
 }
 
 /// Governed configuration commands.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub enum RhiConfigCommandV1 {
     Init,
     Validate,
     Show,
     Schema,
-    Apply,
+    Apply(RhiConfigApplyArgsV1),
 }
 
 /// Governed state commands.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub enum RhiStateCommandV1 {
     Init,
     Status,
-    Backup,
-    Restore,
+    Backup(RhiStateBackupArgsV1),
+    Restore(RhiStateRestoreArgsV1),
     Verify,
     Migrate,
 }
@@ -77,41 +77,273 @@ pub enum RhiMetricsCommandV1 {
 }
 
 /// Governed reconciliation commands.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub enum RhiReconciliationCommandV1 {
     Status,
-    Jobs,
-    Refresh,
+    Jobs(RhiPageQueryArgsV1),
+    Refresh(RhiReconciliationRefreshArgsV1),
 }
 
 /// Governed evidence-source commands.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub enum RhiSourcesCommandV1 {
-    List,
+    List(RhiPageQueryArgsV1),
 }
 
 /// Governed trade-query commands.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub enum RhiTradeCommandV1 {
-    Projection,
-    ReportCurrent,
-    Reports,
+    Projection(RhiTradeArgsV1),
+    ReportCurrent(RhiTradeArgsV1),
+    Reports(RhiTradePageArgsV1),
 }
 
 /// Governed publication commands.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub enum RhiPublicationCommandV1 {
-    Backlog,
-    Targets,
-    Retry,
+    Backlog(RhiPageQueryArgsV1),
+    Targets(RhiPageQueryArgsV1),
+    Retry(RhiPublicationRetryArgsV1),
 }
 
 /// Governed desired-presence commands.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub enum RhiPresenceCommandV1 {
     Desired,
-    Render,
-    Refresh,
+    Render(RhiPresenceMutationArgsV1),
+    Refresh(RhiPresenceMutationArgsV1),
+}
+
+/// Exact offline configuration-apply input.
+#[derive(PartialEq, Eq)]
+pub struct RhiConfigApplyArgsV1 {
+    candidate_config: PathBuf,
+}
+
+impl RhiConfigApplyArgsV1 {
+    #[must_use]
+    pub fn candidate_config(&self) -> &Path {
+        &self.candidate_config
+    }
+}
+
+/// Exact live state-backup input.
+#[derive(PartialEq, Eq)]
+pub struct RhiStateBackupArgsV1 {
+    operation_id: Box<str>,
+    target: PathBuf,
+    expected_generation: u64,
+}
+
+impl RhiStateBackupArgsV1 {
+    #[must_use]
+    pub fn operation_id(&self) -> &str {
+        &self.operation_id
+    }
+
+    #[must_use]
+    pub fn target(&self) -> &Path {
+        &self.target
+    }
+
+    #[must_use]
+    pub const fn expected_generation(&self) -> u64 {
+        self.expected_generation
+    }
+}
+
+/// Exact offline state-restore input.
+#[derive(PartialEq, Eq)]
+pub struct RhiStateRestoreArgsV1 {
+    manifest: PathBuf,
+    manifest_sha256: Box<str>,
+    bundle: PathBuf,
+    maximum_state_bytes: u64,
+}
+
+impl RhiStateRestoreArgsV1 {
+    #[must_use]
+    pub fn manifest(&self) -> &Path {
+        &self.manifest
+    }
+
+    #[must_use]
+    pub fn manifest_sha256(&self) -> &str {
+        &self.manifest_sha256
+    }
+
+    #[must_use]
+    pub fn bundle(&self) -> &Path {
+        &self.bundle
+    }
+
+    #[must_use]
+    pub const fn maximum_state_bytes(&self) -> u64 {
+        self.maximum_state_bytes
+    }
+}
+
+/// Bounded stable pagination input shared by list commands.
+#[derive(PartialEq, Eq)]
+pub struct RhiPageQueryArgsV1 {
+    limit: u16,
+    cursor: Option<Box<str>>,
+}
+
+impl RhiPageQueryArgsV1 {
+    #[must_use]
+    pub const fn limit(&self) -> u16 {
+        self.limit
+    }
+
+    #[must_use]
+    pub fn cursor(&self) -> Option<&str> {
+        self.cursor.as_deref()
+    }
+}
+
+/// Exact trade selection for one live query.
+#[derive(PartialEq, Eq)]
+pub struct RhiTradeArgsV1 {
+    trade_id: Box<str>,
+}
+
+impl RhiTradeArgsV1 {
+    #[must_use]
+    pub fn trade_id(&self) -> &str {
+        &self.trade_id
+    }
+}
+
+/// Exact trade selection plus bounded report pagination.
+#[derive(PartialEq, Eq)]
+pub struct RhiTradePageArgsV1 {
+    trade_id: Box<str>,
+    page: RhiPageQueryArgsV1,
+}
+
+impl RhiTradePageArgsV1 {
+    #[must_use]
+    pub fn trade_id(&self) -> &str {
+        &self.trade_id
+    }
+
+    #[must_use]
+    pub const fn page(&self) -> &RhiPageQueryArgsV1 {
+        &self.page
+    }
+}
+
+/// Exact refresh request and idempotency identity.
+#[derive(PartialEq, Eq)]
+pub struct RhiReconciliationRefreshArgsV1 {
+    operation_id: Box<str>,
+    trade_id: Box<str>,
+    expected_dirty_generation: u64,
+}
+
+impl RhiReconciliationRefreshArgsV1 {
+    #[must_use]
+    pub fn operation_id(&self) -> &str {
+        &self.operation_id
+    }
+
+    #[must_use]
+    pub fn trade_id(&self) -> &str {
+        &self.trade_id
+    }
+
+    #[must_use]
+    pub const fn expected_dirty_generation(&self) -> u64 {
+        self.expected_dirty_generation
+    }
+}
+
+/// Exact publication retry request and idempotency identity.
+#[derive(PartialEq, Eq)]
+pub struct RhiPublicationRetryArgsV1 {
+    operation_id: Box<str>,
+    workflow_id: Box<str>,
+    expected_generation: u64,
+}
+
+impl RhiPublicationRetryArgsV1 {
+    #[must_use]
+    pub fn operation_id(&self) -> &str {
+        &self.operation_id
+    }
+
+    #[must_use]
+    pub fn workflow_id(&self) -> &str {
+        &self.workflow_id
+    }
+
+    #[must_use]
+    pub const fn expected_generation(&self) -> u64 {
+        self.expected_generation
+    }
+}
+
+/// Exact presence mutation request and idempotency identity.
+#[derive(PartialEq, Eq)]
+pub struct RhiPresenceMutationArgsV1 {
+    operation_id: Box<str>,
+    expected_generation: u64,
+}
+
+impl RhiPresenceMutationArgsV1 {
+    #[must_use]
+    pub fn operation_id(&self) -> &str {
+        &self.operation_id
+    }
+
+    #[must_use]
+    pub const fn expected_generation(&self) -> u64 {
+        self.expected_generation
+    }
+}
+
+macro_rules! redacted_debug {
+    ($($type:ty),+ $(,)?) => {
+        $(
+            impl fmt::Debug for $type {
+                fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    formatter.write_str(concat!(stringify!($type), "([redacted])"))
+                }
+            }
+        )+
+    };
+}
+
+redacted_debug!(
+    RhiConfigApplyArgsV1,
+    RhiStateBackupArgsV1,
+    RhiStateRestoreArgsV1,
+    RhiPageQueryArgsV1,
+    RhiTradeArgsV1,
+    RhiTradePageArgsV1,
+    RhiReconciliationRefreshArgsV1,
+    RhiPublicationRetryArgsV1,
+    RhiPresenceMutationArgsV1,
+);
+
+impl fmt::Debug for RhiCommandV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Run => "RhiCommandV1::Run",
+            Self::Config(_) => "RhiCommandV1::Config([redacted])",
+            Self::State(_) => "RhiCommandV1::State([redacted])",
+            Self::Identity(_) => "RhiCommandV1::Identity([redacted])",
+            Self::Status => "RhiCommandV1::Status",
+            Self::Metrics(_) => "RhiCommandV1::Metrics([redacted])",
+            Self::Reconciliation(_) => "RhiCommandV1::Reconciliation([redacted])",
+            Self::Sources(_) => "RhiCommandV1::Sources([redacted])",
+            Self::Trade(_) => "RhiCommandV1::Trade([redacted])",
+            Self::Publication(_) => "RhiCommandV1::Publication([redacted])",
+            Self::Presence(_) => "RhiCommandV1::Presence([redacted])",
+            Self::Doctor => "RhiCommandV1::Doctor",
+        })
+    }
 }
 
 /// The only three process authorities selected by the hardened CLI.
@@ -247,6 +479,7 @@ pub enum RhiCliV1ErrorKind {
     InvalidRepoLocalRoot,
     UnexpectedRepoLocalRoot,
     InvalidConfigPath,
+    InvalidCommandInput,
 }
 
 impl RhiCliV1ErrorKind {
@@ -259,6 +492,7 @@ impl RhiCliV1ErrorKind {
                 "repo-local root is forbidden outside the repo-local profile"
             }
             Self::InvalidConfigPath => "configuration path must be absolute without traversal",
+            Self::InvalidCommandInput => "command input is invalid",
         }
     }
 }
@@ -341,8 +575,8 @@ impl RhiCliInvocationV1 {
 
     /// Returns the exact governed command selection.
     #[must_use]
-    pub const fn command(&self) -> RhiCommandV1 {
-        self.command
+    pub const fn command(&self) -> &RhiCommandV1 {
+        &self.command
     }
 }
 
@@ -399,7 +633,7 @@ where
         repo_local_root: parsed.repo_local_root,
         config_path: parsed.config,
         output_mode: parsed.output.into(),
-        command: parsed.command.into(),
+        command: admit_command(parsed.command)?,
     })
 }
 
@@ -411,19 +645,19 @@ where
 /// authority.
 #[must_use]
 pub const fn plan_rhi_cli_v1(invocation: &RhiCliInvocationV1) -> RhiCliExecutionPlanV1 {
-    match invocation.command {
+    match &invocation.command {
         RhiCommandV1::Run => daemon_plan(),
         RhiCommandV1::Config(RhiConfigCommandV1::Init)
         | RhiCommandV1::Config(RhiConfigCommandV1::Validate)
         | RhiCommandV1::Config(RhiConfigCommandV1::Schema)
-        | RhiCommandV1::Config(RhiConfigCommandV1::Apply) => {
+        | RhiCommandV1::Config(RhiConfigCommandV1::Apply(_)) => {
             offline_plan(RhiCliOfflineOperationV1::Config)
         }
         RhiCommandV1::Config(RhiConfigCommandV1::Show) => {
             admin_plan(RhiCliAdminOperationV1::EffectiveConfig)
         }
         RhiCommandV1::State(RhiStateCommandV1::Init)
-        | RhiCommandV1::State(RhiStateCommandV1::Restore)
+        | RhiCommandV1::State(RhiStateCommandV1::Restore(_))
         | RhiCommandV1::State(RhiStateCommandV1::Verify)
         | RhiCommandV1::State(RhiStateCommandV1::Migrate) => {
             offline_plan(RhiCliOfflineOperationV1::StateExclusive)
@@ -431,7 +665,7 @@ pub const fn plan_rhi_cli_v1(invocation: &RhiCliInvocationV1) -> RhiCliExecution
         RhiCommandV1::State(RhiStateCommandV1::Status) => {
             admin_plan(RhiCliAdminOperationV1::StateStatus)
         }
-        RhiCommandV1::State(RhiStateCommandV1::Backup) => {
+        RhiCommandV1::State(RhiStateCommandV1::Backup(_)) => {
             admin_plan(RhiCliAdminOperationV1::StateBackup)
         }
         RhiCommandV1::Identity(RhiIdentityCommandV1::Init) => {
@@ -450,40 +684,40 @@ pub const fn plan_rhi_cli_v1(invocation: &RhiCliInvocationV1) -> RhiCliExecution
         RhiCommandV1::Reconciliation(RhiReconciliationCommandV1::Status) => {
             admin_plan(RhiCliAdminOperationV1::ReconciliationStatus)
         }
-        RhiCommandV1::Reconciliation(RhiReconciliationCommandV1::Jobs) => {
+        RhiCommandV1::Reconciliation(RhiReconciliationCommandV1::Jobs(_)) => {
             admin_plan(RhiCliAdminOperationV1::ReconciliationJobs)
         }
-        RhiCommandV1::Reconciliation(RhiReconciliationCommandV1::Refresh) => {
+        RhiCommandV1::Reconciliation(RhiReconciliationCommandV1::Refresh(_)) => {
             admin_plan(RhiCliAdminOperationV1::ReconciliationRefresh)
         }
-        RhiCommandV1::Sources(RhiSourcesCommandV1::List) => {
+        RhiCommandV1::Sources(RhiSourcesCommandV1::List(_)) => {
             admin_plan(RhiCliAdminOperationV1::Sources)
         }
-        RhiCommandV1::Trade(RhiTradeCommandV1::Projection) => {
+        RhiCommandV1::Trade(RhiTradeCommandV1::Projection(_)) => {
             admin_plan(RhiCliAdminOperationV1::TradeProjection)
         }
-        RhiCommandV1::Trade(RhiTradeCommandV1::ReportCurrent) => {
+        RhiCommandV1::Trade(RhiTradeCommandV1::ReportCurrent(_)) => {
             admin_plan(RhiCliAdminOperationV1::TradeReportCurrent)
         }
-        RhiCommandV1::Trade(RhiTradeCommandV1::Reports) => {
+        RhiCommandV1::Trade(RhiTradeCommandV1::Reports(_)) => {
             admin_plan(RhiCliAdminOperationV1::TradeReports)
         }
-        RhiCommandV1::Publication(RhiPublicationCommandV1::Backlog) => {
+        RhiCommandV1::Publication(RhiPublicationCommandV1::Backlog(_)) => {
             admin_plan(RhiCliAdminOperationV1::PublicationBacklog)
         }
-        RhiCommandV1::Publication(RhiPublicationCommandV1::Targets) => {
+        RhiCommandV1::Publication(RhiPublicationCommandV1::Targets(_)) => {
             admin_plan(RhiCliAdminOperationV1::PublicationTargets)
         }
-        RhiCommandV1::Publication(RhiPublicationCommandV1::Retry) => {
+        RhiCommandV1::Publication(RhiPublicationCommandV1::Retry(_)) => {
             admin_plan(RhiCliAdminOperationV1::PublicationRetry)
         }
         RhiCommandV1::Presence(RhiPresenceCommandV1::Desired) => {
             admin_plan(RhiCliAdminOperationV1::PresenceDesired)
         }
-        RhiCommandV1::Presence(RhiPresenceCommandV1::Render) => {
+        RhiCommandV1::Presence(RhiPresenceCommandV1::Render(_)) => {
             admin_plan(RhiCliAdminOperationV1::PresenceRender)
         }
-        RhiCommandV1::Presence(RhiPresenceCommandV1::Refresh) => {
+        RhiCommandV1::Presence(RhiPresenceCommandV1::Refresh(_)) => {
             admin_plan(RhiCliAdminOperationV1::PresenceRefresh)
         }
         RhiCommandV1::Doctor => offline_plan(RhiCliOfflineOperationV1::Doctor),
@@ -642,25 +876,6 @@ enum RawCommand {
     Doctor,
 }
 
-impl From<RawCommand> for RhiCommandV1 {
-    fn from(value: RawCommand) -> Self {
-        match value {
-            RawCommand::Run => Self::Run,
-            RawCommand::Config { command } => Self::Config(command.into()),
-            RawCommand::State { command } => Self::State(command.into()),
-            RawCommand::Identity { command } => Self::Identity(command.into()),
-            RawCommand::Status => Self::Status,
-            RawCommand::Metrics { command } => Self::Metrics(command.into()),
-            RawCommand::Reconciliation { command } => Self::Reconciliation(command.into()),
-            RawCommand::Sources { command } => Self::Sources(command.into()),
-            RawCommand::Trade { command } => Self::Trade(command.into()),
-            RawCommand::Publication { command } => Self::Publication(command.into()),
-            RawCommand::Presence { command } => Self::Presence(command.into()),
-            RawCommand::Doctor => Self::Doctor,
-        }
-    }
-}
-
 macro_rules! command_enum {
     ($raw:ident, $public:ident, { $($variant:ident),+ $(,)? }) => {
         #[derive(Subcommand)]
@@ -678,48 +893,312 @@ macro_rules! command_enum {
     };
 }
 
-command_enum!(RawConfigCommand, RhiConfigCommandV1, {
+#[derive(Subcommand)]
+enum RawConfigCommand {
     Init,
     Validate,
     Show,
     Schema,
-    Apply,
-});
-command_enum!(RawStateCommand, RhiStateCommandV1, {
+    Apply {
+        #[arg(long = "candidate-config")]
+        candidate_config: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
+enum RawStateCommand {
     Init,
     Status,
-    Backup,
-    Restore,
+    Backup {
+        #[arg(long = "operation-id")]
+        operation_id: String,
+        #[arg(long)]
+        target: PathBuf,
+        #[arg(long = "expected-generation")]
+        expected_generation: u64,
+        #[arg(long, required = true)]
+        confirm: bool,
+    },
+    Restore {
+        #[arg(long)]
+        manifest: PathBuf,
+        #[arg(long = "manifest-sha256")]
+        manifest_sha256: String,
+        #[arg(long)]
+        bundle: PathBuf,
+        #[arg(long = "maximum-state-bytes")]
+        maximum_state_bytes: u64,
+        #[arg(long, required = true)]
+        confirm: bool,
+    },
     Verify,
     Migrate,
-});
+}
+
 command_enum!(RawIdentityCommand, RhiIdentityCommandV1, {
     Init,
     Status,
     ExportPublic,
 });
 command_enum!(RawMetricsCommand, RhiMetricsCommandV1, { Snapshot });
-command_enum!(RawReconciliationCommand, RhiReconciliationCommandV1, {
+
+#[derive(Subcommand)]
+enum RawReconciliationCommand {
     Status,
-    Jobs,
-    Refresh,
-});
-command_enum!(RawSourcesCommand, RhiSourcesCommandV1, { List });
-command_enum!(RawTradeCommand, RhiTradeCommandV1, {
-    Projection,
-    ReportCurrent,
-    Reports,
-});
-command_enum!(RawPublicationCommand, RhiPublicationCommandV1, {
-    Backlog,
-    Targets,
-    Retry,
-});
-command_enum!(RawPresenceCommand, RhiPresenceCommandV1, {
+    Jobs {
+        #[command(flatten)]
+        page: RawPageQuery,
+    },
+    Refresh {
+        #[arg(long = "operation-id")]
+        operation_id: String,
+        #[arg(long = "trade-id")]
+        trade_id: String,
+        #[arg(long = "expected-dirty-generation")]
+        expected_dirty_generation: u64,
+    },
+}
+
+#[derive(Subcommand)]
+enum RawSourcesCommand {
+    List {
+        #[command(flatten)]
+        page: RawPageQuery,
+    },
+}
+
+#[derive(Subcommand)]
+enum RawTradeCommand {
+    Projection {
+        #[arg(long = "trade-id")]
+        trade_id: String,
+    },
+    ReportCurrent {
+        #[arg(long = "trade-id")]
+        trade_id: String,
+    },
+    Reports {
+        #[arg(long = "trade-id")]
+        trade_id: String,
+        #[command(flatten)]
+        page: RawPageQuery,
+    },
+}
+
+#[derive(Subcommand)]
+enum RawPublicationCommand {
+    Backlog {
+        #[command(flatten)]
+        page: RawPageQuery,
+    },
+    Targets {
+        #[command(flatten)]
+        page: RawPageQuery,
+    },
+    Retry {
+        #[arg(long = "operation-id")]
+        operation_id: String,
+        #[arg(long = "workflow-id")]
+        workflow_id: String,
+        #[arg(long = "expected-generation")]
+        expected_generation: u64,
+    },
+}
+
+#[derive(Subcommand)]
+enum RawPresenceCommand {
     Desired,
-    Render,
-    Refresh,
-});
+    Render {
+        #[arg(long = "operation-id")]
+        operation_id: String,
+        #[arg(long = "expected-generation")]
+        expected_generation: u64,
+    },
+    Refresh {
+        #[arg(long = "operation-id")]
+        operation_id: String,
+        #[arg(long = "expected-generation")]
+        expected_generation: u64,
+    },
+}
+
+#[derive(clap::Args)]
+struct RawPageQuery {
+    #[arg(long, default_value_t = 100)]
+    limit: u16,
+    #[arg(long)]
+    cursor: Option<String>,
+}
+
+fn admit_command(command: RawCommand) -> Result<RhiCommandV1, RhiCliV1Error> {
+    let invalid = || RhiCliV1Error::new(RhiCliV1ErrorKind::InvalidCommandInput);
+    let page = |value: RawPageQuery| {
+        if !(1..=200).contains(&value.limit)
+            || value.cursor.as_deref().is_some_and(|cursor| {
+                cursor.is_empty()
+                    || cursor.len() > 512
+                    || cursor != cursor.trim()
+                    || cursor.chars().any(char::is_control)
+            })
+        {
+            return Err(invalid());
+        }
+        Ok(RhiPageQueryArgsV1 {
+            limit: value.limit,
+            cursor: value.cursor.map(String::into_boxed_str),
+        })
+    };
+    let bounded_id = |value: String| {
+        if value.is_empty()
+            || value.len() > 128
+            || value != value.trim()
+            || value.chars().any(char::is_control)
+        {
+            Err(invalid())
+        } else {
+            Ok(value.into_boxed_str())
+        }
+    };
+    let trade_id = |value: String| match radroots_event::id::TradeId::parse(&value) {
+        Ok(parsed) if parsed.to_hex() == value => Ok(value.into_boxed_str()),
+        Ok(_) | Err(_) => Err(invalid()),
+    };
+    Ok(match command {
+        RawCommand::Run => RhiCommandV1::Run,
+        RawCommand::Config { command } => RhiCommandV1::Config(match command {
+            RawConfigCommand::Init => RhiConfigCommandV1::Init,
+            RawConfigCommand::Validate => RhiConfigCommandV1::Validate,
+            RawConfigCommand::Show => RhiConfigCommandV1::Show,
+            RawConfigCommand::Schema => RhiConfigCommandV1::Schema,
+            RawConfigCommand::Apply { candidate_config }
+                if valid_absolute_path(&candidate_config, true) =>
+            {
+                RhiConfigCommandV1::Apply(RhiConfigApplyArgsV1 { candidate_config })
+            }
+            RawConfigCommand::Apply { .. } => return Err(invalid()),
+        }),
+        RawCommand::State { command } => RhiCommandV1::State(match command {
+            RawStateCommand::Init => RhiStateCommandV1::Init,
+            RawStateCommand::Status => RhiStateCommandV1::Status,
+            RawStateCommand::Backup {
+                operation_id,
+                target,
+                expected_generation,
+                confirm: true,
+            } if valid_absolute_path(&target, true) => {
+                RhiStateCommandV1::Backup(RhiStateBackupArgsV1 {
+                    operation_id: bounded_id(operation_id)?,
+                    target,
+                    expected_generation,
+                })
+            }
+            RawStateCommand::Backup { .. } => return Err(invalid()),
+            RawStateCommand::Restore {
+                manifest,
+                manifest_sha256,
+                bundle,
+                maximum_state_bytes,
+                confirm: true,
+            } if valid_absolute_path(&manifest, true)
+                && valid_absolute_path(&bundle, true)
+                && maximum_state_bytes != 0
+                && is_lower_hex(&manifest_sha256, 64) =>
+            {
+                RhiStateCommandV1::Restore(RhiStateRestoreArgsV1 {
+                    manifest,
+                    manifest_sha256: manifest_sha256.into_boxed_str(),
+                    bundle,
+                    maximum_state_bytes,
+                })
+            }
+            RawStateCommand::Restore { .. } => return Err(invalid()),
+            RawStateCommand::Verify => RhiStateCommandV1::Verify,
+            RawStateCommand::Migrate => RhiStateCommandV1::Migrate,
+        }),
+        RawCommand::Identity { command } => RhiCommandV1::Identity(command.into()),
+        RawCommand::Status => RhiCommandV1::Status,
+        RawCommand::Metrics { command } => RhiCommandV1::Metrics(command.into()),
+        RawCommand::Reconciliation { command } => RhiCommandV1::Reconciliation(match command {
+            RawReconciliationCommand::Status => RhiReconciliationCommandV1::Status,
+            RawReconciliationCommand::Jobs { page: value } => {
+                RhiReconciliationCommandV1::Jobs(page(value)?)
+            }
+            RawReconciliationCommand::Refresh {
+                operation_id,
+                trade_id: selected_trade,
+                expected_dirty_generation,
+            } => RhiReconciliationCommandV1::Refresh(RhiReconciliationRefreshArgsV1 {
+                operation_id: bounded_id(operation_id)?,
+                trade_id: trade_id(selected_trade)?,
+                expected_dirty_generation,
+            }),
+        }),
+        RawCommand::Sources { command } => RhiCommandV1::Sources(match command {
+            RawSourcesCommand::List { page: value } => RhiSourcesCommandV1::List(page(value)?),
+        }),
+        RawCommand::Trade { command } => RhiCommandV1::Trade(match command {
+            RawTradeCommand::Projection { trade_id: value } => {
+                RhiTradeCommandV1::Projection(RhiTradeArgsV1 {
+                    trade_id: trade_id(value)?,
+                })
+            }
+            RawTradeCommand::ReportCurrent { trade_id: value } => {
+                RhiTradeCommandV1::ReportCurrent(RhiTradeArgsV1 {
+                    trade_id: trade_id(value)?,
+                })
+            }
+            RawTradeCommand::Reports {
+                trade_id: value,
+                page: selected_page,
+            } => RhiTradeCommandV1::Reports(RhiTradePageArgsV1 {
+                trade_id: trade_id(value)?,
+                page: page(selected_page)?,
+            }),
+        }),
+        RawCommand::Publication { command } => RhiCommandV1::Publication(match command {
+            RawPublicationCommand::Backlog { page: value } => {
+                RhiPublicationCommandV1::Backlog(page(value)?)
+            }
+            RawPublicationCommand::Targets { page: value } => {
+                RhiPublicationCommandV1::Targets(page(value)?)
+            }
+            RawPublicationCommand::Retry {
+                operation_id,
+                workflow_id,
+                expected_generation,
+            } => RhiPublicationCommandV1::Retry(RhiPublicationRetryArgsV1 {
+                operation_id: bounded_id(operation_id)?,
+                workflow_id: bounded_id(workflow_id)?,
+                expected_generation,
+            }),
+        }),
+        RawCommand::Presence { command } => RhiCommandV1::Presence(match command {
+            RawPresenceCommand::Desired => RhiPresenceCommandV1::Desired,
+            RawPresenceCommand::Render {
+                operation_id,
+                expected_generation,
+            } => RhiPresenceCommandV1::Render(RhiPresenceMutationArgsV1 {
+                operation_id: bounded_id(operation_id)?,
+                expected_generation,
+            }),
+            RawPresenceCommand::Refresh {
+                operation_id,
+                expected_generation,
+            } => RhiPresenceCommandV1::Refresh(RhiPresenceMutationArgsV1 {
+                operation_id: bounded_id(operation_id)?,
+                expected_generation,
+            }),
+        }),
+        RawCommand::Doctor => RhiCommandV1::Doctor,
+    })
+}
+
+fn is_lower_hex(value: &str, length: usize) -> bool {
+    value.len() == length
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
 
 #[cfg(test)]
 mod tests {
@@ -733,125 +1212,101 @@ mod tests {
 
     #[test]
     fn exact_command_inventory_parses() {
+        let trade = "00000000000000000000000000000000";
         let vectors = [
-            (&["run"][..], RhiCommandV1::Run),
-            (
-                &["config", "init"][..],
-                RhiCommandV1::Config(RhiConfigCommandV1::Init),
-            ),
-            (
-                &["config", "validate"][..],
-                RhiCommandV1::Config(RhiConfigCommandV1::Validate),
-            ),
-            (
-                &["config", "show"][..],
-                RhiCommandV1::Config(RhiConfigCommandV1::Show),
-            ),
-            (
-                &["config", "schema"][..],
-                RhiCommandV1::Config(RhiConfigCommandV1::Schema),
-            ),
-            (
-                &["config", "apply"][..],
-                RhiCommandV1::Config(RhiConfigCommandV1::Apply),
-            ),
-            (
-                &["state", "init"][..],
-                RhiCommandV1::State(RhiStateCommandV1::Init),
-            ),
-            (
-                &["state", "status"][..],
-                RhiCommandV1::State(RhiStateCommandV1::Status),
-            ),
-            (
-                &["state", "backup"][..],
-                RhiCommandV1::State(RhiStateCommandV1::Backup),
-            ),
-            (
-                &["state", "restore"][..],
-                RhiCommandV1::State(RhiStateCommandV1::Restore),
-            ),
-            (
-                &["state", "verify"][..],
-                RhiCommandV1::State(RhiStateCommandV1::Verify),
-            ),
-            (
-                &["state", "migrate"][..],
-                RhiCommandV1::State(RhiStateCommandV1::Migrate),
-            ),
-            (
-                &["identity", "init"][..],
-                RhiCommandV1::Identity(RhiIdentityCommandV1::Init),
-            ),
-            (
-                &["identity", "status"][..],
-                RhiCommandV1::Identity(RhiIdentityCommandV1::Status),
-            ),
-            (
-                &["identity", "export-public"][..],
-                RhiCommandV1::Identity(RhiIdentityCommandV1::ExportPublic),
-            ),
-            (&["status"][..], RhiCommandV1::Status),
-            (
-                &["metrics", "snapshot"][..],
-                RhiCommandV1::Metrics(RhiMetricsCommandV1::Snapshot),
-            ),
-            (
-                &["reconciliation", "status"][..],
-                RhiCommandV1::Reconciliation(RhiReconciliationCommandV1::Status),
-            ),
-            (
-                &["reconciliation", "jobs"][..],
-                RhiCommandV1::Reconciliation(RhiReconciliationCommandV1::Jobs),
-            ),
-            (
-                &["reconciliation", "refresh"][..],
-                RhiCommandV1::Reconciliation(RhiReconciliationCommandV1::Refresh),
-            ),
-            (
-                &["sources", "list"][..],
-                RhiCommandV1::Sources(RhiSourcesCommandV1::List),
-            ),
-            (
-                &["trade", "projection"][..],
-                RhiCommandV1::Trade(RhiTradeCommandV1::Projection),
-            ),
-            (
-                &["trade", "report-current"][..],
-                RhiCommandV1::Trade(RhiTradeCommandV1::ReportCurrent),
-            ),
-            (
-                &["trade", "reports"][..],
-                RhiCommandV1::Trade(RhiTradeCommandV1::Reports),
-            ),
-            (
-                &["publication", "backlog"][..],
-                RhiCommandV1::Publication(RhiPublicationCommandV1::Backlog),
-            ),
-            (
-                &["publication", "targets"][..],
-                RhiCommandV1::Publication(RhiPublicationCommandV1::Targets),
-            ),
-            (
-                &["publication", "retry"][..],
-                RhiCommandV1::Publication(RhiPublicationCommandV1::Retry),
-            ),
-            (
-                &["presence", "desired"][..],
-                RhiCommandV1::Presence(RhiPresenceCommandV1::Desired),
-            ),
-            (
-                &["presence", "render"][..],
-                RhiCommandV1::Presence(RhiPresenceCommandV1::Render),
-            ),
-            (
-                &["presence", "refresh"][..],
-                RhiCommandV1::Presence(RhiPresenceCommandV1::Refresh),
-            ),
-            (&["doctor"][..], RhiCommandV1::Doctor),
+            vec!["run"],
+            vec!["config", "init"],
+            vec!["config", "validate"],
+            vec!["config", "show"],
+            vec!["config", "schema"],
+            vec![
+                "config",
+                "apply",
+                "--candidate-config",
+                "/tmp/candidate.toml",
+            ],
+            vec!["state", "init"],
+            vec!["state", "status"],
+            vec![
+                "state",
+                "backup",
+                "--operation-id",
+                "backup-1",
+                "--target",
+                "/tmp/backup",
+                "--expected-generation",
+                "1",
+                "--confirm",
+            ],
+            vec![
+                "state",
+                "restore",
+                "--manifest",
+                "/tmp/manifest.json",
+                "--manifest-sha256",
+                "0000000000000000000000000000000000000000000000000000000000000000",
+                "--bundle",
+                "/tmp/backup",
+                "--maximum-state-bytes",
+                "1048576",
+                "--confirm",
+            ],
+            vec!["state", "verify"],
+            vec!["state", "migrate"],
+            vec!["identity", "init"],
+            vec!["identity", "status"],
+            vec!["identity", "export-public"],
+            vec!["status"],
+            vec!["metrics", "snapshot"],
+            vec!["reconciliation", "status"],
+            vec!["reconciliation", "jobs"],
+            vec![
+                "reconciliation",
+                "refresh",
+                "--operation-id",
+                "refresh-1",
+                "--trade-id",
+                trade,
+                "--expected-dirty-generation",
+                "1",
+            ],
+            vec!["sources", "list"],
+            vec!["trade", "projection", "--trade-id", trade],
+            vec!["trade", "report-current", "--trade-id", trade],
+            vec!["trade", "reports", "--trade-id", trade],
+            vec!["publication", "backlog"],
+            vec!["publication", "targets"],
+            vec![
+                "publication",
+                "retry",
+                "--operation-id",
+                "retry-1",
+                "--workflow-id",
+                "workflow-1",
+                "--expected-generation",
+                "1",
+            ],
+            vec!["presence", "desired"],
+            vec![
+                "presence",
+                "render",
+                "--operation-id",
+                "render-1",
+                "--expected-generation",
+                "1",
+            ],
+            vec![
+                "presence",
+                "refresh",
+                "--operation-id",
+                "presence-1",
+                "--expected-generation",
+                "1",
+            ],
+            vec!["doctor"],
         ];
-        for (arguments, expected) in vectors {
-            assert_eq!(parse(arguments).expect("command").command(), expected);
+        for arguments in vectors {
+            parse(&arguments).expect("command");
         }
     }
 

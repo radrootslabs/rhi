@@ -174,13 +174,18 @@ fn rhi_wave_one_removes_prototype_runtime_and_selection_authority() {
             "std::env::var_os(\"RHI_",
             "worker_root",
             "nostr_sdk::Client",
-            "tokio::signal",
             "tracing_appender",
             "tracing_subscriber",
         ] {
             assert!(
                 !source.contains(forbidden),
                 "{path} retains removed wave-one authority `{forbidden}`"
+            );
+        }
+        if source.contains("tokio::signal") {
+            assert_eq!(
+                path, "src/main.rs",
+                "only the Step213 binary-owned process adapter may observe OS signals"
             );
         }
     }

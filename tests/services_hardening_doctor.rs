@@ -289,6 +289,11 @@ async fn report_debug_and_public_errors_retain_no_sensitive_values() {
 
 #[test]
 fn binary_uses_stable_safe_nonzero_results() {
+    const INPUT_FAILURE: &str = concat!(
+        r#"{"schema":"radroots.rhi.log.v1","contract_version":1,"service":"rhi","#,
+        r#""level":"error","event":"process_result","code":"input_or_configuration","exit_code":2}"#,
+        "\n"
+    );
     let canary = "secret-canary-private-key-path-sql-relay-url";
     let invalid = Command::new(env!("CARGO_BIN_EXE_rhi"))
         .arg(format!("--credential={canary}"))
@@ -297,7 +302,7 @@ fn binary_uses_stable_safe_nonzero_results() {
     assert_eq!(invalid.status.code(), Some(2));
     assert!(invalid.stdout.is_empty());
     let stderr = String::from_utf8(invalid.stderr).expect("invalid stderr");
-    assert_eq!(stderr, "RHI command failed: input_or_configuration\n");
+    assert_eq!(stderr, INPUT_FAILURE);
     assert!(!stderr.contains(canary));
 
     let repo_local = tempfile::tempdir().expect("repo-local root");
@@ -312,7 +317,7 @@ fn binary_uses_stable_safe_nonzero_results() {
     assert!(admitted.stdout.is_empty());
     assert_eq!(
         String::from_utf8(admitted.stderr).expect("admitted stderr"),
-        "RHI command failed: input_or_configuration\n"
+        INPUT_FAILURE
     );
 }
 

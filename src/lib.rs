@@ -4,8 +4,11 @@
 
 mod adapters;
 mod admin_v1;
+mod cli_bootstrap;
 mod cli_v1;
+mod config_loader;
 mod config_v1;
+mod diagnostics_v1;
 mod doctor_v1;
 mod features;
 mod identity_credential;
@@ -14,6 +17,7 @@ mod operations_v1;
 mod presence_desired;
 mod presence_publication;
 mod process_result_v1;
+mod process_v1;
 mod publication;
 mod publication_attempt;
 mod publication_execution;
@@ -28,9 +32,16 @@ mod reconciliation_manifest;
 mod reconciliation_reducer;
 mod reconciliation_replay;
 mod runtime_adapters;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod runtime_admin;
 mod runtime_context;
 mod runtime_foundation;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod runtime_graph;
+mod runtime_signal;
 mod source_ingest;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod state_admin;
 mod state_catalog;
 mod state_config;
 mod state_host;
@@ -39,28 +50,44 @@ mod state_metadata;
 mod state_repository;
 mod state_trade;
 mod status_v1;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod system_doctor;
 mod trade_ingest;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod transport_nostr_adapter;
 
 pub use adapters::nostr::event::NostrEventAdapter;
 pub use admin_v1::{
     RhiAdminCancellationToken, RhiAdminDocumentError, RhiAdminDocumentErrorKind, RhiAdminFuture,
     RhiAdminHandler, RhiAdminHandlerError, RhiAdminHandlerErrorKind, RhiAdminMethod,
-    RhiAdminRequestDocument, RhiAdminResponseDocument, RhiAdminRoute, RhiAdminRouter,
-    RhiAdminRouterError, RhiAdminServer, RhiAdminServerError, RhiAdminServerErrorKind,
-    RhiBoundAdminServer, build_rhi_admin_router,
+    RhiAdminRequestDocument, RhiAdminResponseDocument, RhiAdminRoute, RhiAdminRouterError,
+    RhiAdminServerError, RhiAdminServerErrorKind,
 };
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub use admin_v1::{RhiAdminRouter, RhiAdminServer, RhiBoundAdminServer, build_rhi_admin_router};
 pub use cli_v1::{
     RhiBootstrapProfileV1, RhiCliAdminOperationV1, RhiCliExecutionPlanV1, RhiCliInvocationV1,
     RhiCliOfflineOperationV1, RhiCliOutputModeV1, RhiCliPrimaryAuthorityV1, RhiCliV1Error,
-    RhiCliV1ErrorKind, RhiCommandV1, RhiConfigCommandV1, RhiIdentityCommandV1, RhiMetricsCommandV1,
-    RhiPresenceCommandV1, RhiPublicationCommandV1, RhiReconciliationCommandV1, RhiSourcesCommandV1,
-    RhiStateCommandV1, RhiTradeCommandV1, parse_rhi_cli_v1_from, plan_rhi_cli_v1,
+    RhiCliV1ErrorKind, RhiCommandV1, RhiConfigApplyArgsV1, RhiConfigCommandV1,
+    RhiIdentityCommandV1, RhiMetricsCommandV1, RhiPageQueryArgsV1, RhiPresenceCommandV1,
+    RhiPresenceMutationArgsV1, RhiPublicationCommandV1, RhiPublicationRetryArgsV1,
+    RhiReconciliationCommandV1, RhiReconciliationRefreshArgsV1, RhiSourcesCommandV1,
+    RhiStateBackupArgsV1, RhiStateCommandV1, RhiStateRestoreArgsV1, RhiTradeArgsV1,
+    RhiTradeCommandV1, RhiTradePageArgsV1, parse_rhi_cli_v1_from, plan_rhi_cli_v1,
+};
+pub use config_loader::{
+    RhiConfigLoadError, RhiConfigLoadErrorKind, initialize_rhi_config_document,
+    load_rhi_config_candidate, load_rhi_config_document,
 };
 pub use config_v1::{
     RHI_CONFIG_DOCUMENT_MAX_UTF8_BYTES, RHI_CONFIG_EFFECTIVE_MAX_UTF8_BYTES, RHI_CONFIG_SCHEMA,
     RHI_CONFIG_SCHEMA_VERSION, RhiConfigDefaultAuthority, RhiConfigDocumentV1, RhiConfigProfile,
     RhiConfigV1Error, RhiConfigV1ErrorKind, RhiConfigValueSource, RhiEffectiveConfigV1,
     RhiRuntimeThreadLimitsV1, parse_rhi_config_v1,
+};
+pub use diagnostics_v1::{
+    RHI_DIAGNOSTICS_CONTRACT_VERSION, RHI_LOG_RECORD_MAX_UTF8_BYTES, RhiLogEvent, RhiLogLevel,
+    RhiLogRecord,
 };
 pub use doctor_v1::{
     RHI_DOCTOR_CHECK_COUNT, RHI_DOCTOR_CONTRACT_VERSION, RHI_DOCTOR_REPORT_MAX_UTF8_BYTES,
@@ -113,6 +140,7 @@ pub use presence_publication::{
     validate_rhi_signed_presence_documents,
 };
 pub use process_result_v1::RhiProcessResult;
+pub use process_v1::{execute_rhi_cli_v1, execute_rhi_cli_v1_with_signal_source};
 pub use publication::{
     RHI_PUBLICATION_CONTRACT_VERSION, RHI_PUBLICATION_MAX_ATTEMPTS, RHI_PUBLICATION_MAX_TARGETS,
     RhiPublicationAuthority, RhiPublicationError, RhiPublicationErrorKind, RhiPublicationMode,
@@ -212,6 +240,7 @@ pub use runtime_foundation::{
     RhiRuntimeFoundationErrorKind, RhiRuntimePrerequisite, RhiRuntimeReadiness,
     RhiRuntimeReadinessReason, open_rhi_runtime_foundation,
 };
+pub use runtime_signal::{RhiProcessSignal, RhiProcessSignalFuture, RhiProcessSignalSource};
 pub use source_ingest::{
     RHI_TRADE_SOURCE_INGEST_CONTRACT_VERSION, RHI_TRADE_SOURCE_RESULT_MAX_BYTES,
     RHI_TRADE_SOURCE_RESULT_MAX_EVENTS, RhiTradeDirtyGeneration, RhiTradeSourceAttempt,
@@ -235,8 +264,9 @@ pub use state_catalog::{
     RHI_STATE_SCHEMA_VERSION_9_MIGRATION_SHA256, RHI_STATE_SCHEMA_VERSION_9_OBJECT_COUNT,
     RHI_STATE_SCHEMA_VERSION_9_SHA256, RHI_STATE_SCHEMA_VERSION_10_MIGRATION_SHA256,
     RHI_STATE_SCHEMA_VERSION_10_OBJECT_COUNT, RHI_STATE_SCHEMA_VERSION_10_SHA256,
-    RhiStateCatalogError, RhiStateCatalogErrorKind, rhi_migration_catalog, rhi_schema_catalog,
-    validate_rhi_state_catalogs,
+    RHI_STATE_SCHEMA_VERSION_11_MIGRATION_SHA256, RHI_STATE_SCHEMA_VERSION_11_OBJECT_COUNT,
+    RHI_STATE_SCHEMA_VERSION_11_SHA256, RhiStateCatalogError, RhiStateCatalogErrorKind,
+    rhi_migration_catalog, rhi_schema_catalog, validate_rhi_state_catalogs,
 };
 pub use state_config::{
     RHI_CONFIG_BINDING_MAX_GENERATIONS, RhiConfigApplyError, RhiConfigApplyErrorKind,
@@ -245,7 +275,8 @@ pub use state_config::{
 pub use state_host::{
     RhiStateHost, RhiStateHostError, RhiStateHostErrorKind, RhiStateHostMode,
     apply_rhi_configuration, initialize_rhi_state, open_rhi_state_inspection,
-    open_rhi_state_read_write, open_rhi_state_read_write_from_config,
+    open_rhi_state_inspection_from_config, open_rhi_state_read_write,
+    open_rhi_state_read_write_from_config,
 };
 pub use state_maintenance::{
     RhiStagedStateRestore, RhiStateMaintenanceError, RhiStateMaintenanceErrorKind,

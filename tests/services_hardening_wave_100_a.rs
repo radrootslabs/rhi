@@ -79,6 +79,8 @@ fn executable_has_no_prototype_runtime_fallback() {
         );
     }
     assert!(main.contains("parse_rhi_cli_v1_from"));
-    assert!(main.contains("resolve_rhi_runtime_context"));
-    assert!(main.contains("Err(())"));
+    assert!(main.contains("execute_rhi_cli_v1_with_signal_source"));
+    assert!(main.contains("RhiProcessResult::InputOrConfiguration"));
+    let process = include_str!("../src/process_v1.rs");
+    assert!(process.contains("resolve_rhi_runtime_context"));
 }

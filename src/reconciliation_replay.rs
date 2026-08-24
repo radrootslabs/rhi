@@ -143,6 +143,44 @@ impl RhiReconciliationSourceCursorEvidence {
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub(crate) async fn read_committed_reconciliation_cursor(
+    repositories: &crate::RhiStateRepositories<'_>,
+    request: &crate::RhiReconciliationSourceRequest,
+    policy: crate::RhiEvidencePolicyDigest,
+) -> Result<Option<RhiReconciliationSourceCursorEvidence>, ()> {
+    let source_id: Box<str> = request.source_id().into();
+    let trade_id = request.trade_id();
+    let selector_digest = *request.selector_digest().as_bytes();
+    repositories
+        .host()
+        .sqlite_host()
+        .transaction(move |transaction| {
+            Box::pin(async move {
+                crate::source_ingest::read_checkpoint(
+                    transaction,
+                    source_id.as_ref(),
+                    policy,
+                    trade_id,
+                )
+                .await
+                .map(|checkpoint| {
+                    checkpoint.map(|checkpoint| {
+                        committed_cursor_evidence(
+                            source_id,
+                            trade_id,
+                            *policy.as_bytes(),
+                            selector_digest,
+                            checkpoint.cursor,
+                        )
+                    })
+                })
+            })
+        })
+        .await
+        .map_err(|_| ())
+}
+
 impl fmt::Debug for RhiReconciliationSourceCursorEvidence {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter

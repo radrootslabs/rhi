@@ -557,7 +557,8 @@ fn doctor_and_process_results_are_closed_bounded_and_process_safe() {
     }
     assert!(MAIN.contains("parse_rhi_cli_v1_from(std::env::args_os())"));
     assert!(MAIN.contains("RhiProcessResult::InputOrConfiguration"));
-    assert!(MAIN.contains("eprintln!(\"RHI command failed: {}\", result.code())"));
+    assert!(MAIN.contains("execute_rhi_cli_v1_with_signal_source"));
+    assert!(MAIN.contains("eprintln!(\"{}\", RhiLogRecord::process_result(result))"));
     for forbidden in ["{error}", "{error:?}", "process::exit", "tokio::runtime"] {
         assert!(
             !MAIN.contains(forbidden),
@@ -566,7 +567,7 @@ fn doctor_and_process_results_are_closed_bounded_and_process_safe() {
     }
     assert!(
         MANIFEST.contains(
-            "tokio = { version = \"1\", default-features = false, features = [\"time\"] }"
+            "tokio = { version = \"1\", default-features = false, features = [\"io-util\", \"macros\", \"net\", \"rt-multi-thread\", \"signal\", \"sync\", \"time\"] }"
         )
     );
     assert!(MANIFEST.contains(
@@ -1232,7 +1233,7 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .lines()
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
-    assert_eq!(public_error_count, 38);
+    assert_eq!(public_error_count, 39);
 }
 
 #[test]

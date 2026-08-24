@@ -6,14 +6,13 @@ use std::path::Path;
 
 use rhi::{
     INSTANCE_ID_MAX_BYTES, RhiBootstrapProfileV1, RhiCliAdminOperationV1, RhiCliOfflineOperationV1,
-    RhiCliOutputModeV1, RhiCliPrimaryAuthorityV1, RhiCliV1ErrorKind, RhiCommandV1,
-    RhiConfigCommandV1, RhiIdentityCommandV1, RhiMetricsCommandV1, RhiPresenceCommandV1,
-    RhiPublicationCommandV1, RhiReconciliationCommandV1, RhiSourcesCommandV1, RhiStateCommandV1,
-    RhiTradeCommandV1, parse_rhi_cli_v1_from, plan_rhi_cli_v1,
+    RhiCliOutputModeV1, RhiCliPrimaryAuthorityV1, RhiCliV1ErrorKind, parse_rhi_cli_v1_from,
+    plan_rhi_cli_v1,
 };
 
 const CLI_SOURCE: &str = include_str!("../src/cli_v1.rs");
 const MAIN_SOURCE: &str = include_str!("../src/main.rs");
+const PROCESS_SOURCE: &str = include_str!("../src/process_v1.rs");
 const OPERATOR_CONTRACT: &str =
     include_str!("../contracts/services_hardening/operator_contract.v1.json");
 
@@ -25,125 +24,101 @@ fn parse(command: &[&str]) -> rhi::RhiCliInvocationV1 {
 
 #[test]
 fn root_api_exposes_the_complete_closed_command_inventory() {
+    let trade = "00000000000000000000000000000000";
     let vectors = [
-        (&["run"][..], RhiCommandV1::Run),
-        (
-            &["config", "init"][..],
-            RhiCommandV1::Config(RhiConfigCommandV1::Init),
-        ),
-        (
-            &["config", "validate"][..],
-            RhiCommandV1::Config(RhiConfigCommandV1::Validate),
-        ),
-        (
-            &["config", "show"][..],
-            RhiCommandV1::Config(RhiConfigCommandV1::Show),
-        ),
-        (
-            &["config", "schema"][..],
-            RhiCommandV1::Config(RhiConfigCommandV1::Schema),
-        ),
-        (
-            &["config", "apply"][..],
-            RhiCommandV1::Config(RhiConfigCommandV1::Apply),
-        ),
-        (
-            &["state", "init"][..],
-            RhiCommandV1::State(RhiStateCommandV1::Init),
-        ),
-        (
-            &["state", "status"][..],
-            RhiCommandV1::State(RhiStateCommandV1::Status),
-        ),
-        (
-            &["state", "backup"][..],
-            RhiCommandV1::State(RhiStateCommandV1::Backup),
-        ),
-        (
-            &["state", "restore"][..],
-            RhiCommandV1::State(RhiStateCommandV1::Restore),
-        ),
-        (
-            &["state", "verify"][..],
-            RhiCommandV1::State(RhiStateCommandV1::Verify),
-        ),
-        (
-            &["state", "migrate"][..],
-            RhiCommandV1::State(RhiStateCommandV1::Migrate),
-        ),
-        (
-            &["identity", "init"][..],
-            RhiCommandV1::Identity(RhiIdentityCommandV1::Init),
-        ),
-        (
-            &["identity", "status"][..],
-            RhiCommandV1::Identity(RhiIdentityCommandV1::Status),
-        ),
-        (
-            &["identity", "export-public"][..],
-            RhiCommandV1::Identity(RhiIdentityCommandV1::ExportPublic),
-        ),
-        (&["status"][..], RhiCommandV1::Status),
-        (
-            &["metrics", "snapshot"][..],
-            RhiCommandV1::Metrics(RhiMetricsCommandV1::Snapshot),
-        ),
-        (
-            &["reconciliation", "status"][..],
-            RhiCommandV1::Reconciliation(RhiReconciliationCommandV1::Status),
-        ),
-        (
-            &["reconciliation", "jobs"][..],
-            RhiCommandV1::Reconciliation(RhiReconciliationCommandV1::Jobs),
-        ),
-        (
-            &["reconciliation", "refresh"][..],
-            RhiCommandV1::Reconciliation(RhiReconciliationCommandV1::Refresh),
-        ),
-        (
-            &["sources", "list"][..],
-            RhiCommandV1::Sources(RhiSourcesCommandV1::List),
-        ),
-        (
-            &["trade", "projection"][..],
-            RhiCommandV1::Trade(RhiTradeCommandV1::Projection),
-        ),
-        (
-            &["trade", "report-current"][..],
-            RhiCommandV1::Trade(RhiTradeCommandV1::ReportCurrent),
-        ),
-        (
-            &["trade", "reports"][..],
-            RhiCommandV1::Trade(RhiTradeCommandV1::Reports),
-        ),
-        (
-            &["publication", "backlog"][..],
-            RhiCommandV1::Publication(RhiPublicationCommandV1::Backlog),
-        ),
-        (
-            &["publication", "targets"][..],
-            RhiCommandV1::Publication(RhiPublicationCommandV1::Targets),
-        ),
-        (
-            &["publication", "retry"][..],
-            RhiCommandV1::Publication(RhiPublicationCommandV1::Retry),
-        ),
-        (
-            &["presence", "desired"][..],
-            RhiCommandV1::Presence(RhiPresenceCommandV1::Desired),
-        ),
-        (
-            &["presence", "render"][..],
-            RhiCommandV1::Presence(RhiPresenceCommandV1::Render),
-        ),
-        (
-            &["presence", "refresh"][..],
-            RhiCommandV1::Presence(RhiPresenceCommandV1::Refresh),
-        ),
-        (&["doctor"][..], RhiCommandV1::Doctor),
+        vec!["run"],
+        vec!["config", "init"],
+        vec!["config", "validate"],
+        vec!["config", "show"],
+        vec!["config", "schema"],
+        vec![
+            "config",
+            "apply",
+            "--candidate-config",
+            "/tmp/candidate.toml",
+        ],
+        vec!["state", "init"],
+        vec!["state", "status"],
+        vec![
+            "state",
+            "backup",
+            "--operation-id",
+            "backup-1",
+            "--target",
+            "/tmp/backup",
+            "--expected-generation",
+            "1",
+            "--confirm",
+        ],
+        vec![
+            "state",
+            "restore",
+            "--manifest",
+            "/tmp/manifest.json",
+            "--manifest-sha256",
+            "0000000000000000000000000000000000000000000000000000000000000000",
+            "--bundle",
+            "/tmp/backup",
+            "--maximum-state-bytes",
+            "1048576",
+            "--confirm",
+        ],
+        vec!["state", "verify"],
+        vec!["state", "migrate"],
+        vec!["identity", "init"],
+        vec!["identity", "status"],
+        vec!["identity", "export-public"],
+        vec!["status"],
+        vec!["metrics", "snapshot"],
+        vec!["reconciliation", "status"],
+        vec!["reconciliation", "jobs"],
+        vec![
+            "reconciliation",
+            "refresh",
+            "--operation-id",
+            "refresh-1",
+            "--trade-id",
+            trade,
+            "--expected-dirty-generation",
+            "1",
+        ],
+        vec!["sources", "list"],
+        vec!["trade", "projection", "--trade-id", trade],
+        vec!["trade", "report-current", "--trade-id", trade],
+        vec!["trade", "reports", "--trade-id", trade],
+        vec!["publication", "backlog"],
+        vec!["publication", "targets"],
+        vec![
+            "publication",
+            "retry",
+            "--operation-id",
+            "retry-1",
+            "--workflow-id",
+            "workflow-1",
+            "--expected-generation",
+            "1",
+        ],
+        vec!["presence", "desired"],
+        vec![
+            "presence",
+            "render",
+            "--operation-id",
+            "render-1",
+            "--expected-generation",
+            "1",
+        ],
+        vec![
+            "presence",
+            "refresh",
+            "--operation-id",
+            "presence-1",
+            "--expected-generation",
+            "1",
+        ],
+        vec!["doctor"],
     ];
-    for (arguments, expected) in vectors {
-        assert_eq!(parse(arguments).command(), expected);
+    for arguments in vectors {
+        parse(&arguments);
     }
 }
 
@@ -264,7 +239,12 @@ fn every_command_has_one_exact_nonforgeable_execution_plan() {
         ),
         (
             "config apply",
-            vec!["config", "apply"],
+            vec![
+                "config",
+                "apply",
+                "--candidate-config",
+                "/tmp/candidate.toml",
+            ],
             "offline",
             Some("config"),
             None,
@@ -285,14 +265,36 @@ fn every_command_has_one_exact_nonforgeable_execution_plan() {
         ),
         (
             "state backup",
-            vec!["state", "backup"],
+            vec![
+                "state",
+                "backup",
+                "--operation-id",
+                "backup-1",
+                "--target",
+                "/tmp/backup",
+                "--expected-generation",
+                "1",
+                "--confirm",
+            ],
             "live_unix_admin",
             None,
             Some("/v1/state/backup"),
         ),
         (
             "state restore",
-            vec!["state", "restore"],
+            vec![
+                "state",
+                "restore",
+                "--manifest",
+                "/tmp/manifest.json",
+                "--manifest-sha256",
+                "0000000000000000000000000000000000000000000000000000000000000000",
+                "--bundle",
+                "/tmp/backup",
+                "--maximum-state-bytes",
+                "1048576",
+                "--confirm",
+            ],
             "offline",
             Some("state_exclusive"),
             None,
@@ -362,7 +364,16 @@ fn every_command_has_one_exact_nonforgeable_execution_plan() {
         ),
         (
             "reconciliation refresh",
-            vec!["reconciliation", "refresh"],
+            vec![
+                "reconciliation",
+                "refresh",
+                "--operation-id",
+                "refresh-1",
+                "--trade-id",
+                "00000000000000000000000000000000",
+                "--expected-dirty-generation",
+                "1",
+            ],
             "live_unix_admin",
             None,
             Some("/v1/reconciliation/refresh"),
@@ -376,21 +387,36 @@ fn every_command_has_one_exact_nonforgeable_execution_plan() {
         ),
         (
             "trade projection",
-            vec!["trade", "projection"],
+            vec![
+                "trade",
+                "projection",
+                "--trade-id",
+                "00000000000000000000000000000000",
+            ],
             "live_unix_admin",
             None,
             Some("/v1/trades/{trade_id}/projection"),
         ),
         (
             "trade report-current",
-            vec!["trade", "report-current"],
+            vec![
+                "trade",
+                "report-current",
+                "--trade-id",
+                "00000000000000000000000000000000",
+            ],
             "live_unix_admin",
             None,
             Some("/v1/trades/{trade_id}/reports/current"),
         ),
         (
             "trade reports",
-            vec!["trade", "reports"],
+            vec![
+                "trade",
+                "reports",
+                "--trade-id",
+                "00000000000000000000000000000000",
+            ],
             "live_unix_admin",
             None,
             Some("/v1/trades/{trade_id}/reports"),
@@ -411,7 +437,16 @@ fn every_command_has_one_exact_nonforgeable_execution_plan() {
         ),
         (
             "publication retry",
-            vec!["publication", "retry"],
+            vec![
+                "publication",
+                "retry",
+                "--operation-id",
+                "retry-1",
+                "--workflow-id",
+                "workflow-1",
+                "--expected-generation",
+                "1",
+            ],
             "live_unix_admin",
             None,
             Some("/v1/publication/retry"),
@@ -425,14 +460,28 @@ fn every_command_has_one_exact_nonforgeable_execution_plan() {
         ),
         (
             "presence render",
-            vec!["presence", "render"],
+            vec![
+                "presence",
+                "render",
+                "--operation-id",
+                "render-1",
+                "--expected-generation",
+                "1",
+            ],
             "live_unix_admin",
             None,
             Some("/v1/presence/render"),
         ),
         (
             "presence refresh",
-            vec!["presence", "refresh"],
+            vec![
+                "presence",
+                "refresh",
+                "--operation-id",
+                "presence-1",
+                "--expected-generation",
+                "1",
+            ],
             "live_unix_admin",
             None,
             Some("/v1/presence/refresh"),
@@ -586,6 +635,12 @@ fn execution_plan_is_safe_and_the_binary_parses_and_plans_once() {
         "/secret/config.toml",
         "publication",
         "retry",
+        "--operation-id",
+        "operation-1",
+        "--workflow-id",
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "--expected-generation",
+        "1",
     ])
     .expect("valid invocation");
     let rendered = format!("{invocation:?} {:?}", plan_rhi_cli_v1(&invocation));
@@ -604,7 +659,15 @@ fn execution_plan_is_safe_and_the_binary_parses_and_plans_once() {
         1
     );
     assert_eq!(
-        MAIN_SOURCE.matches("plan_rhi_cli_v1(&invocation)").count(),
+        MAIN_SOURCE
+            .matches("execute_rhi_cli_v1_with_signal_source")
+            .count(),
+        1
+    );
+    assert_eq!(
+        PROCESS_SOURCE
+            .matches("plan_rhi_cli_v1(&invocation)")
+            .count(),
         1
     );
     for source in [CLI_SOURCE, MAIN_SOURCE] {

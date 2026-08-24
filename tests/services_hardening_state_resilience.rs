@@ -347,8 +347,8 @@ async fn exact_open_rejects_unexpected_migration_history_without_repair() {
             service_version, service_commit, lib_revision, rust_version, target,
             feature_profile, config_contract_version, state_contract_version,
             admin_contract_version, status_contract_version, provider_contract_version
-         ) VALUES (11, 'unexpected_schema', ?, 1725000000, '0.1.0', ?, ?,
-                   'rustc-test', 'test-target', 'service-host', 1, 10, 1, 1, 1)",
+         ) VALUES (12, 'unexpected_schema', ?, 1725000000, '0.1.0', ?, ?,
+                   'rustc-test', 'test-target', 'service-host', 1, 11, 1, 1, 1)",
     )
     .bind([0x44_u8; 32].as_slice())
     .bind("1111111111111111111111111111111111111111")

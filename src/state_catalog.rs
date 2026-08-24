@@ -12,7 +12,7 @@ use radroots_service_sqlite::{
 pub const RHI_STATE_BASE_SCHEMA_VERSION: u32 = 1;
 
 /// The newest governed RHI state schema understood by this binary.
-pub const RHI_STATE_SCHEMA_VERSION: u32 = 10;
+pub const RHI_STATE_SCHEMA_VERSION: u32 = 11;
 
 /// The shared metadata and migration-ledger objects present at schema v1.
 pub const RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT: u32 = 6;
@@ -44,10 +44,13 @@ pub const RHI_STATE_SCHEMA_VERSION_9_OBJECT_COUNT: u32 = 69;
 /// The shared objects plus durable exact-byte presence delivery state.
 pub const RHI_STATE_SCHEMA_VERSION_10_OBJECT_COUNT: u32 = 80;
 
+/// The complete v10 state plus the bounded durable admin-operation journal.
+pub const RHI_STATE_SCHEMA_VERSION_11_OBJECT_COUNT: u32 = 82;
+
 /// SHA-256 identity of the ordered migration catalog rooted at schema v1.
 pub const RHI_MIGRATION_CATALOG_SHA256: [u8; 32] = [
-    0x25, 0xe5, 0xba, 0x77, 0x3e, 0xf3, 0xdb, 0x01, 0x33, 0xa8, 0x07, 0x7a, 0x08, 0x3e, 0x88, 0xb4,
-    0x0f, 0xc6, 0xda, 0xdf, 0x9f, 0xb6, 0xf0, 0xcf, 0xde, 0x0e, 0x4b, 0xa4, 0xd3, 0xe0, 0x81, 0xd9,
+    0xe6, 0xcb, 0xac, 0xbd, 0x1e, 0xb6, 0x36, 0xc1, 0xa5, 0x60, 0xf8, 0x5e, 0xf8, 0xe5, 0x1e, 0x89,
+    0xc9, 0xff, 0xe3, 0xb3, 0x42, 0xe6, 0x6b, 0xc5, 0xc0, 0xb4, 0x7a, 0xb3, 0x4e, 0x90, 0xc8, 0x18,
 ];
 
 /// SHA-256 identity of the exact schema-v1 object snapshot.
@@ -164,10 +167,22 @@ pub const RHI_STATE_SCHEMA_VERSION_10_SHA256: [u8; 32] = [
     0xcd, 0x50, 0x2a, 0xba, 0xa8, 0xa4, 0xca, 0x30, 0xa4, 0x82, 0x35, 0x35, 0xb8, 0xbd, 0x0e, 0x45,
 ];
 
+/// SHA-256 identity of the schema-v11 admin-operation-journal migration.
+pub const RHI_STATE_SCHEMA_VERSION_11_MIGRATION_SHA256: [u8; 32] = [
+    0xe3, 0xfb, 0xde, 0x51, 0x1e, 0x84, 0x24, 0xc9, 0x70, 0x80, 0xbe, 0x2c, 0x09, 0xed, 0x81, 0x0a,
+    0xe2, 0x84, 0x63, 0x1d, 0x75, 0xeb, 0x25, 0xc2, 0xe8, 0x8a, 0x60, 0x76, 0xb7, 0x00, 0xaa, 0xef,
+];
+
+/// SHA-256 identity of the exact schema-v11 object snapshot.
+pub const RHI_STATE_SCHEMA_VERSION_11_SHA256: [u8; 32] = [
+    0xc2, 0x5e, 0xc6, 0x3b, 0x33, 0xb4, 0x11, 0x61, 0x80, 0x68, 0xee, 0x06, 0xa0, 0x4c, 0x99, 0xee,
+    0x71, 0x66, 0xe0, 0x01, 0x4d, 0x97, 0x90, 0x39, 0xfa, 0xea, 0xea, 0x4d, 0xc1, 0xac, 0x7e, 0x62,
+];
+
 /// SHA-256 identity of the schema catalog bound to the migration catalog.
 pub const RHI_STATE_SCHEMA_CATALOG_SHA256: [u8; 32] = [
-    0x4f, 0x4d, 0x5f, 0x55, 0x46, 0xa7, 0xc9, 0x4e, 0xf3, 0xcd, 0xab, 0xe2, 0x3e, 0xad, 0xd0, 0xc9,
-    0x7a, 0x64, 0x98, 0x09, 0x84, 0xee, 0x38, 0xca, 0xcb, 0x82, 0x8f, 0x11, 0x25, 0x91, 0x34, 0x88,
+    0xae, 0xc4, 0x82, 0x81, 0x8b, 0xd9, 0xa6, 0xf3, 0x3f, 0xd9, 0x2b, 0x55, 0xd1, 0x42, 0xc6, 0xb8,
+    0x5a, 0xa6, 0xf0, 0x86, 0x85, 0x57, 0x01, 0xdf, 0xc4, 0xb7, 0x8f, 0x2a, 0x7e, 0xf5, 0xcf, 0x6d,
 ];
 
 macro_rules! rhi_config_bindings_table_sql {
@@ -1991,6 +2006,72 @@ const PRESENCE_ATTEMPTS_NO_DELETE_SHA256: [u8; 32] = [
     0xbd, 0xf7, 0x74, 0xbb, 0x8d, 0x84, 0xc9, 0xab, 0xd9, 0x76, 0xe2, 0xae, 0x9c, 0xd2, 0x4a, 0x71,
 ];
 
+macro_rules! rhi_admin_operations_table_sql {
+    () => {
+        r#"CREATE TABLE rhi_admin_operations (
+    operation_id TEXT NOT NULL PRIMARY KEY
+        CHECK (length(CAST(operation_id AS BLOB)) BETWEEN 1 AND 128)
+        CHECK (substr(operation_id, 1, 1) GLOB '[A-Za-z0-9]')
+        CHECK (operation_id NOT GLOB '*[^A-Za-z0-9._:-]*'),
+    route TEXT NOT NULL CHECK (length(CAST(route AS BLOB)) BETWEEN 1 AND 128),
+    request_sha256 BLOB NOT NULL CHECK (length(request_sha256) = 32),
+    state TEXT NOT NULL CHECK (state IN ('prepared', 'completed')),
+    response_model BLOB CHECK (response_model IS NULL OR
+        length(response_model) BETWEEN 1 AND 8192),
+    response_sha256 BLOB CHECK (response_sha256 IS NULL OR
+        length(response_sha256) = 32),
+    prepared_at_unix_ms INTEGER NOT NULL
+        CHECK (prepared_at_unix_ms BETWEEN 0 AND 9223372036854775807),
+    completed_at_unix_ms INTEGER
+        CHECK (completed_at_unix_ms IS NULL OR
+            completed_at_unix_ms BETWEEN prepared_at_unix_ms AND 9223372036854775807),
+    expires_at_unix_ms INTEGER
+        CHECK (expires_at_unix_ms IS NULL OR
+            expires_at_unix_ms BETWEEN completed_at_unix_ms AND 9223372036854775807),
+    CHECK ((state = 'prepared' AND response_model IS NULL
+            AND response_sha256 IS NULL AND completed_at_unix_ms IS NULL
+            AND expires_at_unix_ms IS NULL)
+        OR (state = 'completed' AND response_model IS NOT NULL
+            AND response_sha256 IS NOT NULL AND completed_at_unix_ms IS NOT NULL
+            AND expires_at_unix_ms IS NOT NULL))
+) STRICT"#
+    };
+}
+
+macro_rules! rhi_admin_operations_guard_update_sql {
+    () => {
+        r#"CREATE TRIGGER rhi_admin_operations_guard_update
+BEFORE UPDATE ON rhi_admin_operations
+WHEN OLD.state != 'prepared' OR NEW.state != 'completed'
+    OR NEW.operation_id != OLD.operation_id OR NEW.route != OLD.route
+    OR NEW.request_sha256 != OLD.request_sha256
+    OR NEW.prepared_at_unix_ms != OLD.prepared_at_unix_ms
+    OR NEW.response_model IS NULL OR NEW.response_sha256 IS NULL
+    OR NEW.completed_at_unix_ms IS NULL OR NEW.expires_at_unix_ms IS NULL
+BEGIN
+    SELECT RAISE(ABORT, 'admin operation transition is invalid');
+END"#
+    };
+}
+
+const CREATE_RHI_ADMIN_OPERATIONS_TABLE_SQL: &str = rhi_admin_operations_table_sql!();
+const CREATE_RHI_ADMIN_OPERATIONS_GUARD_UPDATE_SQL: &str = rhi_admin_operations_guard_update_sql!();
+const CREATE_RHI_ADMIN_OPERATIONS_MIGRATION_SQL: &str = concat!(
+    rhi_admin_operations_table_sql!(),
+    ";\n",
+    rhi_admin_operations_guard_update_sql!(),
+    ";",
+);
+
+const RHI_ADMIN_OPERATIONS_TABLE_SHA256: [u8; 32] = [
+    0xf7, 0xa6, 0x22, 0x21, 0xc8, 0xec, 0x66, 0x2c, 0x17, 0x14, 0x43, 0x82, 0x2b, 0x11, 0xa9, 0x9b,
+    0xc4, 0xde, 0x02, 0x13, 0xa1, 0x9e, 0x12, 0xaa, 0x70, 0x54, 0x7b, 0x7f, 0x9d, 0x50, 0x99, 0x21,
+];
+const RHI_ADMIN_OPERATIONS_GUARD_UPDATE_SHA256: [u8; 32] = [
+    0xac, 0xe5, 0x7c, 0x97, 0xbc, 0xd5, 0xe9, 0xda, 0x0d, 0xfc, 0xe0, 0x23, 0x65, 0x6d, 0xae, 0xda,
+    0x96, 0xe5, 0xbf, 0xb6, 0x89, 0x70, 0xa6, 0x06, 0x1b, 0x70, 0x7d, 0x21, 0xec, 0x1f, 0x6b, 0x39,
+];
+
 /// Stable classes for invalid embedded RHI catalog definitions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RhiStateCatalogErrorKind {
@@ -2124,6 +2205,13 @@ fn build_rhi_migration_catalog() -> Result<MigrationCatalog, RhiStateCatalogErro
         MigrationChecksum::from_bytes(RHI_STATE_SCHEMA_VERSION_10_MIGRATION_SHA256),
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::MigrationCatalog))?;
+    let admin_operations = MigrationDescriptor::sql(
+        11,
+        "create_admin_operation_journal",
+        CREATE_RHI_ADMIN_OPERATIONS_MIGRATION_SQL,
+        MigrationChecksum::from_bytes(RHI_STATE_SCHEMA_VERSION_11_MIGRATION_SHA256),
+    )
+    .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::MigrationCatalog))?;
     let catalog = MigrationCatalog::new([
         configuration,
         trade_evidence,
@@ -2134,6 +2222,7 @@ fn build_rhi_migration_catalog() -> Result<MigrationCatalog, RhiStateCatalogErro
         reconciliation_job_shape_guards,
         presence_desired_state,
         presence_publication,
+        admin_operations,
     ])
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::MigrationCatalog))?;
     Ok(catalog)
@@ -2143,7 +2232,7 @@ fn build_rhi_migration_catalog() -> Result<MigrationCatalog, RhiStateCatalogErro
 pub fn rhi_migration_catalog() -> Result<MigrationCatalog, RhiStateCatalogError> {
     let catalog = build_rhi_migration_catalog()?;
     if catalog.current_version() != RHI_STATE_SCHEMA_VERSION
-        || catalog.descriptors().len() != 9
+        || catalog.descriptors().len() != 10
         || catalog.digest().as_bytes() != &RHI_MIGRATION_CATALOG_SHA256
     {
         return Err(RhiStateCatalogError::new(
@@ -2224,6 +2313,12 @@ fn build_rhi_schema_catalog(
         SchemaDigest::from_bytes(RHI_STATE_SCHEMA_VERSION_10_SHA256),
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
+    let version_eleven = SchemaVersionCatalog::new(
+        11,
+        rhi_schema_version_eleven_objects()?,
+        SchemaDigest::from_bytes(RHI_STATE_SCHEMA_VERSION_11_SHA256),
+    )
+    .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
     let catalog = SchemaCatalog::new(
         migrations,
         [
@@ -2237,6 +2332,7 @@ fn build_rhi_schema_catalog(
             version_eight,
             version_nine,
             version_ten,
+            version_eleven,
         ],
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
@@ -2250,10 +2346,10 @@ pub fn validate_rhi_state_catalogs(
 ) -> Result<(), RhiStateCatalogError> {
     let versions = schema.versions();
     let valid = migrations.current_version() == RHI_STATE_SCHEMA_VERSION
-        && migrations.descriptors().len() == 9
+        && migrations.descriptors().len() == 10
         && migrations.digest().as_bytes() == &RHI_MIGRATION_CATALOG_SHA256
         && schema.migration_catalog_digest() == migrations.digest()
-        && versions.len() == 10
+        && versions.len() == 11
         && versions[0].version() == RHI_STATE_BASE_SCHEMA_VERSION
         && versions[0].object_count() == RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT
         && versions[0].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_1_SHA256
@@ -2281,9 +2377,12 @@ pub fn validate_rhi_state_catalogs(
         && versions[8].version() == 9
         && versions[8].object_count() == RHI_STATE_SCHEMA_VERSION_9_OBJECT_COUNT
         && versions[8].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_9_SHA256
-        && versions[9].version() == RHI_STATE_SCHEMA_VERSION
+        && versions[9].version() == 10
         && versions[9].object_count() == RHI_STATE_SCHEMA_VERSION_10_OBJECT_COUNT
         && versions[9].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_10_SHA256
+        && versions[10].version() == RHI_STATE_SCHEMA_VERSION
+        && versions[10].object_count() == RHI_STATE_SCHEMA_VERSION_11_OBJECT_COUNT
+        && versions[10].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_11_SHA256
         && schema.digest().as_bytes() == &RHI_STATE_SCHEMA_CATALOG_SHA256;
     if valid {
         Ok(())
@@ -2377,6 +2476,39 @@ fn rhi_schema_version_ten_objects() -> Result<Vec<SchemaObject>, RhiStateCatalog
     let mut objects = rhi_schema_version_nine_objects()?;
     objects.extend(rhi_presence_publication_objects()?);
     Ok(objects)
+}
+
+fn rhi_schema_version_eleven_objects() -> Result<Vec<SchemaObject>, RhiStateCatalogError> {
+    let mut objects = rhi_schema_version_ten_objects()?;
+    objects.extend(rhi_admin_operation_objects()?);
+    Ok(objects)
+}
+
+fn rhi_admin_operation_objects() -> Result<[SchemaObject; 2], RhiStateCatalogError> {
+    let object = |kind, name, sql, digest| {
+        SchemaObject::new(
+            kind,
+            name,
+            "rhi_admin_operations",
+            sql,
+            SchemaDigest::from_bytes(digest),
+        )
+        .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))
+    };
+    Ok([
+        object(
+            SchemaObjectKind::Table,
+            "rhi_admin_operations",
+            CREATE_RHI_ADMIN_OPERATIONS_TABLE_SQL,
+            RHI_ADMIN_OPERATIONS_TABLE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "rhi_admin_operations_guard_update",
+            CREATE_RHI_ADMIN_OPERATIONS_GUARD_UPDATE_SQL,
+            RHI_ADMIN_OPERATIONS_GUARD_UPDATE_SHA256,
+        )?,
+    ])
 }
 
 fn rhi_presence_publication_objects() -> Result<[SchemaObject; 11], RhiStateCatalogError> {

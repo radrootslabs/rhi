@@ -400,6 +400,43 @@ pub async fn ingest_rhi_trade_source(
     commit_source_result(repositories, source, trade_id, attempt, initial, fetched).await
 }
 
+/// Atomically commits one event that was already admitted from a governed
+/// subscription. This keeps subscription delivery on the same checkpoint,
+/// provenance, dirty-generation, and evidence transaction used by paged
+/// source ingestion without issuing a second network request.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub(crate) async fn ingest_rhi_subscribed_trade_event(
+    repositories: &RhiStateRepositories<'_>,
+    configuration: &RhiConfigDocumentV1,
+    source_id: &str,
+    admitted: RhiAdmittedTradeMutationEvent,
+    attempt: RhiTradeSourceAttempt,
+) -> Result<RhiTradeSourceIngestOutcome, RhiTradeSourceIngestError> {
+    let host = repositories.host();
+    if host.mode() != RhiStateHostMode::ReadWriteExisting {
+        return Err(failure(RhiTradeSourceIngestErrorKind::InvalidMode));
+    }
+    let source = ConfiguredSource::new(host, configuration, source_id)?;
+    let trade_id = admitted.mutation().trade_id;
+    if admitted.original_bytes().len() > source.maximum_bytes || source.maximum_events == 0 {
+        return Err(failure(RhiTradeSourceIngestErrorKind::InvalidInput));
+    }
+    let cursor = RhiTradeSourceCursor {
+        created_at_unix_seconds: admitted.authored_at_unix_seconds(),
+        event_id: *admitted.event_id().as_bytes(),
+    };
+    let initial = read_initial_state(repositories, &source, trade_id).await?;
+    let fetched = FetchedSource {
+        completion: RhiTradeSourceCompletion::Complete,
+        received_events: 1,
+        duplicate_events: 0,
+        admitted: vec![admitted],
+        rejected_events: 0,
+        cursor_candidate: Some(cursor),
+    };
+    commit_source_result(repositories, source, trade_id, attempt, initial, fetched).await
+}
+
 struct ConfiguredSource {
     source_id: Box<str>,
     relay_url: Box<str>,

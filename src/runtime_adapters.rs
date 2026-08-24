@@ -154,6 +154,16 @@ pub struct RhiTimeEntropyAdapters {
     entropy: Arc<dyn EntropySource>,
 }
 
+impl Clone for RhiTimeEntropyAdapters {
+    fn clone(&self) -> Self {
+        Self {
+            wall: Arc::clone(&self.wall),
+            monotonic: Arc::clone(&self.monotonic),
+            entropy: Arc::clone(&self.entropy),
+        }
+    }
+}
+
 impl RhiTimeEntropyAdapters {
     /// Owns injected adapters without reading a clock or entropy source.
     pub fn new<W, M, E>(wall: W, monotonic: M, entropy: E) -> Self
@@ -190,6 +200,11 @@ impl RhiTimeEntropyAdapters {
             .ok_or_else(|| {
                 RhiRuntimeAdapterError::new(RhiRuntimeAdapterErrorKind::WallClockUnavailable)
             })
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    pub(crate) fn entropy(&self) -> &dyn EntropySource {
+        self.entropy.as_ref()
     }
 
     /// Reads one observation from the injected process-local monotonic domain.
@@ -251,8 +266,18 @@ impl fmt::Debug for RhiTimeEntropyAdapters {
 /// do not become public runtime authority.
 pub struct RhiTransportAdapters {
     evidence_source: Arc<dyn EventSource>,
-    _evidence_subscriber: Arc<dyn EventSubscriber>,
-    _publication_sink: Arc<dyn EventSink>,
+    evidence_subscriber: Arc<dyn EventSubscriber>,
+    publication_sink: Arc<dyn EventSink>,
+}
+
+impl Clone for RhiTransportAdapters {
+    fn clone(&self) -> Self {
+        Self {
+            evidence_source: Arc::clone(&self.evidence_source),
+            evidence_subscriber: Arc::clone(&self.evidence_subscriber),
+            publication_sink: Arc::clone(&self.publication_sink),
+        }
+    }
 }
 
 impl RhiTransportAdapters {
@@ -265,13 +290,18 @@ impl RhiTransportAdapters {
     ) -> Self {
         Self {
             evidence_source,
-            _evidence_subscriber: evidence_subscriber,
-            _publication_sink: publication_sink,
+            evidence_subscriber,
+            publication_sink,
         }
     }
 
     pub(crate) fn evidence_source(&self) -> &dyn EventSource {
         self.evidence_source.as_ref()
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    pub(crate) fn evidence_subscriber(&self) -> &dyn EventSubscriber {
+        self.evidence_subscriber.as_ref()
     }
 }
 
@@ -388,7 +418,7 @@ impl fmt::Debug for RhiIdentityCredentialAdapters {
 #[must_use = "runtime adapters retain join-owned task authority"]
 pub struct RhiRuntimeAdapters {
     time_entropy: RhiTimeEntropyAdapters,
-    _transport: RhiTransportAdapters,
+    transport: RhiTransportAdapters,
     identity_credential: RhiIdentityCredentialAdapters,
     supervisor: TaskSupervisor,
 }
@@ -402,7 +432,7 @@ impl RhiRuntimeAdapters {
     ) -> Self {
         Self {
             time_entropy,
-            _transport: transport,
+            transport,
             identity_credential,
             supervisor: TaskSupervisor::new(),
         }
@@ -420,6 +450,11 @@ impl RhiRuntimeAdapters {
         &self.identity_credential
     }
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    pub(crate) const fn transport(&self) -> &RhiTransportAdapters {
+        &self.transport
+    }
+
     /// Returns the number of join-owned tasks currently registered.
     #[must_use]
     pub fn supervised_task_count(&self) -> usize {
@@ -435,7 +470,7 @@ impl RhiRuntimeAdapters {
             .map_err(|_| ())
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, target_os = "linux", target_os = "macos"))]
     pub(crate) fn supervisor_mut(&mut self) -> &mut TaskSupervisor {
         &mut self.supervisor
     }
@@ -443,6 +478,7 @@ impl RhiRuntimeAdapters {
 
 impl fmt::Debug for RhiRuntimeAdapters {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let _ = &self.transport;
         formatter
             .debug_struct("RhiRuntimeAdapters")
             .field("time_entropy", &"[injected]")

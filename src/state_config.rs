@@ -300,6 +300,23 @@ pub(crate) async fn verify_binding(
         .map_err(map_transaction_error)
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub(crate) async fn current_generation(host: &RhiStateHost) -> Result<u16, RhiConfigApplyError> {
+    host.sqlite_host()
+        .transaction(move |transaction| {
+            Box::pin(async move {
+                let history = read_history(transaction).await?;
+                validate_history(&history)?;
+                history
+                    .last()
+                    .map(|entry| entry.generation)
+                    .ok_or(ConfigOperationError::Binding)
+            })
+        })
+        .await
+        .map_err(map_transaction_error)
+}
+
 pub(crate) async fn append_configuration(
     host: &RhiStateHost,
     current: &RhiStateMetadata,

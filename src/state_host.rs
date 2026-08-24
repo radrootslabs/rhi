@@ -449,6 +449,44 @@ pub async fn open_rhi_state_inspection(
     Ok(state)
 }
 
+/// Opens existing inspection state from a sealed intent and actual metadata.
+pub async fn open_rhi_state_inspection_from_config(
+    runtime: &RhiRuntimeContext,
+    configuration: &RhiConfigDocumentV1,
+) -> Result<RhiStateHost, RhiStateHostError> {
+    let paths = state_paths(runtime)?;
+    let (migrations, schema) = catalogs()?;
+    let intent = existing_intent(&paths)?;
+    let opened = ServiceSqliteHost::open_read_only_inspection_with_intent(
+        &paths,
+        &intent,
+        &migrations,
+        &schema,
+        ServiceSqliteConnectionOptions::reviewed(),
+    )
+    .await
+    .map_err(|_| RhiStateHostError::new(RhiStateHostErrorKind::InspectionOpen))?;
+    let (host, actual) = opened.into_parts();
+    let metadata = match RhiStateMetadata::from_existing_database(runtime, configuration, &actual) {
+        Ok(metadata) => metadata,
+        Err(_) => {
+            return Err(close_error(&host, RhiStateHostErrorKind::InvalidEvidence).await);
+        }
+    };
+    let state = RhiStateHost {
+        host,
+        mode: RhiStateHostMode::ReadOnlyInspection,
+        metadata,
+    };
+    if state_config::verify_binding(&state, state.metadata())
+        .await
+        .is_err()
+    {
+        return Err(close_error(&state.host, RhiStateHostErrorKind::InvalidEvidence).await);
+    }
+    Ok(state)
+}
+
 pub(crate) fn state_paths(
     runtime: &RhiRuntimeContext,
 ) -> Result<ServiceSqlitePaths, RhiStateHostError> {

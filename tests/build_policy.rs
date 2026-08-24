@@ -27,7 +27,7 @@ fn source_lock_metadata_is_exact_and_nix_is_absent() {
     ));
     for field in [
         "config_contract_version = 1",
-        "state_contract_version = 7",
+        "state_contract_version = 11",
         "admin_contract_version = 1",
         "status_contract_version = 1",
         "provider_contract_version = 1",
@@ -73,6 +73,9 @@ fn shared_transport_spi_is_exactly_source_locked_without_serde() {
     assert!(MANIFEST.contains(
         "radroots_transport = { git = \"https://github.com/radrootslabs/lib\", rev = \"21b11e7a5120ea949f7ad0838c746873fc73aac2\", version = \"=0.1.0-alpha\", default-features = false, features = [\"std\"] }"
     ));
+    assert!(MANIFEST.contains(
+        "radroots_transport_nostr = { git = \"https://github.com/radrootslabs/lib\", rev = \"21b11e7a5120ea949f7ad0838c746873fc73aac2\", version = \"=0.1.0-alpha\" }"
+    ));
 }
 
 #[test]
@@ -93,7 +96,7 @@ fn source_lock_binds_the_current_cargo_lock() {
     assert!(!SOURCE_LOCK.contains("flake_lock_sha256"));
     assert!(!SOURCE_LOCK.contains("lib_revision ="));
     assert!(SOURCE_LOCK.ends_with(
-        "[contract_versions]\nconfig = 1\nstate = 7\nadmin = 1\nstatus = 1\nprovider = 1\n"
+        "[contract_versions]\nconfig = 1\nstate = 11\nadmin = 1\nstatus = 1\nprovider = 1\n"
     ));
 }
 

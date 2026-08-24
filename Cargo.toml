@@ -20,7 +20,7 @@ service = "rhi"
 host_feature_profile = "service-host"
 nix_material = "absent"
 config_contract_version = 1
-state_contract_version = 7
+state_contract_version = 11
 admin_contract_version = 1
 status_contract_version = 1
 provider_contract_version = 1
@@ -51,6 +51,7 @@ service-host = []
 workspace = true
 
 [dependencies]
+base64 = "0.22"
 radroots_event = { git = "https://github.com/radrootslabs/lib", rev = "21b11e7a5120ea949f7ad0838c746873fc73aac2", version = "=0.1.0-alpha", features = ["serde"] }
 radroots_event_codec = { git = "https://github.com/radrootslabs/lib", rev = "21b11e7a5120ea949f7ad0838c746873fc73aac2", version = "=0.1.0-alpha", features = ["json"] }
 radroots_nostr = { git = "https://github.com/radrootslabs/lib", rev = "21b11e7a5120ea949f7ad0838c746873fc73aac2", version = "=0.1.0-alpha", features = ["events"] }
@@ -60,12 +61,14 @@ radroots_service_host = { git = "https://github.com/radrootslabs/lib", rev = "21
 radroots_service_sqlite = { git = "https://github.com/radrootslabs/lib", rev = "21b11e7a5120ea949f7ad0838c746873fc73aac2", version = "=0.1.0-alpha" }
 radroots_storage = { git = "https://github.com/radrootslabs/lib", rev = "21b11e7a5120ea949f7ad0838c746873fc73aac2", version = "=0.1.0-alpha", default-features = false }
 radroots_transport = { git = "https://github.com/radrootslabs/lib", rev = "21b11e7a5120ea949f7ad0838c746873fc73aac2", version = "=0.1.0-alpha", default-features = false, features = ["std"] }
+radroots_transport_nostr = { git = "https://github.com/radrootslabs/lib", rev = "21b11e7a5120ea949f7ad0838c746873fc73aac2", version = "=0.1.0-alpha" }
 radroots_secrets = { git = "https://github.com/radrootslabs/lib", rev = "21b11e7a5120ea949f7ad0838c746873fc73aac2", version = "=0.1.0-alpha" }
 radroots_trade = { git = "https://github.com/radrootslabs/lib", rev = "21b11e7a5120ea949f7ad0838c746873fc73aac2", version = "=0.1.0-alpha" }
 
 chacha20poly1305 = { version = "0.10" }
 clap = { version = "4", features = ["derive"] }
 futures-executor = { version = "0.3" }
+hmac = { version = "0.12" }
 jsonschema = { version = "0.48.1", default-features = false }
 nostr = { version = "0.44.7" }
 rustix = { version = "1", features = ["fs", "process", "std"] }
@@ -74,14 +77,14 @@ serde_json = { version = "1", default-features = false, features = ["raw_value"]
 sha2 = { version = "0.10" }
 sqlx = { version = "0.9.0", default-features = false, features = ["sqlite-bundled"] }
 thiserror = { version = "2" }
-tokio = { version = "1", default-features = false, features = ["time"] }
+tokio = { version = "1", default-features = false, features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tempfile = { version = "3" }
 toml = { version = "0.8" }
 url = "2"
 zeroize = { version = "1" }
 
 [dev-dependencies]
-tokio = { version = "1", default-features = false, features = ["io-util", "macros", "net", "rt-multi-thread"] }
+tungstenite = "0.26"
 
 [profile.release]
 lto = "thin"

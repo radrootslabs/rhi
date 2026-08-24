@@ -228,6 +228,34 @@ fn admin_inventory_is_closed_unique_and_model_complete() {
         serde_json::json!({ "kind": "enum", "values": ["Valid", "Invalid", "Indeterminate"] })
     );
     assert_eq!(
+        value["admin"]["types"]["provider_state"]["fields"],
+        serde_json::json!({
+            "health": "provider_health",
+            "identity": "identity_health",
+            "reason_codes": "reason_codes"
+        })
+    );
+    assert_eq!(
+        value["admin"]["types"]["transport_state"]["fields"],
+        serde_json::json!({
+            "health": "transport_health",
+            "required_sources_ready": "bool",
+            "subscriber_active": "bool",
+            "configured_source_count": "u64",
+            "reachable_source_count": "u64",
+            "reason_codes": "reason_codes"
+        })
+    );
+    assert_eq!(
+        value["admin"]["types"]["rhi_status"]["fields"],
+        serde_json::json!({
+            "identity": "identity_health",
+            "reconciliation": "reconciliation_status",
+            "publication": "publication_status",
+            "presence": "presence_status"
+        })
+    );
+    assert_eq!(
         value["admin"]["models"]["service_status_v1"]["fields"]
             .as_object()
             .unwrap()
@@ -301,7 +329,7 @@ fn admin_inventory_is_closed_unique_and_model_complete() {
     assert_eq!(mutation_operations, committed_effects);
     assert_eq!(
         decision_sections_digest(&value),
-        "b227c6f248605a1672d3b7b07f60b0fd9ba8b890478d17e081cd7e3caed8a889"
+        "49376e3bdf0e44c35f877ecd382f26bc9c38fec8fea7a674aa7d4da52ee00c62"
     );
 }
 

@@ -1,7 +1,7 @@
 //! Existing-state-only RHI runtime foundation.
 
 use core::fmt;
-use std::error::Error;
+use std::{error::Error, sync::Arc};
 
 use radroots_service_sqlite::{MigrationAppliedAtUnixSeconds, MigrationBuildIdentity};
 
@@ -228,10 +228,10 @@ impl Error for RhiRuntimeFoundationError {}
 #[must_use = "the runtime foundation must be shut down so state and tasks are joined"]
 pub struct RhiRuntimeFoundation {
     runtime: RhiRuntimeContext,
-    configuration: RhiConfigDocumentV1,
+    configuration: Arc<RhiConfigDocumentV1>,
     metadata: RhiStateMetadata,
-    state: RhiStateHost,
-    _identity: RhiDecryptedIdentity,
+    state: Arc<RhiStateHost>,
+    identity: Arc<RhiDecryptedIdentity>,
     adapters: RhiRuntimeAdapters,
     readiness: RhiRuntimeReadiness,
 }
@@ -245,8 +245,8 @@ impl RhiRuntimeFoundation {
 
     /// Returns the admitted immutable configuration.
     #[must_use]
-    pub const fn configuration(&self) -> &RhiConfigDocumentV1 {
-        &self.configuration
+    pub fn configuration(&self) -> &RhiConfigDocumentV1 {
+        self.configuration.as_ref()
     }
 
     /// Returns metadata discovered and proven under retained state authority.
@@ -261,10 +261,43 @@ impl RhiRuntimeFoundation {
         &self.readiness
     }
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    pub(crate) fn state(&self) -> Arc<RhiStateHost> {
+        Arc::clone(&self.state)
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    pub(crate) fn configuration_arc(&self) -> Arc<RhiConfigDocumentV1> {
+        Arc::clone(&self.configuration)
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    pub(crate) const fn adapters(&self) -> &RhiRuntimeAdapters {
+        &self.adapters
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    pub(crate) fn identity(&self) -> &RhiDecryptedIdentity {
+        self.identity.as_ref()
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    pub(crate) fn identity_arc(&self) -> Arc<RhiDecryptedIdentity> {
+        Arc::clone(&self.identity)
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    pub(crate) fn supervisor_mut(&mut self) -> &mut radroots_service_host::TaskSupervisor {
+        self.adapters.supervisor_mut()
+    }
+
     /// Requests cancellation, joins owned tasks, and explicitly closes state.
     pub async fn shutdown(mut self) -> Result<(), RhiRuntimeFoundationError> {
         let supervised = self.adapters.shutdown().await;
-        let closed = self.state.close().await;
+        let state = Arc::try_unwrap(self.state).map_err(|_| {
+            RhiRuntimeFoundationError::new(RhiRuntimeFoundationErrorKind::TaskFailure)
+        })?;
+        let closed = state.close().await;
         if supervised.is_err() {
             Err(RhiRuntimeFoundationError::new(
                 RhiRuntimeFoundationErrorKind::TaskFailure,
@@ -281,6 +314,7 @@ impl RhiRuntimeFoundation {
 
 impl fmt::Debug for RhiRuntimeFoundation {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let _ = &self.identity;
         formatter
             .debug_struct("RhiRuntimeFoundation")
             .field("runtime", &"[redacted]")
@@ -332,10 +366,10 @@ pub async fn open_rhi_runtime_foundation(
     };
     Ok(RhiRuntimeFoundation {
         runtime,
-        configuration,
+        configuration: Arc::new(configuration),
         metadata,
-        state,
-        _identity: identity,
+        state: Arc::new(state),
+        identity: Arc::new(identity),
         adapters,
         readiness,
     })
