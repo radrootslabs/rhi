@@ -107,6 +107,20 @@ impl RhiTradeSourceObservation {
             observed_at: event.observed_at_unix_seconds(),
         })
     }
+
+    pub(crate) fn from_parts(
+        source_id: Box<str>,
+        policy: RhiEvidencePolicyDigest,
+        event: &RhiAdmittedTradeMutationEvent,
+    ) -> Self {
+        Self {
+            source_id,
+            policy,
+            event_id: *event.event_id().as_bytes(),
+            event_signature: event.event_signature_bytes(),
+            observed_at: event.observed_at_unix_seconds(),
+        }
+    }
 }
 
 impl fmt::Debug for RhiTradeSourceObservation {
@@ -276,22 +290,22 @@ impl RhiStateRepositories<'_> {
     }
 }
 
-struct PersistenceRecord {
-    mutation_id: [u8; 32],
-    trade_id: [u8; 16],
-    contract_id: &'static str,
-    schema_version: u16,
-    event_id: [u8; 32],
-    event_signature: [u8; 64],
-    author_pubkey: [u8; 32],
-    event_kind: u32,
-    authored_at_unix_s: u64,
-    canonical_content: Box<[u8]>,
-    canonical_event_json: Box<[u8]>,
+pub(crate) struct PersistenceRecord {
+    pub(crate) mutation_id: [u8; 32],
+    pub(crate) trade_id: [u8; 16],
+    pub(crate) contract_id: &'static str,
+    pub(crate) schema_version: u16,
+    pub(crate) event_id: [u8; 32],
+    pub(crate) event_signature: [u8; 64],
+    pub(crate) author_pubkey: [u8; 32],
+    pub(crate) event_kind: u32,
+    pub(crate) authored_at_unix_s: u64,
+    pub(crate) canonical_content: Box<[u8]>,
+    pub(crate) canonical_event_json: Box<[u8]>,
 }
 
 impl PersistenceRecord {
-    fn from_admitted(
+    pub(crate) fn from_admitted(
         admitted: RhiAdmittedTradeMutationEvent,
     ) -> Result<Self, RhiTradeEvidencePersistenceError> {
         let (_original, event, mutation, mutation_id, _) = admitted.into_parts();
@@ -322,13 +336,13 @@ impl PersistenceRecord {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PersistenceOperationError {
+pub(crate) enum PersistenceOperationError {
     MutationConflict,
     SignedEventConflict,
     Storage,
 }
 
-async fn persist(
+pub(crate) async fn persist(
     transaction: &mut ServiceSqliteTransaction<'_>,
     record: &PersistenceRecord,
     observation: &RhiTradeSourceObservation,

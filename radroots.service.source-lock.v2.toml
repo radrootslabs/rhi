@@ -2,12 +2,12 @@ schema = "radroots.service.source-lock.v2"
 contract_version = 2
 service = "rhi"
 repository = "https://github.com/radrootslabs/lib"
-revision = "79d7818c8fe22a425f9524b884ddf59d25f0ef89"
+revision = "21b11e7a5120ea949f7ad0838c746873fc73aac2"
 architecture = "radroots.crates.release.v2"
 workspace_catalog_sha256 = "deca0c080deae187ff8186c0708903e42f41ea57f77c5f91581e23aa561164a4"
 version = "0.1.0-alpha"
-source_archive_sha256 = "6f95d80d5ecb9d026ba6f9145b60fff67e370b2c175c438537319278e6974fa6"
-cargo_lock_sha256 = "99d8cfcf6e50ec54e3557219ba5ffd0c999df3a17155ed609f2919efe21e2979"
+source_archive_sha256 = "7e584a4b679264620d7bb6cf0a7028cc7651b33977b263c213f4e7b29c0e5a19"
+cargo_lock_sha256 = "b85bee310965fc4c4da8f6641007840f0d736c194d3d0fb74ea3db757e7f1433"
 rust_version = "1.97.1"
 host_feature_profile = "service-host"
 
@@ -16,7 +16,7 @@ material = "absent"
 
 [contract_versions]
 config = 1
-state = 3
+state = 4
 admin = 1
 status = 1
 provider = 1

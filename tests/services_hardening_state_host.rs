@@ -60,7 +60,7 @@ fn migration_evidence() -> (MigrationAppliedAtUnixSeconds, MigrationBuildIdentit
     let build = MigrationBuildIdentity::new(
         env!("CARGO_PKG_VERSION"),
         "1111111111111111111111111111111111111111",
-        "79d7818c8fe22a425f9524b884ddf59d25f0ef89",
+        "21b11e7a5120ea949f7ad0838c746873fc73aac2",
         "rustc-test",
         "test-target",
         "service-host",
@@ -227,7 +227,7 @@ async fn missing_state_and_mismatched_evidence_fail_before_database_creation() {
     let invalid_build = MigrationBuildIdentity::new(
         env!("CARGO_PKG_VERSION"),
         "1111111111111111111111111111111111111111",
-        "79d7818c8fe22a425f9524b884ddf59d25f0ef89",
+        "21b11e7a5120ea949f7ad0838c746873fc73aac2",
         "rustc-test",
         "test-target",
         "service-host",

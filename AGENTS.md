@@ -204,8 +204,9 @@
   typed RHI repositories; live clients mutate only through the Unix admin
   boundary and offline state operations must prove that no daemon writer exists.
 - Create-new state begins at the shared schema-v1 baseline and applies the
-  governed RHI schema-v2 configuration-binding migration and schema-v3
-  immutable trade-evidence migration. Retain at most 1,024 consecutive
+  governed RHI schema-v2 configuration-binding migration, schema-v3
+  immutable trade-evidence migration, and schema-v4 source-checkpoint and
+  dirty-generation migration. Retain at most 1,024 consecutive
   immutable configuration generations containing only normalized
   config/evidence-policy digests, public identity, exact contract versions,
   injected apply time, and bounded build identity. Persist each canonical
@@ -213,8 +214,11 @@
   observation as distinct immutable facts in one SQLx transaction. Exact replay
   is idempotent, conflicts fail closed, observation time remains distinct from
   authored time, and this persistence step must not advance reconciliation
-  checkpoints or dirty generation. Never persist raw TOML, paths, URLs,
-  credential references, or protected identity material. Ordinary startup must
+  checkpoints or dirty generation. The composed relay-source ingest path may
+  advance only its exact scoped checkpoint after complete EOSE evidence and
+  may dirty a trade only for newly inserted mutation or signed-event evidence;
+  replayed source observation alone does neither. Never persist raw TOML,
+  paths, URLs, credential references, or protected identity material. Ordinary startup must
   use intent-open, discover source generation under retained authority, and
   match the latest durable binding; configuration apply is an exclusive offline
   operation.

@@ -55,6 +55,10 @@ impl fmt::Debug for RhiNormalizedConfigDigest {
 pub struct RhiEvidencePolicyDigest([u8; 32]);
 
 impl RhiEvidencePolicyDigest {
+    pub(crate) const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
     /// Returns the exact digest bytes.
     #[must_use]
     pub const fn as_bytes(&self) -> &[u8; 32] {

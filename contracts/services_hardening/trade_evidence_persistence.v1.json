@@ -45,12 +45,6 @@
     "dirty_generation": false
   },
   "errors": "crate_owned_source_free_redacted",
-  "deferred": [
-    "nostr_relay_source_adapter",
-    "source_completion",
-    "checkpoint_advance",
-    "dirty_generation",
-    "reconciliation",
-    "publication"
-  ]
+  "source_ingest_contract": "contracts/services_hardening/trade_source_ingest.v1.json",
+  "deferred": ["reconciliation", "publication"]
 }

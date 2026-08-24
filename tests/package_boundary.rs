@@ -17,6 +17,8 @@ const TRADE_INGEST_CONTRACT: &str =
     include_str!("../contracts/services_hardening/trade_ingest.v1.json");
 const TRADE_EVIDENCE_PERSISTENCE_CONTRACT: &str =
     include_str!("../contracts/services_hardening/trade_evidence_persistence.v1.json");
+const TRADE_SOURCE_INGEST_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/trade_source_ingest.v1.json");
 const PUBLIC_API: &str = include_str!("../contracts/api_baselines/rhi.txt");
 const SOURCES: &[&str] = &[
     include_str!("../src/adapters/nostr/event.rs"),
@@ -28,6 +30,7 @@ const SOURCES: &[&str] = &[
     include_str!("../src/runtime_context.rs"),
     include_str!("../src/runtime_adapters.rs"),
     include_str!("../src/runtime_foundation.rs"),
+    include_str!("../src/source_ingest.rs"),
     include_str!("../src/state_catalog.rs"),
     include_str!("../src/state_config.rs"),
     include_str!("../src/state_host.rs"),
@@ -93,6 +96,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "runtime_context",
         "runtime_adapters",
         "runtime_foundation",
+        "source_ingest",
         "state_catalog",
         "state_config",
         "state_host",
@@ -147,6 +151,17 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "RhiTradeEvidencePersistenceOutcome",
         "RhiTradeSourceObservation",
         "RHI_TRADE_EVIDENCE_PERSISTENCE_CONTRACT_VERSION",
+        "ingest_rhi_trade_source",
+        "RhiTradeDirtyGeneration",
+        "RhiTradeSourceAttempt",
+        "RhiTradeSourceCompletion",
+        "RhiTradeSourceCursor",
+        "RhiTradeSourceIngestError",
+        "RhiTradeSourceIngestErrorKind",
+        "RhiTradeSourceIngestOutcome",
+        "RHI_TRADE_SOURCE_INGEST_CONTRACT_VERSION",
+        "RHI_TRADE_SOURCE_RESULT_MAX_BYTES",
+        "RHI_TRADE_SOURCE_RESULT_MAX_EVENTS",
     ] {
         assert!(
             ROOT.contains(required),
@@ -198,7 +213,86 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .lines()
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
-    assert_eq!(public_error_count, 15);
+    assert_eq!(public_error_count, 16);
+}
+
+#[test]
+fn trade_source_ingest_is_exact_bounded_generation_fenced_and_sealed() {
+    let contract: serde_json::Value =
+        serde_json::from_str(TRADE_SOURCE_INGEST_CONTRACT).expect("trade-source ingest contract");
+    assert_eq!(contract["schema"], "radroots.rhi.trade-source-ingest.v1");
+    assert_eq!(contract["contract_version"], 1);
+    assert_eq!(contract["source"]["kind"], "nostr_relay");
+    assert_eq!(
+        contract["source"]["selector"]["kinds"],
+        serde_json::json!([3470, 3471, 3472, 3473, 3474])
+    );
+    assert_eq!(contract["source"]["selector"]["exact_tag"], "#d");
+    assert_eq!(contract["source"]["page_events_maximum"], 1_000);
+    assert_eq!(contract["source"]["result_events_maximum"], 4_096);
+    assert_eq!(
+        contract["source"]["result_original_event_bytes_maximum"],
+        8_388_608
+    );
+    assert_eq!(
+        contract["completion"]["complete"],
+        "exact_target_eose_before_deadline"
+    );
+    assert_eq!(
+        contract["checkpoint"]["scope"],
+        serde_json::json!([
+            "source_id",
+            "selector_id",
+            "evidence_policy_sha256",
+            "trade_id"
+        ])
+    );
+    assert_eq!(contract["checkpoint"]["equal_timestamp_safe"], true);
+    assert_eq!(
+        contract["dirty_generation"]["do_not_advance_when"],
+        serde_json::json!([
+            "rejected_event",
+            "duplicate_event",
+            "repeated_source_observation",
+            "operational_retry"
+        ])
+    );
+    assert_eq!(
+        contract["transaction"]["source_fetch_inside_transaction"],
+        false
+    );
+
+    let source = include_str!("../src/source_ingest.rs");
+    for required in [
+        "with_kinds(EVENT_KINDS.to_vec())",
+        "with_exact_tag_value('d', trade_id.to_hex())",
+        "with_since_unix_seconds(since)",
+        "admit_rhi_trade_mutation_event(",
+        "read_checkpoint(transaction",
+        "read_dirty(transaction",
+        "compare_cursor(current.cursor, candidate).is_lt()",
+        "new_relevant_evidence",
+    ] {
+        assert!(
+            source.contains(required),
+            "source ingest is missing {required}"
+        );
+    }
+    for forbidden in [
+        "pub fn host(",
+        "pub fn sqlite_host(",
+        "SystemTime",
+        "std::fs",
+        "std::net",
+        "tokio::spawn",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "source ingest gained forbidden authority {forbidden}"
+        );
+    }
+    assert!(!ROOT.contains("pub mod source_ingest"));
+    assert!(!PUBLIC_API.contains("rhi::source_ingest::"));
 }
 
 #[test]
@@ -417,6 +511,12 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "[RHI API baseline](contracts/api_baselines/rhi.txt)",
         "[`trade_ingest.v1.json`](contracts/services_hardening/trade_ingest.v1.json)",
         "[`trade_evidence_persistence.v1.json`](contracts/services_hardening/trade_evidence_persistence.v1.json)",
+        "## Bounded relay-source ingestion",
+        "[`trade_source_ingest.v1.json`](contracts/services_hardening/trade_source_ingest.v1.json)",
+        "Only exact-target EOSE before the deadline is complete",
+        "4,096 distinct event identities and 8 MiB",
+        "observation, and operational retry do not",
+        "schema-v4 source-checkpoint and dirty-generation migration",
         "one canonical mutation",
         "every distinct valid signed",
         "does not advance reconciliation checkpoints or dirty generation",

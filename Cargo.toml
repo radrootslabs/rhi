@@ -20,7 +20,7 @@ service = "rhi"
 host_feature_profile = "service-host"
 nix_material = "absent"
 config_contract_version = 1
-state_contract_version = 3
+state_contract_version = 4
 admin_contract_version = 1
 status_contract_version = 1
 provider_contract_version = 1
@@ -51,17 +51,17 @@ service-host = []
 workspace = true
 
 [dependencies]
-radroots_event = { git = "https://github.com/radrootslabs/lib", rev = "79d7818c8fe22a425f9524b884ddf59d25f0ef89", version = "=0.1.0-alpha", features = ["serde"] }
-radroots_event_codec = { git = "https://github.com/radrootslabs/lib", rev = "79d7818c8fe22a425f9524b884ddf59d25f0ef89", version = "=0.1.0-alpha", features = ["json"] }
-radroots_nostr = { git = "https://github.com/radrootslabs/lib", rev = "79d7818c8fe22a425f9524b884ddf59d25f0ef89", version = "=0.1.0-alpha", features = ["events"] }
-radroots_protocol = { git = "https://github.com/radrootslabs/lib", rev = "79d7818c8fe22a425f9524b884ddf59d25f0ef89", version = "=0.1.0-alpha" }
-radroots_runtime_paths = { git = "https://github.com/radrootslabs/lib", rev = "79d7818c8fe22a425f9524b884ddf59d25f0ef89", version = "=0.1.0-alpha" }
-radroots_service_host = { git = "https://github.com/radrootslabs/lib", rev = "79d7818c8fe22a425f9524b884ddf59d25f0ef89", version = "=0.1.0-alpha" }
-radroots_service_sqlite = { git = "https://github.com/radrootslabs/lib", rev = "79d7818c8fe22a425f9524b884ddf59d25f0ef89", version = "=0.1.0-alpha" }
-radroots_storage = { git = "https://github.com/radrootslabs/lib", rev = "79d7818c8fe22a425f9524b884ddf59d25f0ef89", version = "=0.1.0-alpha", default-features = false }
-radroots_transport = { git = "https://github.com/radrootslabs/lib", rev = "79d7818c8fe22a425f9524b884ddf59d25f0ef89", version = "=0.1.0-alpha", default-features = false, features = ["std"] }
-radroots_secrets = { git = "https://github.com/radrootslabs/lib", rev = "79d7818c8fe22a425f9524b884ddf59d25f0ef89", version = "=0.1.0-alpha" }
-radroots_trade = { git = "https://github.com/radrootslabs/lib", rev = "79d7818c8fe22a425f9524b884ddf59d25f0ef89", version = "=0.1.0-alpha" }
+radroots_event = { git = "https://github.com/radrootslabs/lib", rev = "21b11e7a5120ea949f7ad0838c746873fc73aac2", version = "=0.1.0-alpha", features = ["serde"] }
+radroots_event_codec = { git = "https://github.com/radrootslabs/lib", rev = "21b11e7a5120ea949f7ad0838c746873fc73aac2", version = "=0.1.0-alpha", features = ["json"] }
+radroots_nostr = { git = "https://github.com/radrootslabs/lib", rev = "21b11e7a5120ea949f7ad0838c746873fc73aac2", version = "=0.1.0-alpha", features = ["events"] }
+radroots_protocol = { git = "https://github.com/radrootslabs/lib", rev = "21b11e7a5120ea949f7ad0838c746873fc73aac2", version = "=0.1.0-alpha" }
+radroots_runtime_paths = { git = "https://github.com/radrootslabs/lib", rev = "21b11e7a5120ea949f7ad0838c746873fc73aac2", version = "=0.1.0-alpha" }
+radroots_service_host = { git = "https://github.com/radrootslabs/lib", rev = "21b11e7a5120ea949f7ad0838c746873fc73aac2", version = "=0.1.0-alpha" }
+radroots_service_sqlite = { git = "https://github.com/radrootslabs/lib", rev = "21b11e7a5120ea949f7ad0838c746873fc73aac2", version = "=0.1.0-alpha" }
+radroots_storage = { git = "https://github.com/radrootslabs/lib", rev = "21b11e7a5120ea949f7ad0838c746873fc73aac2", version = "=0.1.0-alpha", default-features = false }
+radroots_transport = { git = "https://github.com/radrootslabs/lib", rev = "21b11e7a5120ea949f7ad0838c746873fc73aac2", version = "=0.1.0-alpha", default-features = false, features = ["std"] }
+radroots_secrets = { git = "https://github.com/radrootslabs/lib", rev = "21b11e7a5120ea949f7ad0838c746873fc73aac2", version = "=0.1.0-alpha" }
+radroots_trade = { git = "https://github.com/radrootslabs/lib", rev = "21b11e7a5120ea949f7ad0838c746873fc73aac2", version = "=0.1.0-alpha" }
 
 chacha20poly1305 = { version = "0.10" }
 clap = { version = "4", features = ["derive"] }

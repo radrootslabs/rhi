@@ -11,6 +11,7 @@ mod identity_envelope;
 mod runtime_adapters;
 mod runtime_context;
 mod runtime_foundation;
+mod source_ingest;
 mod state_catalog;
 mod state_config;
 mod state_host;
@@ -55,6 +56,7 @@ pub use identity_envelope::{
     RhiIdentityRole, RhiWrappingCredential, open_rhi_encrypted_identity,
     provision_rhi_encrypted_identity,
 };
+pub use radroots_event::id::TradeId;
 pub use radroots_runtime_paths::{
     INSTANCE_ID_MAX_BYTES, InstanceId, RadrootsHostEnvironment, RadrootsPathProfile,
     RadrootsPathResolver, RadrootsPlatform, RadrootsServiceInstanceArtifacts, RuntimeContext,
@@ -80,14 +82,22 @@ pub use runtime_foundation::{
     RhiRuntimeFoundationErrorKind, RhiRuntimePrerequisite, RhiRuntimeReadiness,
     RhiRuntimeReadinessReason, open_rhi_runtime_foundation,
 };
+pub use source_ingest::{
+    RHI_TRADE_SOURCE_INGEST_CONTRACT_VERSION, RHI_TRADE_SOURCE_RESULT_MAX_BYTES,
+    RHI_TRADE_SOURCE_RESULT_MAX_EVENTS, RhiTradeDirtyGeneration, RhiTradeSourceAttempt,
+    RhiTradeSourceCompletion, RhiTradeSourceCursor, RhiTradeSourceIngestError,
+    RhiTradeSourceIngestErrorKind, RhiTradeSourceIngestOutcome, ingest_rhi_trade_source,
+};
 pub use state_catalog::{
     RHI_MIGRATION_CATALOG_SHA256, RHI_STATE_BASE_SCHEMA_VERSION, RHI_STATE_SCHEMA_CATALOG_SHA256,
     RHI_STATE_SCHEMA_VERSION, RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT,
     RHI_STATE_SCHEMA_VERSION_1_SHA256, RHI_STATE_SCHEMA_VERSION_2_MIGRATION_SHA256,
     RHI_STATE_SCHEMA_VERSION_2_OBJECT_COUNT, RHI_STATE_SCHEMA_VERSION_2_SHA256,
     RHI_STATE_SCHEMA_VERSION_3_MIGRATION_SHA256, RHI_STATE_SCHEMA_VERSION_3_OBJECT_COUNT,
-    RHI_STATE_SCHEMA_VERSION_3_SHA256, RhiStateCatalogError, RhiStateCatalogErrorKind,
-    rhi_migration_catalog, rhi_schema_catalog, validate_rhi_state_catalogs,
+    RHI_STATE_SCHEMA_VERSION_3_SHA256, RHI_STATE_SCHEMA_VERSION_4_MIGRATION_SHA256,
+    RHI_STATE_SCHEMA_VERSION_4_OBJECT_COUNT, RHI_STATE_SCHEMA_VERSION_4_SHA256,
+    RhiStateCatalogError, RhiStateCatalogErrorKind, rhi_migration_catalog, rhi_schema_catalog,
+    validate_rhi_state_catalogs,
 };
 pub use state_config::{
     RHI_CONFIG_BINDING_MAX_GENERATIONS, RhiConfigApplyError, RhiConfigApplyErrorKind,

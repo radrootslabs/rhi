@@ -1,0 +1,61 @@
+{
+  "schema": "radroots.rhi.trade-source-ingest.v1",
+  "contract_version": 1,
+  "configuration_authority": "contracts/services_hardening/evidence_policy.v1.json",
+  "source": {
+    "kind": "nostr_relay",
+    "configured_source_required": true,
+    "configured_read_relay_required": true,
+    "implicit_source": false,
+    "selector_id": "trade_mutation_lineage_v1",
+    "selector": {
+      "kinds": [3470, 3471, 3472, 3473, 3474],
+      "exact_tag": "#d",
+      "exact_tag_value": "requested_trade_id",
+      "initial_since": "max_zero_attempt_started_at_utc_minus_lookback_seconds",
+      "resume_since": "max_zero_cursor_created_at_minus_overlap_seconds"
+    },
+    "deadline": "single_absolute_configured_deadline",
+    "page_events_maximum": 1000,
+    "result_events_maximum": 4096,
+    "result_original_event_bytes_maximum": 8388608
+  },
+  "completion": {
+    "complete": "exact_target_eose_before_deadline",
+    "cancelled": "incomplete_timeout",
+    "unavailable_or_retryable_failure": "incomplete_unavailable",
+    "bounded_result_exceeded": "incomplete_resource_limit",
+    "terminal_failure_partial_or_malformed_result": "incomplete_unknown",
+    "unsupported_operation": "unsupported",
+    "checkpoint_allowed_only_for": "complete"
+  },
+  "admission": {
+    "boundary": "admit_rhi_trade_mutation_event",
+    "trade_id": "exact_requested_trade_id",
+    "deduplicate_by": "verified_event_id",
+    "ordering": ["created_at_unix_seconds_ascending", "event_id_bytes_ascending", "signature_bytes_ascending"],
+    "rejected_event": "cannot_advance_checkpoint_or_dirty_generation"
+  },
+  "checkpoint": {
+    "scope": ["source_id", "selector_id", "evidence_policy_sha256", "trade_id"],
+    "cursor": ["created_at_unix_seconds", "verified_event_id"],
+    "ordering": "lexicographic_ascending",
+    "equal_timestamp_safe": true,
+    "advance": "greatest_new_admitted_cursor_after_complete_only",
+    "write": "same_generation_fenced_sqlx_transaction_as_evidence"
+  },
+  "dirty_generation": {
+    "scope": "trade_id",
+    "advance_when": ["new_canonical_mutation", "new_verified_signed_event", "governing_policy_change"],
+    "do_not_advance_when": ["rejected_event", "duplicate_event", "repeated_source_observation", "operational_retry"],
+    "write": "same_generation_fenced_sqlx_transaction_as_evidence"
+  },
+  "transaction": {
+    "source_fetch_inside_transaction": false,
+    "initial_fence": ["checkpoint", "dirty_generation"],
+    "commit_effects": ["canonical_mutations", "verified_signed_events", "source_observations", "eligible_checkpoint", "eligible_dirty_generation"],
+    "commit_outcome_unknown": "explicit_error"
+  },
+  "diagnostics": "crate_owned_source_free_redacted",
+  "deferred": ["durable_source_attempts_and_completion_inventory", "reconciliation_jobs_and_leases", "coverage_and_outcome", "reports_and_attestations", "publication"]
+}

@@ -13,7 +13,7 @@ const SYSTEMD_UNIT: &str = include_str!("../packaging/systemd/rhi@.service");
 const RELEASE_ACCEPTANCE: &str = include_str!("../scripts/release-acceptance.sh");
 const XTASK_MANIFEST: &str = include_str!("../tools/xtask/Cargo.toml");
 
-const LIB_REVISION: &str = "79d7818c8fe22a425f9524b884ddf59d25f0ef89";
+const LIB_REVISION: &str = "21b11e7a5120ea949f7ad0838c746873fc73aac2";
 const LIB_REPOSITORY: &str = "https://github.com/radrootslabs/lib";
 
 #[test]

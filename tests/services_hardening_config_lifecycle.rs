@@ -53,7 +53,7 @@ fn evidence(at: u64) -> (MigrationAppliedAtUnixSeconds, MigrationBuildIdentity) 
     let build = MigrationBuildIdentity::new(
         env!("CARGO_PKG_VERSION"),
         "1111111111111111111111111111111111111111",
-        "79d7818c8fe22a425f9524b884ddf59d25f0ef89",
+        "21b11e7a5120ea949f7ad0838c746873fc73aac2",
         "rustc-test",
         "test-target",
         "service-host",
@@ -163,7 +163,7 @@ async fn existing_intent_and_offline_apply_bind_exact_append_only_evidence() {
     for row in &rows {
         assert_eq!(row.try_get::<i64, _>("config_bytes").unwrap(), 32);
         assert_eq!(row.try_get::<i64, _>("policy_bytes").unwrap(), 32);
-        assert_eq!(row.try_get::<i64, _>("state_contract_version").unwrap(), 3);
+        assert_eq!(row.try_get::<i64, _>("state_contract_version").unwrap(), 4);
         assert_eq!(
             row.try_get::<String, _>("service_public_key")
                 .unwrap()

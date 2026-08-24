@@ -240,7 +240,7 @@ impl fmt::Debug for RhiTimeEntropyAdapters {
 /// remain sealed inside RHI so concrete transports and detachable I/O handles
 /// do not become public runtime authority.
 pub struct RhiTransportAdapters {
-    _evidence_source: Arc<dyn EventSource>,
+    evidence_source: Arc<dyn EventSource>,
     _evidence_subscriber: Arc<dyn EventSubscriber>,
     _publication_sink: Arc<dyn EventSink>,
 }
@@ -254,10 +254,14 @@ impl RhiTransportAdapters {
         publication_sink: Arc<dyn EventSink>,
     ) -> Self {
         Self {
-            _evidence_source: evidence_source,
+            evidence_source,
             _evidence_subscriber: evidence_subscriber,
             _publication_sink: publication_sink,
         }
+    }
+
+    pub(crate) fn evidence_source(&self) -> &dyn EventSource {
+        self.evidence_source.as_ref()
     }
 }
 

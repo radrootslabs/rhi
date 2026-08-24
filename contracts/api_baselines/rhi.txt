@@ -15,6 +15,7 @@ pub use rhi::RadrootsServiceInstanceArtifacts
 pub use rhi::RuntimeContext
 pub use rhi::RuntimeContextSource
 pub use rhi::ServiceId
+pub use rhi::TradeId
 pub use rhi::UnixTimeSeconds
 pub use rhi::WallClock
 pub use rhi::WallClockError
@@ -305,6 +306,24 @@ pub rhi::RhiTradeMutationAdmissionErrorKind::TooManyExtraFields
 pub rhi::RhiTradeMutationAdmissionErrorKind::TooManyTagElements
 pub rhi::RhiTradeMutationAdmissionErrorKind::TooManyTags
 pub rhi::RhiTradeMutationAdmissionErrorKind::UnsupportedKind
+pub enum rhi::RhiTradeSourceCompletion
+pub rhi::RhiTradeSourceCompletion::Complete
+pub rhi::RhiTradeSourceCompletion::IncompleteResourceLimit
+pub rhi::RhiTradeSourceCompletion::IncompleteTimeout
+pub rhi::RhiTradeSourceCompletion::IncompleteUnavailable
+pub rhi::RhiTradeSourceCompletion::IncompleteUnknown
+pub rhi::RhiTradeSourceCompletion::Unsupported
+impl rhi::RhiTradeSourceCompletion
+pub const fn rhi::RhiTradeSourceCompletion::code(self) -> &'static str
+pub enum rhi::RhiTradeSourceIngestErrorKind
+pub rhi::RhiTradeSourceIngestErrorKind::CommitOutcomeUnknown
+pub rhi::RhiTradeSourceIngestErrorKind::GenerationConflict
+pub rhi::RhiTradeSourceIngestErrorKind::InvalidConfiguration
+pub rhi::RhiTradeSourceIngestErrorKind::InvalidInput
+pub rhi::RhiTradeSourceIngestErrorKind::InvalidMode
+pub rhi::RhiTradeSourceIngestErrorKind::Storage
+impl rhi::RhiTradeSourceIngestErrorKind
+pub const fn rhi::RhiTradeSourceIngestErrorKind::code(self) -> &'static str
 pub enum rhi::TradeAgreementAttestationBackend
 pub rhi::TradeAgreementAttestationBackend::LocalStatementHash
 impl rhi::TradeAgreementAttestationBackend
@@ -760,6 +779,9 @@ pub fn rhi::RhiTimeEntropyAdapters::sample_full_jitter(&self, rhi::RhiJitterBoun
 pub fn rhi::RhiTimeEntropyAdapters::system() -> Self
 impl core::fmt::Debug for rhi::RhiTimeEntropyAdapters
 pub fn rhi::RhiTimeEntropyAdapters::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiTradeDirtyGeneration(_)
+impl rhi::RhiTradeDirtyGeneration
+pub const fn rhi::RhiTradeDirtyGeneration::get(self) -> u64
 pub struct rhi::RhiTradeEvidencePersistenceError
 impl rhi::RhiTradeEvidencePersistenceError
 pub const fn rhi::RhiTradeEvidencePersistenceError::code(self) -> &'static str
@@ -803,6 +825,42 @@ pub struct rhi::RhiTradeMutationObservedAtUnixSeconds(_)
 impl rhi::RhiTradeMutationObservedAtUnixSeconds
 pub const fn rhi::RhiTradeMutationObservedAtUnixSeconds::get(self) -> u64
 pub fn rhi::RhiTradeMutationObservedAtUnixSeconds::new(u64) -> core::result::Result<Self, rhi::RhiTradeMutationAdmissionError>
+pub struct rhi::RhiTradeSourceAttempt
+impl rhi::RhiTradeSourceAttempt
+pub fn rhi::RhiTradeSourceAttempt::new(impl core::convert::AsRef<str>, radroots_service_host::time::UnixTimeSeconds, rhi::RhiTradeMutationObservedAtUnixSeconds, rhi::RhiTradeMutationAuthoredTimePolicy) -> core::result::Result<Self, rhi::RhiTradeSourceIngestError>
+impl core::fmt::Debug for rhi::RhiTradeSourceAttempt
+pub fn rhi::RhiTradeSourceAttempt::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiTradeSourceCursor
+impl rhi::RhiTradeSourceCursor
+pub const fn rhi::RhiTradeSourceCursor::created_at_unix_seconds(self) -> u64
+pub const fn rhi::RhiTradeSourceCursor::event_id(self) -> [u8; 32]
+impl core::fmt::Debug for rhi::RhiTradeSourceCursor
+pub fn rhi::RhiTradeSourceCursor::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiTradeSourceIngestError
+impl rhi::RhiTradeSourceIngestError
+pub const fn rhi::RhiTradeSourceIngestError::code(self) -> &'static str
+pub const fn rhi::RhiTradeSourceIngestError::kind(self) -> rhi::RhiTradeSourceIngestErrorKind
+impl core::error::Error for rhi::RhiTradeSourceIngestError
+impl core::fmt::Debug for rhi::RhiTradeSourceIngestError
+pub fn rhi::RhiTradeSourceIngestError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiTradeSourceIngestError
+pub fn rhi::RhiTradeSourceIngestError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiTradeSourceIngestOutcome
+impl rhi::RhiTradeSourceIngestOutcome
+pub const fn rhi::RhiTradeSourceIngestOutcome::admitted_events(self) -> u32
+pub const fn rhi::RhiTradeSourceIngestOutcome::checkpoint(self) -> core::option::Option<rhi::RhiTradeSourceCursor>
+pub const fn rhi::RhiTradeSourceIngestOutcome::checkpoint_advanced(self) -> bool
+pub const fn rhi::RhiTradeSourceIngestOutcome::completion(self) -> rhi::RhiTradeSourceCompletion
+pub const fn rhi::RhiTradeSourceIngestOutcome::dirty_generation(self) -> core::option::Option<rhi::RhiTradeDirtyGeneration>
+pub const fn rhi::RhiTradeSourceIngestOutcome::dirty_generation_advanced(self) -> bool
+pub const fn rhi::RhiTradeSourceIngestOutcome::duplicate_events(self) -> u32
+pub const fn rhi::RhiTradeSourceIngestOutcome::inserted_mutations(self) -> u32
+pub const fn rhi::RhiTradeSourceIngestOutcome::inserted_observations(self) -> u32
+pub const fn rhi::RhiTradeSourceIngestOutcome::inserted_signed_events(self) -> u32
+pub const fn rhi::RhiTradeSourceIngestOutcome::received_events(self) -> u32
+pub const fn rhi::RhiTradeSourceIngestOutcome::rejected_events(self) -> u32
+impl core::fmt::Debug for rhi::RhiTradeSourceIngestOutcome
+pub fn rhi::RhiTradeSourceIngestOutcome::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiTradeSourceObservation
 impl rhi::RhiTradeSourceObservation
 pub fn rhi::RhiTradeSourceObservation::from_config(&rhi::RhiConfigDocumentV1, &str, &rhi::RhiAdmittedTradeMutationEvent) -> core::result::Result<Self, rhi::RhiTradeEvidencePersistenceError>
@@ -901,6 +959,9 @@ pub const rhi::RHI_STATE_SCHEMA_VERSION_2_SHA256: [u8; 32]
 pub const rhi::RHI_STATE_SCHEMA_VERSION_3_MIGRATION_SHA256: [u8; 32]
 pub const rhi::RHI_STATE_SCHEMA_VERSION_3_OBJECT_COUNT: u32
 pub const rhi::RHI_STATE_SCHEMA_VERSION_3_SHA256: [u8; 32]
+pub const rhi::RHI_STATE_SCHEMA_VERSION_4_MIGRATION_SHA256: [u8; 32]
+pub const rhi::RHI_STATE_SCHEMA_VERSION_4_OBJECT_COUNT: u32
+pub const rhi::RHI_STATE_SCHEMA_VERSION_4_SHA256: [u8; 32]
 pub const rhi::RHI_STATUS_CONTRACT_VERSION: u32
 pub const rhi::RHI_TRADE_EVENT_EXTRA_FIELD_MAX_COUNT: usize
 pub const rhi::RHI_TRADE_EVENT_EXTRA_JSON_MAX_BYTES: usize
@@ -909,6 +970,9 @@ pub const rhi::RHI_TRADE_EVENT_PUBLIC_KEY_MAX_BYTES: usize
 pub const rhi::RHI_TRADE_EVENT_SIGNATURE_MAX_BYTES: usize
 pub const rhi::RHI_TRADE_EVIDENCE_PERSISTENCE_CONTRACT_VERSION: u32
 pub const rhi::RHI_TRADE_INGEST_CONTRACT_VERSION: u32
+pub const rhi::RHI_TRADE_SOURCE_INGEST_CONTRACT_VERSION: u32
+pub const rhi::RHI_TRADE_SOURCE_RESULT_MAX_BYTES: usize
+pub const rhi::RHI_TRADE_SOURCE_RESULT_MAX_EVENTS: usize
 pub const rhi::RHI_WRAPPING_CREDENTIAL_ARTIFACT_BYTES: usize
 pub const rhi::RHI_WRAPPING_CREDENTIAL_CONTRACT_VERSION: u32
 pub trait rhi::RhiCredentialAccess: core::marker::Send + core::marker::Sync
@@ -923,6 +987,7 @@ pub fn rhi::admit_rhi_trade_mutation_event(rhi::RhiTradeMutationAdmissionLimits,
 pub async fn rhi::apply_rhi_configuration(&rhi::RhiRuntimeContext, &rhi::RhiConfigDocumentV1, &rhi::RhiConfigDocumentV1, radroots_service_sqlite::migration::MigrationAppliedAtUnixSeconds, &radroots_service_sqlite::migration::MigrationBuildIdentity) -> core::result::Result<rhi::RhiConfigApplyOutcome, rhi::RhiConfigApplyError>
 pub fn rhi::attest_projection_claim(&radroots_trade::trade_contract_v1::RadrootsTradeProjectionV1, &radroots_event::id::MutationId, &rhi::TradeAgreementAttestationPolicy) -> core::result::Result<rhi::TradeAgreementAttestationReportV1, rhi::TradeAgreementAttestationError>
 pub async fn rhi::finalize_rhi_state_restore(rhi::RhiStagedStateRestore) -> core::result::Result<(), rhi::RhiStateMaintenanceError>
+pub async fn rhi::ingest_rhi_trade_source(&rhi::RhiStateRepositories<'_>, &rhi::RhiTransportAdapters, &rhi::RhiConfigDocumentV1, &str, radroots_event::id::TradeId, rhi::RhiTradeSourceAttempt) -> core::result::Result<rhi::RhiTradeSourceIngestOutcome, rhi::RhiTradeSourceIngestError>
 pub async fn rhi::initialize_rhi_state(&rhi::RhiRuntimeContext, &rhi::RhiStateMetadata, radroots_service_sqlite::migration::MigrationAppliedAtUnixSeconds, &radroots_service_sqlite::migration::MigrationBuildIdentity) -> core::result::Result<(), rhi::RhiStateHostError>
 pub fn rhi::open_rhi_encrypted_identity(&rhi::RhiIdentityEnvelopeBinding, &rhi::RhiWrappingCredential) -> core::result::Result<rhi::RhiDecryptedIdentity, rhi::RhiEncryptedIdentityEnvelopeError>
 pub async fn rhi::open_rhi_runtime_foundation(rhi::RhiRuntimeContext, rhi::RhiConfigDocumentV1, rhi::RhiRuntimeAdapters, radroots_service_sqlite::migration::MigrationAppliedAtUnixSeconds, &radroots_service_sqlite::migration::MigrationBuildIdentity) -> core::result::Result<rhi::RhiRuntimeFoundation, rhi::RhiRuntimeFoundationError>

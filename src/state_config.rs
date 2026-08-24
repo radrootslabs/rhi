@@ -43,6 +43,14 @@ const INSERT_BINDING_SQL: &str = r#"INSERT INTO rhi_config_bindings (
     applied_at_unix_s, service_version, service_commit, lib_revision,
     rust_version, target, feature_profile
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#;
+const READ_DIRTY_POLICY_BOUNDS_SQL: &str = r#"SELECT
+    COUNT(*) FILTER (WHERE generation >= 9223372036854775807) AS exhausted,
+    COALESCE(MAX(updated_at_unix_s), 0) AS latest_updated_at
+FROM trade_dirty_generations
+WHERE evidence_policy_sha256 != ?"#;
+const ADVANCE_DIRTY_POLICY_SQL: &str = r#"UPDATE trade_dirty_generations
+SET generation = generation + 1, evidence_policy_sha256 = ?, updated_at_unix_s = ?
+WHERE evidence_policy_sha256 != ?"#;
 
 /// Stable source-free offline configuration-application failure classes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -168,10 +176,22 @@ struct ConfigBinding {
 impl ConfigBinding {
     fn is_governed(&self) -> bool {
         self.config_contract_version == crate::RHI_CONFIG_SCHEMA_VERSION
-            && self.state_contract_version == crate::RHI_STATE_SCHEMA_VERSION
+            && (crate::RHI_STATE_BASE_SCHEMA_VERSION..=crate::RHI_STATE_SCHEMA_VERSION)
+                .contains(&self.state_contract_version)
             && self.admin_contract_version == crate::RHI_ADMIN_CONTRACT_VERSION
             && self.status_contract_version == crate::RHI_STATUS_CONTRACT_VERSION
             && self.provider_contract_version == crate::RHI_PROVIDER_CONTRACT_VERSION
+    }
+
+    fn is_same_identity_and_policy_except_state_version(&self, other: &Self) -> bool {
+        self.normalized_config_sha256 == other.normalized_config_sha256
+            && self.evidence_policy_sha256 == other.evidence_policy_sha256
+            && self.service_public_key == other.service_public_key
+            && self.config_contract_version == other.config_contract_version
+            && self.admin_contract_version == other.admin_contract_version
+            && self.status_contract_version == other.status_contract_version
+            && self.provider_contract_version == other.provider_contract_version
+            && self.state_contract_version < other.state_contract_version
     }
 }
 
@@ -232,6 +252,26 @@ pub(crate) async fn bind_or_verify(
                 validate_history(&history)?;
                 match history.last() {
                     Some(actual) if actual.binding == expected => Ok(()),
+                    Some(actual)
+                        if actual
+                            .binding
+                            .is_same_identity_and_policy_except_state_version(&expected) =>
+                    {
+                        if actual.generation >= RHI_CONFIG_BINDING_MAX_GENERATIONS {
+                            return Err(ConfigOperationError::ResourceExhausted);
+                        }
+                        if applied_at.get() < actual.applied_at_unix_s {
+                            return Err(ConfigOperationError::InvalidInput);
+                        }
+                        insert_binding(
+                            transaction,
+                            actual.generation + 1,
+                            &expected,
+                            applied_at.get(),
+                            &build,
+                        )
+                        .await
+                    }
                     Some(_) | None => Err(ConfigOperationError::Binding),
                 }
             })
@@ -292,6 +332,14 @@ pub(crate) async fn append_configuration(
                     return Err(ConfigOperationError::InvalidInput);
                 }
                 let generation = latest.generation + 1;
+                if latest.binding.evidence_policy_sha256 != candidate.evidence_policy_sha256 {
+                    advance_dirty_policy(
+                        transaction,
+                        candidate.evidence_policy_sha256,
+                        applied_at.get(),
+                    )
+                    .await?;
+                }
                 insert_binding(
                     transaction,
                     generation,
@@ -314,6 +362,40 @@ pub(crate) async fn append_configuration(
         })
         .await
         .map_err(map_transaction_error)
+}
+
+async fn advance_dirty_policy(
+    transaction: &mut ServiceSqliteTransaction<'_>,
+    policy: [u8; 32],
+    updated_at_unix_s: u64,
+) -> Result<(), ConfigOperationError> {
+    let row = sqlx::query(READ_DIRTY_POLICY_BOUNDS_SQL)
+        .bind(policy.as_slice())
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(|_| ConfigOperationError::Storage)?;
+    let exhausted = row
+        .try_get::<i64, _>("exhausted")
+        .map_err(|_| ConfigOperationError::Storage)?;
+    let latest_updated_at = row
+        .try_get::<i64, _>("latest_updated_at")
+        .ok()
+        .and_then(|value| u64::try_from(value).ok())
+        .ok_or(ConfigOperationError::Storage)?;
+    if exhausted != 0 {
+        return Err(ConfigOperationError::ResourceExhausted);
+    }
+    if updated_at_unix_s < latest_updated_at {
+        return Err(ConfigOperationError::InvalidInput);
+    }
+    sqlx::query(ADVANCE_DIRTY_POLICY_SQL)
+        .bind(policy.as_slice())
+        .bind(i64::try_from(updated_at_unix_s).map_err(|_| ConfigOperationError::InvalidInput)?)
+        .bind(policy.as_slice())
+        .execute(&mut *transaction)
+        .await
+        .map_err(|_| ConfigOperationError::Storage)?;
+    Ok(())
 }
 
 async fn read_history(

@@ -12,7 +12,7 @@ use radroots_service_sqlite::{
 pub const RHI_STATE_BASE_SCHEMA_VERSION: u32 = 1;
 
 /// The newest governed RHI state schema understood by this binary.
-pub const RHI_STATE_SCHEMA_VERSION: u32 = 3;
+pub const RHI_STATE_SCHEMA_VERSION: u32 = 4;
 
 /// The shared metadata and migration-ledger objects present at schema v1.
 pub const RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT: u32 = 6;
@@ -23,10 +23,13 @@ pub const RHI_STATE_SCHEMA_VERSION_2_OBJECT_COUNT: u32 = 10;
 /// The shared objects, configuration history, and immutable trade evidence.
 pub const RHI_STATE_SCHEMA_VERSION_3_OBJECT_COUNT: u32 = 22;
 
+/// The shared objects, immutable trade evidence, source cursors, and dirty generations.
+pub const RHI_STATE_SCHEMA_VERSION_4_OBJECT_COUNT: u32 = 28;
+
 /// SHA-256 identity of the ordered migration catalog rooted at schema v1.
 pub const RHI_MIGRATION_CATALOG_SHA256: [u8; 32] = [
-    0x14, 0x04, 0x60, 0x48, 0xb4, 0x68, 0x83, 0x6f, 0x26, 0x02, 0xec, 0x51, 0xe5, 0x38, 0xf2, 0xa9,
-    0x8b, 0x71, 0xc9, 0x45, 0xf8, 0x3d, 0x93, 0x3d, 0xcc, 0xb8, 0x60, 0x3b, 0x84, 0xf8, 0x65, 0xf0,
+    0x29, 0x5f, 0xf5, 0xe9, 0xac, 0x0e, 0xad, 0xc1, 0xf2, 0xc2, 0xd8, 0xc2, 0x58, 0xc2, 0xea, 0xa8,
+    0x16, 0xf9, 0x46, 0x56, 0x0b, 0x68, 0x9d, 0xcb, 0x43, 0x2f, 0xdc, 0x99, 0xe7, 0x9e, 0xc3, 0x53,
 ];
 
 /// SHA-256 identity of the exact schema-v1 object snapshot.
@@ -59,10 +62,22 @@ pub const RHI_STATE_SCHEMA_VERSION_3_SHA256: [u8; 32] = [
     0x7a, 0xab, 0x2d, 0xbd, 0x23, 0xfe, 0xad, 0xac, 0x16, 0x53, 0x33, 0x49, 0x0d, 0x6f, 0x0a, 0xd5,
 ];
 
+/// SHA-256 identity of the schema-v4 source-checkpoint migration.
+pub const RHI_STATE_SCHEMA_VERSION_4_MIGRATION_SHA256: [u8; 32] = [
+    0x24, 0x41, 0xf7, 0xc4, 0xc1, 0x15, 0x94, 0xc6, 0xfd, 0xe7, 0x87, 0xdb, 0xb9, 0x4e, 0x44, 0xba,
+    0x00, 0xb7, 0x2d, 0x2c, 0x97, 0x9b, 0x0e, 0x7f, 0xd3, 0xc7, 0x33, 0xea, 0xe9, 0x14, 0x4d, 0x78,
+];
+
+/// SHA-256 identity of the exact schema-v4 object snapshot.
+pub const RHI_STATE_SCHEMA_VERSION_4_SHA256: [u8; 32] = [
+    0x9c, 0xa7, 0x8a, 0x54, 0xb0, 0xea, 0x20, 0x13, 0xe7, 0xaa, 0x70, 0xd0, 0x9b, 0xea, 0xdc, 0xfb,
+    0x6c, 0xdd, 0xe0, 0x7c, 0x40, 0x42, 0x9d, 0xff, 0xe9, 0x1c, 0xb8, 0x3c, 0x2a, 0x42, 0x5c, 0xea,
+];
+
 /// SHA-256 identity of the schema catalog bound to the migration catalog.
 pub const RHI_STATE_SCHEMA_CATALOG_SHA256: [u8; 32] = [
-    0x13, 0x25, 0xa4, 0x1b, 0x90, 0xab, 0xfc, 0x7d, 0x52, 0x3b, 0xbf, 0xe8, 0x35, 0x00, 0xa1, 0xb1,
-    0xa7, 0x3e, 0x49, 0x2c, 0xc9, 0x30, 0xd6, 0xea, 0xd6, 0xc7, 0x1e, 0x29, 0xd5, 0x44, 0x74, 0x36,
+    0x58, 0x78, 0x9c, 0x1d, 0x39, 0x65, 0x14, 0xce, 0x19, 0xa5, 0x60, 0xb6, 0x7b, 0xf7, 0x60, 0x65,
+    0x0b, 0x9d, 0x6f, 0xa3, 0x78, 0xbc, 0x82, 0x34, 0xc1, 0xf6, 0xa3, 0x9a, 0xd2, 0xf5, 0x56, 0xe6,
 ];
 
 macro_rules! rhi_config_bindings_table_sql {
@@ -351,6 +366,112 @@ const CREATE_TRADE_EVIDENCE_MIGRATION_SQL: &str = concat!(
     ";",
 );
 
+macro_rules! relay_checkpoints_table_sql {
+    () => {
+        r#"CREATE TABLE relay_checkpoints (
+    source_id TEXT NOT NULL
+        CHECK (length(CAST(source_id AS BLOB)) BETWEEN 1 AND 64)
+        CHECK (source_id NOT GLOB '*[^a-z0-9_-]*')
+        CHECK (substr(source_id, 1, 1) GLOB '[a-z]'),
+    selector_id TEXT NOT NULL CHECK (selector_id = 'trade_mutation_lineage_v1'),
+    evidence_policy_sha256 BLOB NOT NULL CHECK (length(evidence_policy_sha256) = 32),
+    trade_id BLOB NOT NULL CHECK (length(trade_id) = 16),
+    cursor_created_at_unix_s INTEGER NOT NULL
+        CHECK (cursor_created_at_unix_s BETWEEN 0 AND 9223372036854775807),
+    cursor_event_id BLOB NOT NULL CHECK (length(cursor_event_id) = 32),
+    revision INTEGER NOT NULL CHECK (revision BETWEEN 1 AND 9223372036854775807),
+    completed_at_unix_s INTEGER NOT NULL
+        CHECK (completed_at_unix_s BETWEEN 1 AND 9223372036854775807),
+    PRIMARY KEY (source_id, selector_id, evidence_policy_sha256, trade_id)
+) STRICT"#
+    };
+}
+
+macro_rules! relay_checkpoints_guard_update_sql {
+    () => {
+        r#"CREATE TRIGGER relay_checkpoints_guard_update
+BEFORE UPDATE ON relay_checkpoints
+WHEN NEW.source_id != OLD.source_id
+    OR NEW.selector_id != OLD.selector_id
+    OR NEW.evidence_policy_sha256 != OLD.evidence_policy_sha256
+    OR NEW.trade_id != OLD.trade_id
+    OR NEW.revision != OLD.revision + 1
+    OR NEW.completed_at_unix_s < OLD.completed_at_unix_s
+    OR NEW.cursor_created_at_unix_s < OLD.cursor_created_at_unix_s
+    OR (
+        NEW.cursor_created_at_unix_s = OLD.cursor_created_at_unix_s
+        AND NEW.cursor_event_id <= OLD.cursor_event_id
+    )
+BEGIN
+    SELECT RAISE(ABORT, 'relay checkpoint transition is invalid');
+END"#
+    };
+}
+
+macro_rules! trade_dirty_generations_table_sql {
+    () => {
+        r#"CREATE TABLE trade_dirty_generations (
+    trade_id BLOB NOT NULL PRIMARY KEY CHECK (length(trade_id) = 16),
+    generation INTEGER NOT NULL CHECK (generation BETWEEN 1 AND 9223372036854775807),
+    evidence_policy_sha256 BLOB NOT NULL CHECK (length(evidence_policy_sha256) = 32),
+    updated_at_unix_s INTEGER NOT NULL
+        CHECK (updated_at_unix_s BETWEEN 0 AND 9223372036854775807)
+) STRICT"#
+    };
+}
+
+macro_rules! trade_dirty_generations_guard_update_sql {
+    () => {
+        r#"CREATE TRIGGER trade_dirty_generations_guard_update
+BEFORE UPDATE ON trade_dirty_generations
+WHEN NEW.trade_id != OLD.trade_id
+    OR NEW.generation != OLD.generation + 1
+    OR NEW.updated_at_unix_s < OLD.updated_at_unix_s
+BEGIN
+    SELECT RAISE(ABORT, 'trade dirty generation transition is invalid');
+END"#
+    };
+}
+
+pub(crate) const CREATE_RELAY_CHECKPOINTS_TABLE_SQL: &str = relay_checkpoints_table_sql!();
+const CREATE_RELAY_CHECKPOINTS_GUARD_UPDATE_SQL: &str = relay_checkpoints_guard_update_sql!();
+const CREATE_RELAY_CHECKPOINTS_NO_DELETE_SQL: &str = immutable_no_delete_sql!(
+    "relay_checkpoints_no_delete",
+    "relay_checkpoints",
+    "relay checkpoints are retained"
+);
+pub(crate) const CREATE_TRADE_DIRTY_GENERATIONS_TABLE_SQL: &str =
+    trade_dirty_generations_table_sql!();
+const CREATE_TRADE_DIRTY_GENERATIONS_GUARD_UPDATE_SQL: &str =
+    trade_dirty_generations_guard_update_sql!();
+const CREATE_TRADE_DIRTY_GENERATIONS_NO_DELETE_SQL: &str = immutable_no_delete_sql!(
+    "trade_dirty_generations_no_delete",
+    "trade_dirty_generations",
+    "trade dirty generations are retained"
+);
+const CREATE_SOURCE_CHECKPOINT_MIGRATION_SQL: &str = concat!(
+    relay_checkpoints_table_sql!(),
+    ";\n",
+    relay_checkpoints_guard_update_sql!(),
+    ";\n",
+    immutable_no_delete_sql!(
+        "relay_checkpoints_no_delete",
+        "relay_checkpoints",
+        "relay checkpoints are retained"
+    ),
+    ";\n",
+    trade_dirty_generations_table_sql!(),
+    ";\n",
+    trade_dirty_generations_guard_update_sql!(),
+    ";\n",
+    immutable_no_delete_sql!(
+        "trade_dirty_generations_no_delete",
+        "trade_dirty_generations",
+        "trade dirty generations are retained"
+    ),
+    ";",
+);
+
 const RHI_CONFIG_BINDINGS_TABLE_SHA256: [u8; 32] = [
     0x4d, 0x6e, 0x8f, 0xff, 0xda, 0x43, 0xe6, 0xf5, 0x3e, 0x23, 0x77, 0xd2, 0x77, 0xa4, 0x52, 0x9e,
     0x63, 0x3e, 0xaf, 0xb6, 0xea, 0xa2, 0xad, 0xd7, 0x56, 0xde, 0x0d, 0xc9, 0x24, 0xc5, 0x77, 0xeb,
@@ -414,6 +535,30 @@ const RELAY_OBSERVATIONS_NO_UPDATE_SHA256: [u8; 32] = [
 const RELAY_OBSERVATIONS_NO_DELETE_SHA256: [u8; 32] = [
     0xe9, 0xaa, 0x66, 0xff, 0x29, 0xa0, 0x62, 0xc9, 0xf9, 0x97, 0x27, 0x0f, 0x59, 0xad, 0x63, 0x65,
     0xdc, 0x4d, 0x88, 0xc6, 0x59, 0x4b, 0xe5, 0xe5, 0xfe, 0x44, 0xf4, 0x44, 0x6d, 0x00, 0xb7, 0xe0,
+];
+const RELAY_CHECKPOINTS_TABLE_SHA256: [u8; 32] = [
+    0x5f, 0xf7, 0xc3, 0x41, 0xa3, 0x48, 0x37, 0x3e, 0x92, 0xf5, 0x46, 0xe1, 0xff, 0xfd, 0x45, 0x4a,
+    0x86, 0x6e, 0x23, 0x2c, 0xff, 0x60, 0x83, 0xbf, 0x3f, 0xfe, 0xc3, 0xfc, 0x65, 0x53, 0x2c, 0xb6,
+];
+const RELAY_CHECKPOINTS_GUARD_UPDATE_SHA256: [u8; 32] = [
+    0x5c, 0xd7, 0x2a, 0xaf, 0x31, 0x2c, 0x17, 0xcf, 0xfa, 0xe4, 0xa8, 0x37, 0x91, 0x3c, 0x5e, 0x92,
+    0xf2, 0xaa, 0x31, 0xea, 0x71, 0x3e, 0x86, 0x0e, 0x3a, 0xaa, 0x9f, 0xf7, 0x05, 0xd0, 0xc4, 0x92,
+];
+const RELAY_CHECKPOINTS_NO_DELETE_SHA256: [u8; 32] = [
+    0x8d, 0xb0, 0x54, 0xf7, 0x75, 0x97, 0xd5, 0xe5, 0x42, 0xd0, 0x0c, 0x2e, 0xdc, 0xf2, 0xd9, 0x26,
+    0xa9, 0x2b, 0x8e, 0xf5, 0x5a, 0x69, 0x54, 0xb2, 0x01, 0x6b, 0x93, 0x36, 0x48, 0x84, 0xfb, 0x1f,
+];
+const TRADE_DIRTY_GENERATIONS_TABLE_SHA256: [u8; 32] = [
+    0xe9, 0x93, 0x53, 0x2c, 0x08, 0x36, 0xa2, 0x99, 0x40, 0xd2, 0xe3, 0x51, 0x5b, 0x11, 0x34, 0xea,
+    0x68, 0xf7, 0xd3, 0x50, 0xe5, 0xbe, 0xdb, 0x3b, 0xc1, 0xb1, 0xa5, 0x6f, 0x7f, 0xa6, 0xe4, 0xd1,
+];
+const TRADE_DIRTY_GENERATIONS_GUARD_UPDATE_SHA256: [u8; 32] = [
+    0x50, 0x31, 0xbc, 0x10, 0x4d, 0x51, 0x66, 0xae, 0xf2, 0xdc, 0x9a, 0x1b, 0xaf, 0x42, 0x0e, 0x47,
+    0xc1, 0x6b, 0xa9, 0x70, 0x91, 0x6f, 0x5d, 0xc5, 0x6d, 0xb3, 0xc1, 0x70, 0x4e, 0x76, 0x16, 0xcb,
+];
+const TRADE_DIRTY_GENERATIONS_NO_DELETE_SHA256: [u8; 32] = [
+    0x36, 0x66, 0x3a, 0x1a, 0xd4, 0x65, 0x41, 0x9f, 0x23, 0x1e, 0xe6, 0xcd, 0x1e, 0xd1, 0x6d, 0xa4,
+    0x26, 0xac, 0x7d, 0x70, 0xde, 0xc3, 0x67, 0x75, 0x55, 0x62, 0xa8, 0x45, 0x52, 0x86, 0x54, 0x23,
 ];
 
 /// Stable classes for invalid embedded RHI catalog definitions.
@@ -501,10 +646,17 @@ pub fn rhi_migration_catalog() -> Result<MigrationCatalog, RhiStateCatalogError>
         MigrationChecksum::from_bytes(RHI_STATE_SCHEMA_VERSION_3_MIGRATION_SHA256),
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::MigrationCatalog))?;
-    let catalog = MigrationCatalog::new([configuration, trade_evidence])
+    let source_checkpoints = MigrationDescriptor::sql(
+        4,
+        "create_source_checkpoints_and_dirty_generations",
+        CREATE_SOURCE_CHECKPOINT_MIGRATION_SQL,
+        MigrationChecksum::from_bytes(RHI_STATE_SCHEMA_VERSION_4_MIGRATION_SHA256),
+    )
+    .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::MigrationCatalog))?;
+    let catalog = MigrationCatalog::new([configuration, trade_evidence, source_checkpoints])
         .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::MigrationCatalog))?;
     if catalog.current_version() != RHI_STATE_SCHEMA_VERSION
-        || catalog.descriptors().len() != 2
+        || catalog.descriptors().len() != 3
         || catalog.digest().as_bytes() != &RHI_MIGRATION_CATALOG_SHA256
     {
         return Err(RhiStateCatalogError::new(
@@ -530,13 +682,22 @@ pub fn rhi_schema_catalog() -> Result<SchemaCatalog, RhiStateCatalogError> {
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
     let version_three = SchemaVersionCatalog::new(
-        RHI_STATE_SCHEMA_VERSION,
+        3,
         rhi_schema_version_three_objects()?,
         SchemaDigest::from_bytes(RHI_STATE_SCHEMA_VERSION_3_SHA256),
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
-    let catalog = SchemaCatalog::new(&migrations, [version_one, version_two, version_three])
-        .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
+    let version_four = SchemaVersionCatalog::new(
+        RHI_STATE_SCHEMA_VERSION,
+        rhi_schema_version_four_objects()?,
+        SchemaDigest::from_bytes(RHI_STATE_SCHEMA_VERSION_4_SHA256),
+    )
+    .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
+    let catalog = SchemaCatalog::new(
+        &migrations,
+        [version_one, version_two, version_three, version_four],
+    )
+    .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
     validate_rhi_state_catalogs(&migrations, &catalog)?;
     Ok(catalog)
 }
@@ -548,19 +709,22 @@ pub fn validate_rhi_state_catalogs(
 ) -> Result<(), RhiStateCatalogError> {
     let versions = schema.versions();
     let valid = migrations.current_version() == RHI_STATE_SCHEMA_VERSION
-        && migrations.descriptors().len() == 2
+        && migrations.descriptors().len() == 3
         && migrations.digest().as_bytes() == &RHI_MIGRATION_CATALOG_SHA256
         && schema.migration_catalog_digest() == migrations.digest()
-        && versions.len() == 3
+        && versions.len() == 4
         && versions[0].version() == RHI_STATE_BASE_SCHEMA_VERSION
         && versions[0].object_count() == RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT
         && versions[0].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_1_SHA256
         && versions[1].version() == 2
         && versions[1].object_count() == RHI_STATE_SCHEMA_VERSION_2_OBJECT_COUNT
         && versions[1].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_2_SHA256
-        && versions[2].version() == RHI_STATE_SCHEMA_VERSION
+        && versions[2].version() == 3
         && versions[2].object_count() == RHI_STATE_SCHEMA_VERSION_3_OBJECT_COUNT
         && versions[2].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_3_SHA256
+        && versions[3].version() == RHI_STATE_SCHEMA_VERSION
+        && versions[3].object_count() == RHI_STATE_SCHEMA_VERSION_4_OBJECT_COUNT
+        && versions[3].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_4_SHA256
         && schema.digest().as_bytes() == &RHI_STATE_SCHEMA_CATALOG_SHA256;
     if valid {
         Ok(())
@@ -612,6 +776,69 @@ fn rhi_schema_version_three_objects() -> Result<Vec<SchemaObject>, RhiStateCatal
     let mut objects = rhi_config_binding_objects()?.to_vec();
     objects.extend(rhi_trade_evidence_objects()?);
     Ok(objects)
+}
+
+fn rhi_schema_version_four_objects() -> Result<Vec<SchemaObject>, RhiStateCatalogError> {
+    let mut objects = rhi_schema_version_three_objects()?;
+    objects.extend(rhi_source_checkpoint_objects()?);
+    Ok(objects)
+}
+
+fn rhi_source_checkpoint_objects() -> Result<[SchemaObject; 6], RhiStateCatalogError> {
+    let object = |kind, name, table_name, sql, digest| {
+        SchemaObject::new(
+            kind,
+            name,
+            table_name,
+            sql,
+            SchemaDigest::from_bytes(digest),
+        )
+        .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))
+    };
+    Ok([
+        object(
+            SchemaObjectKind::Table,
+            "relay_checkpoints",
+            "relay_checkpoints",
+            CREATE_RELAY_CHECKPOINTS_TABLE_SQL,
+            RELAY_CHECKPOINTS_TABLE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "relay_checkpoints_guard_update",
+            "relay_checkpoints",
+            CREATE_RELAY_CHECKPOINTS_GUARD_UPDATE_SQL,
+            RELAY_CHECKPOINTS_GUARD_UPDATE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "relay_checkpoints_no_delete",
+            "relay_checkpoints",
+            CREATE_RELAY_CHECKPOINTS_NO_DELETE_SQL,
+            RELAY_CHECKPOINTS_NO_DELETE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Table,
+            "trade_dirty_generations",
+            "trade_dirty_generations",
+            CREATE_TRADE_DIRTY_GENERATIONS_TABLE_SQL,
+            TRADE_DIRTY_GENERATIONS_TABLE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "trade_dirty_generations_guard_update",
+            "trade_dirty_generations",
+            CREATE_TRADE_DIRTY_GENERATIONS_GUARD_UPDATE_SQL,
+            TRADE_DIRTY_GENERATIONS_GUARD_UPDATE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "trade_dirty_generations_no_delete",
+            "trade_dirty_generations",
+            CREATE_TRADE_DIRTY_GENERATIONS_NO_DELETE_SQL,
+            TRADE_DIRTY_GENERATIONS_NO_DELETE_SHA256,
+        )?,
+    ])
 }
 
 fn rhi_trade_evidence_objects() -> Result<[SchemaObject; 12], RhiStateCatalogError> {
