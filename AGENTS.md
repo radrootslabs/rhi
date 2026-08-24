@@ -292,6 +292,14 @@
   the bounded stored-byte digest on every read, including after reopen. The
   capability is not claim authority; later relay execution must borrow its
   exact byte slice without parsing or reconstruction.
+- Model publication target and attempt evidence only with the closed pending,
+  submitted, accepted, rejected, rate-limited, auth-required, failed, and
+  unknown vocabulary. Attempt evidence must derive its identity from the
+  sealed committed outbox and exact event digest plus bounded target ordinal
+  and attempt number; never accept caller-supplied identities, arbitrary result
+  codes, raw relay diagnostics, reversed timestamps, or implicit clock reads.
+  The model is not claim, transition, or relay authority. The durable executor
+  must revalidate every live target, lease, revision, attempt, and byte binding.
 - Commit one exact reconciliation-attempt replay inventory only through the
   typed attempt repository. Revalidate the exact live lease, dirty generation,
   evidence policy, and every scoped prior checkpoint before mutation; persist

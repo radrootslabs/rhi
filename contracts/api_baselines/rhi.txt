@@ -133,6 +133,23 @@ pub enum rhi::RhiPresenceCommandV1
 pub rhi::RhiPresenceCommandV1::Desired
 pub rhi::RhiPresenceCommandV1::Refresh
 pub rhi::RhiPresenceCommandV1::Render
+pub enum rhi::RhiPublicationAttemptEvidenceErrorKind
+pub rhi::RhiPublicationAttemptEvidenceErrorKind::InvalidAttemptNumber
+pub rhi::RhiPublicationAttemptEvidenceErrorKind::InvalidTargetOrdinal
+pub rhi::RhiPublicationAttemptEvidenceErrorKind::InvalidTime
+impl rhi::RhiPublicationAttemptEvidenceErrorKind
+pub const fn rhi::RhiPublicationAttemptEvidenceErrorKind::code(self) -> &'static str
+pub enum rhi::RhiPublicationAttemptOutcome
+pub rhi::RhiPublicationAttemptOutcome::Accepted
+pub rhi::RhiPublicationAttemptOutcome::AuthRequired
+pub rhi::RhiPublicationAttemptOutcome::Failed
+pub rhi::RhiPublicationAttemptOutcome::RateLimited
+pub rhi::RhiPublicationAttemptOutcome::Rejected
+pub rhi::RhiPublicationAttemptOutcome::Submitted
+pub rhi::RhiPublicationAttemptOutcome::Unknown
+impl rhi::RhiPublicationAttemptOutcome
+pub const fn rhi::RhiPublicationAttemptOutcome::code(self) -> &'static str
+pub const fn rhi::RhiPublicationAttemptOutcome::target_state(self) -> rhi::RhiPublicationTargetState
 pub enum rhi::RhiPublicationCommandV1
 pub rhi::RhiPublicationCommandV1::Backlog
 pub rhi::RhiPublicationCommandV1::Retry
@@ -153,6 +170,18 @@ pub rhi::RhiPublicationSubmissionErrorKind::NotFound
 pub rhi::RhiPublicationSubmissionErrorKind::Storage
 impl rhi::RhiPublicationSubmissionErrorKind
 pub const fn rhi::RhiPublicationSubmissionErrorKind::code(self) -> &'static str
+pub enum rhi::RhiPublicationTargetState
+pub rhi::RhiPublicationTargetState::Accepted
+pub rhi::RhiPublicationTargetState::AuthRequired
+pub rhi::RhiPublicationTargetState::Failed
+pub rhi::RhiPublicationTargetState::Pending
+pub rhi::RhiPublicationTargetState::RateLimited
+pub rhi::RhiPublicationTargetState::Rejected
+pub rhi::RhiPublicationTargetState::Submitted
+pub rhi::RhiPublicationTargetState::Unknown
+impl rhi::RhiPublicationTargetState
+pub const fn rhi::RhiPublicationTargetState::code(self) -> &'static str
+pub const fn rhi::RhiPublicationTargetState::is_accepted_terminal(self) -> bool
 pub enum rhi::RhiReconciliationAttemptErrorKind
 pub rhi::RhiReconciliationAttemptErrorKind::InvalidConfiguration
 pub rhi::RhiReconciliationAttemptErrorKind::InvalidInput
@@ -669,6 +698,34 @@ pub const fn rhi::RhiProvenanceRepository<'_>::descriptor(&self) -> rhi::RhiStat
 pub const fn rhi::RhiProvenanceRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
 impl core::fmt::Debug for rhi::RhiProvenanceRepository<'_>
 pub fn rhi::RhiProvenanceRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPublicationAttemptEvidence
+impl rhi::RhiPublicationAttemptEvidence
+pub const fn rhi::RhiPublicationAttemptEvidence::attempt_number(&self) -> u16
+pub const fn rhi::RhiPublicationAttemptEvidence::event_sha256(&self) -> &[u8; 32]
+pub const fn rhi::RhiPublicationAttemptEvidence::finished_at(&self) -> rhi::RhiPublicationUnixMilliseconds
+pub const fn rhi::RhiPublicationAttemptEvidence::id(&self) -> rhi::RhiPublicationAttemptId
+pub fn rhi::RhiPublicationAttemptEvidence::new(&rhi::RhiCommittedPublication, u32, u16, rhi::RhiPublicationUnixMilliseconds, rhi::RhiPublicationUnixMilliseconds, rhi::RhiPublicationAttemptOutcome) -> core::result::Result<Self, rhi::RhiPublicationAttemptEvidenceError>
+pub const fn rhi::RhiPublicationAttemptEvidence::outbox_id(&self) -> rhi::RhiPublicationOutboxId
+pub const fn rhi::RhiPublicationAttemptEvidence::outcome(&self) -> rhi::RhiPublicationAttemptOutcome
+pub const fn rhi::RhiPublicationAttemptEvidence::result_code(&self) -> &'static str
+pub const fn rhi::RhiPublicationAttemptEvidence::started_at(&self) -> rhi::RhiPublicationUnixMilliseconds
+pub const fn rhi::RhiPublicationAttemptEvidence::target_ordinal(&self) -> u8
+impl core::fmt::Debug for rhi::RhiPublicationAttemptEvidence
+pub fn rhi::RhiPublicationAttemptEvidence::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPublicationAttemptEvidenceError
+impl rhi::RhiPublicationAttemptEvidenceError
+pub const fn rhi::RhiPublicationAttemptEvidenceError::code(self) -> &'static str
+pub const fn rhi::RhiPublicationAttemptEvidenceError::kind(self) -> rhi::RhiPublicationAttemptEvidenceErrorKind
+impl core::error::Error for rhi::RhiPublicationAttemptEvidenceError
+impl core::fmt::Debug for rhi::RhiPublicationAttemptEvidenceError
+pub fn rhi::RhiPublicationAttemptEvidenceError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiPublicationAttemptEvidenceError
+pub fn rhi::RhiPublicationAttemptEvidenceError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPublicationAttemptId(_)
+impl rhi::RhiPublicationAttemptId
+pub const fn rhi::RhiPublicationAttemptId::as_bytes(&self) -> &[u8; 32]
+impl core::fmt::Debug for rhi::RhiPublicationAttemptId
+pub fn rhi::RhiPublicationAttemptId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiPublicationAttemptRepository<'host>
 impl rhi::RhiPublicationAttemptRepository<'_>
 pub const fn rhi::RhiPublicationAttemptRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
@@ -739,6 +796,10 @@ pub const fn rhi::RhiPublicationTargetRepository<'_>::descriptor(&self) -> rhi::
 pub const fn rhi::RhiPublicationTargetRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
 impl core::fmt::Debug for rhi::RhiPublicationTargetRepository<'_>
 pub fn rhi::RhiPublicationTargetRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPublicationUnixMilliseconds(_)
+impl rhi::RhiPublicationUnixMilliseconds
+pub const fn rhi::RhiPublicationUnixMilliseconds::get(self) -> u64
+pub fn rhi::RhiPublicationUnixMilliseconds::new(u64) -> core::result::Result<Self, rhi::RhiPublicationAttemptEvidenceError>
 pub struct rhi::RhiReconciliationAttemptError
 impl rhi::RhiReconciliationAttemptError
 pub const fn rhi::RhiReconciliationAttemptError::code(self) -> &'static str
@@ -1443,10 +1504,13 @@ pub const rhi::RHI_ENCRYPTED_IDENTITY_ENVELOPE_CONTRACT_VERSION: u32
 pub const rhi::RHI_ENCRYPTED_IDENTITY_ENVELOPE_MAX_BYTES: usize
 pub const rhi::RHI_MIGRATION_CATALOG_SHA256: [u8; 32]
 pub const rhi::RHI_PROVIDER_CONTRACT_VERSION: u32
+pub const rhi::RHI_PUBLICATION_ATTEMPT_EVIDENCE_CONTRACT_VERSION: u32
+pub const rhi::RHI_PUBLICATION_ATTEMPT_NUMBER_MAXIMUM: u16
 pub const rhi::RHI_PUBLICATION_CONTRACT_VERSION: u32
 pub const rhi::RHI_PUBLICATION_MAX_ATTEMPTS: u16
 pub const rhi::RHI_PUBLICATION_MAX_TARGETS: usize
 pub const rhi::RHI_PUBLICATION_SUBMISSION_CONTRACT_VERSION: u32
+pub const rhi::RHI_PUBLICATION_TARGET_ORDINAL_MAXIMUM: u32
 pub const rhi::RHI_RECONCILIATION_ATTEMPT_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_ATTEMPT_MAX_SOURCES: usize
 pub const rhi::RHI_RECONCILIATION_ATTESTATION_CONTRACT_VERSION: u32

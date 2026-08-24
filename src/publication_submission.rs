@@ -150,6 +150,21 @@ pub struct RhiCommittedPublication {
 }
 
 impl RhiCommittedPublication {
+    #[cfg(test)]
+    pub(crate) fn test_fixture(
+        outbox_id: RhiPublicationOutboxId,
+        event_id: [u8; 32],
+        event_sha256: [u8; 32],
+        exact_signed_event_bytes: Box<[u8]>,
+    ) -> Self {
+        Self {
+            outbox_id,
+            event_id,
+            event_sha256,
+            exact_signed_event_bytes,
+        }
+    }
+
     /// Returns the immutable outbox identity.
     #[must_use]
     pub const fn outbox_id(&self) -> RhiPublicationOutboxId {

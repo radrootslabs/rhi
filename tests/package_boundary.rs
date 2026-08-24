@@ -12,6 +12,9 @@ const RUNTIME_ADAPTER_CONTRACT: &str =
     include_str!("../contracts/services_hardening/runtime_adapters.v1.json");
 const RUNTIME_FOUNDATION: &str = include_str!("../src/runtime_foundation.rs");
 const PUBLICATION: &str = include_str!("../src/publication.rs");
+const PUBLICATION_ATTEMPT: &str = include_str!("../src/publication_attempt.rs");
+const PUBLICATION_ATTEMPT_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/publication_attempt_evidence.v1.json");
 const PUBLICATION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/publication_outbox.v1.json");
 const PUBLICATION_SUBMISSION: &str = include_str!("../src/publication_submission.rs");
@@ -62,6 +65,7 @@ const SOURCES: &[&str] = &[
     include_str!("../src/identity_credential.rs"),
     include_str!("../src/identity_envelope.rs"),
     include_str!("../src/publication.rs"),
+    include_str!("../src/publication_attempt.rs"),
     include_str!("../src/publication_submission.rs"),
     include_str!("../src/reconciliation_attempt.rs"),
     include_str!("../src/reconciliation_attestation.rs"),
@@ -139,6 +143,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "identity_credential",
         "identity_envelope",
         "publication",
+        "publication_attempt",
         "publication_submission",
         "reconciliation_attempt",
         "reconciliation_attestation",
@@ -190,6 +195,15 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "RhiPublicationRetryPolicy",
         "RhiPublicationTarget",
         "RHI_PUBLICATION_CONTRACT_VERSION",
+        "RhiPublicationAttemptEvidence",
+        "RhiPublicationAttemptEvidenceErrorKind",
+        "RhiPublicationAttemptId",
+        "RhiPublicationAttemptOutcome",
+        "RhiPublicationTargetState",
+        "RhiPublicationUnixMilliseconds",
+        "RHI_PUBLICATION_ATTEMPT_EVIDENCE_CONTRACT_VERSION",
+        "RHI_PUBLICATION_ATTEMPT_NUMBER_MAXIMUM",
+        "RHI_PUBLICATION_TARGET_ORDINAL_MAXIMUM",
         "RhiCommittedPublication",
         "RhiPublicationOutboxId",
         "RhiPublicationSubmissionErrorKind",
@@ -280,6 +294,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
     assert!(!PUBLIC_API.contains("rhi::features::"));
     assert!(!PUBLIC_API.contains("rhi::runtime_adapters::"));
     assert!(!PUBLIC_API.contains("rhi::publication::"));
+    assert!(!PUBLIC_API.contains("rhi::publication_attempt::"));
     assert!(!PUBLIC_API.contains("rhi::publication_submission::"));
 }
 
@@ -351,6 +366,7 @@ fn committed_publication_is_bounded_exact_and_never_reconstructed() {
         "std::net",
         "tokio::spawn",
         "SystemTime",
+        "pub(crate) fn from_committed_parts",
     ] {
         assert!(
             !PUBLICATION_SUBMISSION.contains(forbidden),
@@ -359,6 +375,55 @@ fn committed_publication_is_bounded_exact_and_never_reconstructed() {
     }
     assert!(!ROOT.contains("pub mod publication_submission"));
     assert!(!PUBLIC_API.contains("rhi::publication_submission::"));
+}
+
+#[test]
+fn publication_attempt_evidence_is_closed_bounded_and_effect_free() {
+    let contract: serde_json::Value =
+        serde_json::from_str(PUBLICATION_ATTEMPT_CONTRACT).expect("publication-attempt contract");
+    assert_eq!(
+        contract["schema"],
+        "radroots.rhi.publication-attempt-evidence"
+    );
+    assert_eq!(contract["contract_version"], 1);
+    assert_eq!(contract["bounds"]["target_ordinal"]["maximum"], 31);
+    assert_eq!(contract["bounds"]["attempt_number"]["maximum"], 100);
+    assert_eq!(
+        contract["evidence"]["result_code"],
+        "exact_closed_outcome_code"
+    );
+    assert_eq!(contract["effects"]["sqlite_read_or_mutation"], false);
+    assert_eq!(contract["effects"]["relay_or_network"], false);
+    for required in [
+        "pub enum RhiPublicationTargetState",
+        "pub enum RhiPublicationAttemptOutcome",
+        "pub struct RhiPublicationAttemptEvidence",
+        "publication.outbox_id()",
+        "publication.event_sha256()",
+        "RHI_PUBLICATION_TARGET_ORDINAL_MAXIMUM",
+        "RHI_PUBLICATION_ATTEMPT_NUMBER_MAXIMUM",
+    ] {
+        assert!(
+            PUBLICATION_ATTEMPT.contains(required),
+            "publication-attempt evidence is missing {required}"
+        );
+    }
+    for forbidden in [
+        "sqlx::",
+        "serde_json",
+        "EventSink",
+        "SystemTime",
+        "std::fs",
+        "std::net",
+        "tokio::spawn",
+    ] {
+        assert!(
+            !PUBLICATION_ATTEMPT.contains(forbidden),
+            "publication-attempt evidence gained forbidden authority {forbidden}"
+        );
+    }
+    assert!(!ROOT.contains("pub mod publication_attempt"));
+    assert!(!PUBLIC_API.contains("rhi::publication_attempt::"));
 }
 
 #[test]
@@ -648,7 +713,7 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .lines()
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
-    assert_eq!(public_error_count, 27);
+    assert_eq!(public_error_count, 28);
 }
 
 #[test]
@@ -1083,6 +1148,8 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "[`reconciliation_attestation.v1.json`](contracts/services_hardening/reconciliation_attestation.v1.json)",
         "## Explicit publication authority and durable schema",
         "[`publication_outbox.v1.json`](contracts/services_hardening/publication_outbox.v1.json)",
+        "## Bounded publication attempt evidence",
+        "[`publication_attempt_evidence.v1.json`](contracts/services_hardening/publication_attempt_evidence.v1.json)",
         "The event body and exact kind-3441 structural tags",
         "without rebuilding, reserializing, or",
         "Coverage is exactly `Missing`, `Partial`, `ScopeSatisfied`, or `Unsupported`",

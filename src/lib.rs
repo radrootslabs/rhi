@@ -9,6 +9,7 @@ mod features;
 mod identity_credential;
 mod identity_envelope;
 mod publication;
+mod publication_attempt;
 mod publication_submission;
 mod reconciliation_attempt;
 mod reconciliation_attestation;
@@ -71,6 +72,13 @@ pub use publication::{
     RHI_PUBLICATION_CONTRACT_VERSION, RHI_PUBLICATION_MAX_ATTEMPTS, RHI_PUBLICATION_MAX_TARGETS,
     RhiPublicationAuthority, RhiPublicationError, RhiPublicationErrorKind, RhiPublicationMode,
     RhiPublicationRetryPolicy, RhiPublicationTarget,
+};
+pub use publication_attempt::{
+    RHI_PUBLICATION_ATTEMPT_EVIDENCE_CONTRACT_VERSION, RHI_PUBLICATION_ATTEMPT_NUMBER_MAXIMUM,
+    RHI_PUBLICATION_TARGET_ORDINAL_MAXIMUM, RhiPublicationAttemptEvidence,
+    RhiPublicationAttemptEvidenceError, RhiPublicationAttemptEvidenceErrorKind,
+    RhiPublicationAttemptId, RhiPublicationAttemptOutcome, RhiPublicationTargetState,
+    RhiPublicationUnixMilliseconds,
 };
 pub use publication_submission::{
     RHI_PUBLICATION_SUBMISSION_CONTRACT_VERSION, RhiCommittedPublication, RhiPublicationOutboxId,

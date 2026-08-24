@@ -1,0 +1,99 @@
+{
+  "schema": "radroots.rhi.publication-attempt-evidence",
+  "schema_version": 1,
+  "contract_version": 1,
+  "target_states": [
+    "pending",
+    "submitted",
+    "accepted",
+    "rejected",
+    "rate_limited",
+    "auth_required",
+    "failed",
+    "unknown"
+  ],
+  "attempt_outcomes": [
+    "submitted",
+    "accepted",
+    "rejected",
+    "rate_limited",
+    "auth_required",
+    "failed",
+    "unknown"
+  ],
+  "bounds": {
+    "target_ordinal": { "minimum": 0, "maximum": 31 },
+    "attempt_number": { "minimum": 1, "maximum": 100 },
+    "unix_milliseconds": { "minimum": 0, "maximum": 9223372036854775807 },
+    "finished_at": "greater_than_or_equal_to_started_at"
+  },
+  "attempt_identity": {
+    "algorithm": "sha256",
+    "domain": "radroots.rhi.publication_attempt.v1\u0000",
+    "framing": [
+      "outbox_id_32_bytes",
+      "exact_committed_event_sha256_32_bytes",
+      "target_ordinal_u32_be",
+      "attempt_number_u32_be"
+    ]
+  },
+  "evidence": {
+    "sealed_type": "RhiPublicationAttemptEvidence",
+    "forgeable": false,
+    "serializable": false,
+    "debug": "redacted",
+    "bound_fields": [
+      "attempt_id",
+      "outbox_id",
+      "exact_committed_event_sha256",
+      "target_ordinal",
+      "attempt_number",
+      "started_at_unix_ms",
+      "finished_at_unix_ms",
+      "outcome"
+    ],
+    "result_code": "exact_closed_outcome_code",
+    "raw_relay_result_or_error": false
+  },
+  "semantics": {
+    "pending_is_attempt_outcome": false,
+    "accepted_target_is_terminal": true,
+    "submission_alone_proves_delivery": false,
+    "unknown_may_be_refined_only_by_independent_evidence": true,
+    "constructor_is_claim_or_transition_authority": false
+  },
+  "effects": {
+    "sqlite_read_or_mutation": false,
+    "relay_or_network": false,
+    "event_parse_rebuild_serialize_or_sign": false,
+    "task_spawn": false,
+    "ambient_clock": false,
+    "ambient_entropy": false
+  },
+  "deferred_to_step_202": [
+    "publication_claim_and_lease",
+    "durable_submitted_before_io",
+    "relay_submission",
+    "compare_and_swap_outcome_commit",
+    "cancellation_and_lost_acknowledgement",
+    "backoff_and_retry_schedule",
+    "lease_and_restart_recovery",
+    "unknown_outcome_reconciliation"
+  ],
+  "forbidden": [
+    "arbitrary_target_state",
+    "arbitrary_attempt_outcome",
+    "arbitrary_result_code",
+    "raw_relay_error_text",
+    "unbounded_target_ordinal",
+    "unbounded_attempt_number",
+    "unbounded_or_reversed_time",
+    "caller_supplied_outbox_or_event_digest",
+    "sqlite_authority",
+    "relay_io",
+    "event_deserialization",
+    "event_rebuild",
+    "event_reserialization",
+    "event_resigning"
+  ]
+}

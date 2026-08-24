@@ -377,10 +377,29 @@ return the same committed byte string or fail closed.
 The capability is not a relay claim or lease. Its only payload accessor returns
 the stored bytes unchanged; this path contains no JSON or event parsing,
 rebuilding, reserialization, signing, relay/network/filesystem work, task
-spawn, or ambient clock/entropy access. Target states, attempt evidence, relay
-I/O, retry scheduling, and lease recovery remain with Steps 201-202. The exact
-machine contract is
+spawn, or ambient clock/entropy access. The closed target/attempt evidence model
+is defined below; durable claims and transitions, relay I/O, retry scheduling,
+and lease recovery remain with Step 202. The exact machine contract is
 [`publication_submission.v1.json`](contracts/services_hardening/publication_submission.v1.json).
+
+## Bounded publication attempt evidence
+
+The publication target state is one closed value: pending, submitted, accepted,
+rejected, rate-limited, auth-required, failed, or unknown. Pending is not an
+attempt outcome, Accepted is the sole terminal target state, submission alone
+does not prove relay delivery, and Unknown can be refined only by independent
+evidence. Attempt outcomes use the same closed vocabulary except Pending and
+expose no arbitrary result string or upstream diagnostic.
+
+`RhiPublicationAttemptEvidence` binds the sealed committed outbox identity and
+exact event digest to a zero-based target ordinal no greater than 31, a
+one-based attempt number no greater than 100, ordered injected integer UTC
+milliseconds, and one closed outcome under a domain-separated SHA-256 identity.
+It is pure bounded evidence rather than claim, transition, or relay authority.
+Step 202 must revalidate live target, lease, revision, attempt, and exact-byte
+bindings when it persists Submitted before I/O and later commits an observed
+outcome. The exact machine contract is
+[`publication_attempt_evidence.v1.json`](contracts/services_hardening/publication_attempt_evidence.v1.json).
 
 ## Existing-state runtime foundation
 
