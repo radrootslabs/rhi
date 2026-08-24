@@ -601,6 +601,29 @@ impl RhiReconciliationLease {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LeaseValidationError {
+    LeaseLost,
+    Storage,
+}
+
+pub(crate) async fn validate_exact_lease(
+    transaction: &mut ServiceSqliteTransaction<'_>,
+    lease: RhiReconciliationLease,
+) -> Result<(), LeaseValidationError> {
+    let current = read_job(transaction, lease.job.id)
+        .await
+        .map_err(|_| LeaseValidationError::Storage)?;
+    if current == Some(lease.job)
+        && lease.job.state == RhiReconciliationJobState::Leased
+        && lease.job.lease_expires == Some(lease.lease_expires)
+    {
+        Ok(())
+    } else {
+        Err(LeaseValidationError::LeaseLost)
+    }
+}
+
 impl fmt::Debug for RhiReconciliationLease {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter

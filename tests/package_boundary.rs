@@ -12,12 +12,15 @@ const RUNTIME_ADAPTER_CONTRACT: &str =
     include_str!("../contracts/services_hardening/runtime_adapters.v1.json");
 const RUNTIME_FOUNDATION: &str = include_str!("../src/runtime_foundation.rs");
 const RECONCILIATION_ATTEMPTS: &str = include_str!("../src/reconciliation_attempt.rs");
+const RECONCILIATION_COMMIT: &str = include_str!("../src/reconciliation_commit.rs");
 const RECONCILIATION_JOBS: &str = include_str!("../src/reconciliation_job.rs");
 const RECONCILIATION_REPLAY: &str = include_str!("../src/reconciliation_replay.rs");
 const RECONCILIATION_ATTEMPT_CONTRACT: &str =
     include_str!("../contracts/services_hardening/reconciliation_attempts.v1.json");
 const RECONCILIATION_REPLAY_CONTRACT: &str =
     include_str!("../contracts/services_hardening/reconciliation_replay.v1.json");
+const RECONCILIATION_COMMIT_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/reconciliation_commit.v1.json");
 const RUNTIME_FOUNDATION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/runtime_foundation.v1.json");
 const TRADE_INGEST_CONTRACT: &str =
@@ -35,6 +38,7 @@ const SOURCES: &[&str] = &[
     include_str!("../src/identity_credential.rs"),
     include_str!("../src/identity_envelope.rs"),
     include_str!("../src/reconciliation_attempt.rs"),
+    include_str!("../src/reconciliation_commit.rs"),
     include_str!("../src/reconciliation_job.rs"),
     include_str!("../src/reconciliation_replay.rs"),
     include_str!("../src/runtime_context.rs"),
@@ -104,6 +108,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "identity_credential",
         "identity_envelope",
         "reconciliation_attempt",
+        "reconciliation_commit",
         "reconciliation_job",
         "reconciliation_replay",
         "runtime_context",
@@ -145,6 +150,8 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "RhiReconciliationSourceRequest",
         "RhiReconciliationSourceResult",
         "RhiReconciliationAttemptResults",
+        "RhiReconciliationSourceCommitOutcome",
+        "RhiReconciliationCommitErrorKind",
         "RhiReconciliationSourceReplayPlan",
         "RhiReconciliationSourceReplay",
         "RhiReconciliationJobPolicy",
@@ -203,6 +210,33 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
 }
 
 #[test]
+fn reconciliation_commit_is_atomic_bounded_and_sealed() {
+    let contract: serde_json::Value = serde_json::from_str(RECONCILIATION_COMMIT_CONTRACT)
+        .expect("reconciliation-commit contract");
+    assert_eq!(contract["schema"], "radroots.rhi.reconciliation-commit");
+    assert_eq!(contract["contract_version"], 1);
+    assert_eq!(contract["state_schema_version"], 6);
+    assert_eq!(contract["effects"]["source_or_relay"], false);
+    for required in [
+        ".take(plan.requests().len().saturating_add(1))",
+        "validate_exact_lease(transaction, lease)",
+        "reconcile_existing(transaction, &plan, &parts)",
+        "SOURCE_INVENTORY_DIGEST_DOMAIN",
+        "accepted_inventory_sha256",
+        "advance_dirty_generation(",
+        "write_checkpoint(",
+        "committed_cursor_evidence(",
+    ] {
+        assert!(
+            RECONCILIATION_COMMIT.contains(required),
+            "reconciliation commit is missing {required}"
+        );
+    }
+    assert!(!ROOT.contains("pub mod reconciliation_commit"));
+    assert!(!PUBLIC_API.contains("rhi::reconciliation_commit::"));
+}
+
+#[test]
 fn public_errors_are_crate_owned_redacted_and_source_free() {
     let production = SOURCES.join("\n");
     assert!(!production.contains("fn source("));
@@ -234,7 +268,7 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .lines()
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
-    assert_eq!(public_error_count, 19);
+    assert_eq!(public_error_count, 20);
 }
 
 #[test]
@@ -650,6 +684,8 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "[`reconciliation_attempts.v1.json`](contracts/services_hardening/reconciliation_attempts.v1.json)",
         "## Overlap-safe reconciliation replay",
         "[`reconciliation_replay.v1.json`](contracts/services_hardening/reconciliation_replay.v1.json)",
+        "## Atomic reconciliation result commit",
+        "[`reconciliation_commit.v1.json`](contracts/services_hardening/reconciliation_commit.v1.json)",
         "configured queue capacity is enforced beneath a fixed 65,536-job",
         "from an unexpired claimed job lease",
         "can be omitted, duplicated, reordered, or appended beyond",
@@ -659,7 +695,7 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "Only exact-target EOSE before the deadline is complete",
         "4,096 distinct signed-event identities (event ID plus signature) and 8 MiB",
         "observation, and operational retry do not",
-        "schema-v5 bounded reconciliation-job migration",
+        "schema-v6 immutable",
         "one canonical mutation",
         "every distinct valid signed",
         "does not advance reconciliation checkpoints or dirty generation",

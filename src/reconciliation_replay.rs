@@ -158,6 +158,11 @@ impl fmt::Debug for RhiReconciliationSourceCursorEvidence {
 pub struct RhiReconciliationSourceReplayPlan {
     id: RhiReconciliationSourceReplayId,
     request_id: RhiReconciliationSourceRequestId,
+    source_id: Box<str>,
+    trade_id: radroots_event::id::TradeId,
+    required: bool,
+    policy_digest: [u8; 32],
+    selector_digest: [u8; 32],
     prior_cursor: Option<RhiReconciliationSourceCursorEvidence>,
     overlap_seconds: u64,
     since_unix_seconds: u64,
@@ -244,6 +249,11 @@ impl RhiReconciliationSourceReplayPlan {
                 since_unix_seconds,
             ),
             request_id: request.id(),
+            source_id: request.source_id().into(),
+            trade_id: request.trade_id(),
+            required: request.required(),
+            policy_digest: *policy.as_bytes(),
+            selector_digest: *request.selector_digest().as_bytes(),
             prior_cursor,
             overlap_seconds,
             since_unix_seconds,
@@ -436,6 +446,77 @@ impl RhiReconciliationSourceReplay {
                 .as_ref()
                 .map(|evidence| evidence.cursor),
         )
+    }
+
+    pub(crate) fn into_commit_parts(self) -> RhiReconciliationReplayCommitParts {
+        let eligible_cursor = self.eligible_cursor();
+        RhiReconciliationReplayCommitParts {
+            replay_id: self.plan.id,
+            request_id: self.plan.request_id,
+            source_id: self.plan.source_id,
+            trade_id: self.plan.trade_id,
+            required: self.plan.required,
+            policy_digest: self.plan.policy_digest,
+            selector_digest: self.plan.selector_digest,
+            prior_cursor: self.plan.prior_cursor.map(|evidence| evidence.cursor),
+            overlap_seconds: self.plan.overlap_seconds,
+            since_unix_seconds: self.plan.since_unix_seconds,
+            result: self.result,
+            duplicate_observations: self.duplicate_observations,
+            cursor_candidate: self.cursor_candidate,
+            eligible_cursor,
+            first_observed_at: self.first_observed_at,
+            facts: self
+                .facts
+                .into_vec()
+                .into_iter()
+                .map(|fact| RhiReconciliationReplayCommitFact {
+                    record: fact.record,
+                    observed_at: fact.observed_at,
+                })
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        }
+    }
+}
+
+pub(crate) struct RhiReconciliationReplayCommitParts {
+    pub(crate) replay_id: RhiReconciliationSourceReplayId,
+    pub(crate) request_id: RhiReconciliationSourceRequestId,
+    pub(crate) source_id: Box<str>,
+    pub(crate) trade_id: radroots_event::id::TradeId,
+    pub(crate) required: bool,
+    pub(crate) policy_digest: [u8; 32],
+    pub(crate) selector_digest: [u8; 32],
+    pub(crate) prior_cursor: Option<RhiTradeSourceCursor>,
+    pub(crate) overlap_seconds: u64,
+    pub(crate) since_unix_seconds: u64,
+    pub(crate) result: RhiReconciliationSourceResult,
+    pub(crate) duplicate_observations: u32,
+    pub(crate) cursor_candidate: Option<RhiTradeSourceCursor>,
+    pub(crate) eligible_cursor: Option<RhiTradeSourceCursor>,
+    pub(crate) first_observed_at: Option<RhiTradeMutationObservedAtUnixSeconds>,
+    pub(crate) facts: Box<[RhiReconciliationReplayCommitFact]>,
+}
+
+pub(crate) struct RhiReconciliationReplayCommitFact {
+    pub(crate) record: PersistenceRecord,
+    pub(crate) observed_at: RhiTradeMutationObservedAtUnixSeconds,
+}
+
+pub(crate) fn committed_cursor_evidence(
+    source_id: Box<str>,
+    trade_id: radroots_event::id::TradeId,
+    policy_digest: [u8; 32],
+    selector_digest: [u8; 32],
+    cursor: RhiTradeSourceCursor,
+) -> RhiReconciliationSourceCursorEvidence {
+    RhiReconciliationSourceCursorEvidence {
+        source_id,
+        trade_id,
+        policy_digest,
+        selector_digest,
+        cursor,
     }
 }
 

@@ -96,7 +96,7 @@ impl RhiTradeSourceCompletion {
     }
 
     #[must_use]
-    const fn allows_checkpoint(self) -> bool {
+    pub(crate) const fn allows_checkpoint(self) -> bool {
         matches!(self, Self::Complete)
     }
 }
@@ -486,10 +486,10 @@ impl ConfiguredSource {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-struct Checkpoint {
-    cursor: RhiTradeSourceCursor,
-    revision: u64,
-    completed_at_unix_s: u64,
+pub(crate) struct Checkpoint {
+    pub(crate) cursor: RhiTradeSourceCursor,
+    pub(crate) revision: u64,
+    pub(crate) completed_at_unix_s: u64,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -887,7 +887,7 @@ pub(crate) async fn read_dirty(
     }))
 }
 
-async fn read_checkpoint(
+pub(crate) async fn read_checkpoint(
     transaction: &mut ServiceSqliteTransaction<'_>,
     source_id: &str,
     policy: RhiEvidencePolicyDigest,
@@ -914,7 +914,7 @@ async fn read_checkpoint(
     }))
 }
 
-async fn write_checkpoint(
+pub(crate) async fn write_checkpoint(
     transaction: &mut ServiceSqliteTransaction<'_>,
     source_id: &str,
     policy: RhiEvidencePolicyDigest,
@@ -975,7 +975,7 @@ fn compare_candidate(left: &Candidate, right: &Candidate) -> Ordering {
         })
 }
 
-fn compare_cursor(left: RhiTradeSourceCursor, right: RhiTradeSourceCursor) -> Ordering {
+pub(crate) fn compare_cursor(left: RhiTradeSourceCursor, right: RhiTradeSourceCursor) -> Ordering {
     (left.created_at_unix_seconds, left.event_id)
         .cmp(&(right.created_at_unix_seconds, right.event_id))
 }

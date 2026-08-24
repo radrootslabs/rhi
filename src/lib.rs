@@ -9,6 +9,7 @@ mod features;
 mod identity_credential;
 mod identity_envelope;
 mod reconciliation_attempt;
+mod reconciliation_commit;
 mod reconciliation_job;
 mod reconciliation_replay;
 mod runtime_adapters;
@@ -76,6 +77,10 @@ pub use reconciliation_attempt::{
     RhiReconciliationSourceRequestId, RhiReconciliationSourceResult,
     RhiReconciliationSourceSelectorDigest,
 };
+pub use reconciliation_commit::{
+    RHI_RECONCILIATION_COMMIT_CONTRACT_VERSION, RhiReconciliationCommitError,
+    RhiReconciliationCommitErrorKind, RhiReconciliationSourceCommitOutcome,
+};
 pub use reconciliation_job::{
     RHI_RECONCILIATION_JOB_CONTRACT_VERSION, RHI_RECONCILIATION_JOB_MAX_ACTIVE,
     RhiReconciliationJob, RhiReconciliationJobError, RhiReconciliationJobErrorKind,
@@ -120,8 +125,10 @@ pub use state_catalog::{
     RHI_STATE_SCHEMA_VERSION_3_SHA256, RHI_STATE_SCHEMA_VERSION_4_MIGRATION_SHA256,
     RHI_STATE_SCHEMA_VERSION_4_OBJECT_COUNT, RHI_STATE_SCHEMA_VERSION_4_SHA256,
     RHI_STATE_SCHEMA_VERSION_5_MIGRATION_SHA256, RHI_STATE_SCHEMA_VERSION_5_OBJECT_COUNT,
-    RHI_STATE_SCHEMA_VERSION_5_SHA256, RhiStateCatalogError, RhiStateCatalogErrorKind,
-    rhi_migration_catalog, rhi_schema_catalog, validate_rhi_state_catalogs,
+    RHI_STATE_SCHEMA_VERSION_5_SHA256, RHI_STATE_SCHEMA_VERSION_6_MIGRATION_SHA256,
+    RHI_STATE_SCHEMA_VERSION_6_OBJECT_COUNT, RHI_STATE_SCHEMA_VERSION_6_SHA256,
+    RhiStateCatalogError, RhiStateCatalogErrorKind, rhi_migration_catalog, rhi_schema_catalog,
+    validate_rhi_state_catalogs,
 };
 pub use state_config::{
     RHI_CONFIG_BINDING_MAX_GENERATIONS, RhiConfigApplyError, RhiConfigApplyErrorKind,

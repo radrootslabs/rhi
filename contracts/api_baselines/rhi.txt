@@ -149,6 +149,16 @@ pub enum rhi::RhiReconciliationCommandV1
 pub rhi::RhiReconciliationCommandV1::Jobs
 pub rhi::RhiReconciliationCommandV1::Refresh
 pub rhi::RhiReconciliationCommandV1::Status
+pub enum rhi::RhiReconciliationCommitErrorKind
+pub rhi::RhiReconciliationCommitErrorKind::CommitOutcomeUnknown
+pub rhi::RhiReconciliationCommitErrorKind::Conflict
+pub rhi::RhiReconciliationCommitErrorKind::GenerationConflict
+pub rhi::RhiReconciliationCommitErrorKind::InvalidInput
+pub rhi::RhiReconciliationCommitErrorKind::InvalidMode
+pub rhi::RhiReconciliationCommitErrorKind::LeaseLost
+pub rhi::RhiReconciliationCommitErrorKind::Storage
+impl rhi::RhiReconciliationCommitErrorKind
+pub const fn rhi::RhiReconciliationCommitErrorKind::code(self) -> &'static str
 pub enum rhi::RhiReconciliationJobErrorKind
 pub rhi::RhiReconciliationJobErrorKind::CommitOutcomeUnknown
 pub rhi::RhiReconciliationJobErrorKind::DirtyGenerationConflict
@@ -616,6 +626,8 @@ impl core::fmt::Debug for rhi::RhiReconciliationAttemptPlan
 pub fn rhi::RhiReconciliationAttemptPlan::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiReconciliationAttemptRepository<'host>
 impl rhi::RhiReconciliationAttemptRepository<'_>
+pub async fn rhi::RhiReconciliationAttemptRepository<'_>::commit_source_replays<I>(&self, rhi::RhiReconciliationLease, rhi::RhiReconciliationAttemptPlan, I) -> core::result::Result<rhi::RhiReconciliationSourceCommitOutcome, rhi::RhiReconciliationCommitError> where I: core::iter::traits::collect::IntoIterator<Item = rhi::RhiReconciliationSourceReplay>
+impl rhi::RhiReconciliationAttemptRepository<'_>
 pub const fn rhi::RhiReconciliationAttemptRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
 pub const fn rhi::RhiReconciliationAttemptRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
 impl core::fmt::Debug for rhi::RhiReconciliationAttemptRepository<'_>
@@ -627,6 +639,15 @@ pub fn rhi::RhiReconciliationAttemptResults::new<I>(&rhi::RhiReconciliationAttem
 pub fn rhi::RhiReconciliationAttemptResults::results(&self) -> &[rhi::RhiReconciliationSourceResult]
 impl core::fmt::Debug for rhi::RhiReconciliationAttemptResults
 pub fn rhi::RhiReconciliationAttemptResults::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationCommitError
+impl rhi::RhiReconciliationCommitError
+pub const fn rhi::RhiReconciliationCommitError::code(self) -> &'static str
+pub const fn rhi::RhiReconciliationCommitError::kind(self) -> rhi::RhiReconciliationCommitErrorKind
+impl core::error::Error for rhi::RhiReconciliationCommitError
+impl core::fmt::Debug for rhi::RhiReconciliationCommitError
+pub fn rhi::RhiReconciliationCommitError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiReconciliationCommitError
+pub fn rhi::RhiReconciliationCommitError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiReconciliationJob
 impl rhi::RhiReconciliationJob
 pub const fn rhi::RhiReconciliationJob::attempt_count(self) -> u16
@@ -707,6 +728,15 @@ pub struct rhi::RhiReconciliationScheduleOutcome
 impl rhi::RhiReconciliationScheduleOutcome
 pub const fn rhi::RhiReconciliationScheduleOutcome::created(self) -> bool
 pub const fn rhi::RhiReconciliationScheduleOutcome::job(self) -> rhi::RhiReconciliationJob
+pub struct rhi::RhiReconciliationSourceCommitOutcome
+impl rhi::RhiReconciliationSourceCommitOutcome
+pub const fn rhi::RhiReconciliationSourceCommitOutcome::checkpoint_advance_count(&self) -> u32
+pub fn rhi::RhiReconciliationSourceCommitOutcome::committed_cursors(&self) -> &[rhi::RhiReconciliationSourceCursorEvidence]
+pub const fn rhi::RhiReconciliationSourceCommitOutcome::created(&self) -> bool
+pub const fn rhi::RhiReconciliationSourceCommitOutcome::dirty_generation_advanced(&self) -> bool
+pub const fn rhi::RhiReconciliationSourceCommitOutcome::source_result_count(&self) -> u32
+impl core::fmt::Debug for rhi::RhiReconciliationSourceCommitOutcome
+pub fn rhi::RhiReconciliationSourceCommitOutcome::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiReconciliationSourceCursorEvidence
 impl rhi::RhiReconciliationSourceCursorEvidence
 pub const fn rhi::RhiReconciliationSourceCursorEvidence::cursor(&self) -> rhi::RhiTradeSourceCursor
@@ -1158,6 +1188,7 @@ pub const rhi::RHI_MIGRATION_CATALOG_SHA256: [u8; 32]
 pub const rhi::RHI_PROVIDER_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_ATTEMPT_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_ATTEMPT_MAX_SOURCES: usize
+pub const rhi::RHI_RECONCILIATION_COMMIT_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_JOB_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_JOB_MAX_ACTIVE: u32
 pub const rhi::RHI_RECONCILIATION_REPLAY_CONTRACT_VERSION: u32
@@ -1185,6 +1216,9 @@ pub const rhi::RHI_STATE_SCHEMA_VERSION_4_SHA256: [u8; 32]
 pub const rhi::RHI_STATE_SCHEMA_VERSION_5_MIGRATION_SHA256: [u8; 32]
 pub const rhi::RHI_STATE_SCHEMA_VERSION_5_OBJECT_COUNT: u32
 pub const rhi::RHI_STATE_SCHEMA_VERSION_5_SHA256: [u8; 32]
+pub const rhi::RHI_STATE_SCHEMA_VERSION_6_MIGRATION_SHA256: [u8; 32]
+pub const rhi::RHI_STATE_SCHEMA_VERSION_6_OBJECT_COUNT: u32
+pub const rhi::RHI_STATE_SCHEMA_VERSION_6_SHA256: [u8; 32]
 pub const rhi::RHI_STATUS_CONTRACT_VERSION: u32
 pub const rhi::RHI_TRADE_EVENT_EXTRA_FIELD_MAX_COUNT: usize
 pub const rhi::RHI_TRADE_EVENT_EXTRA_JSON_MAX_BYTES: usize

@@ -8,11 +8,12 @@ use radroots_storage::event::SourceGeneration;
 use rhi::{
     RadrootsHostEnvironment, RadrootsPathResolver, RadrootsPlatform,
     RhiReconciliationAttemptErrorKind, RhiReconciliationAttemptPlan,
-    RhiReconciliationAttemptResults, RhiReconciliationJobErrorKind, RhiReconciliationJobPolicy,
-    RhiReconciliationJobState, RhiReconciliationLeaseOwner,
-    RhiReconciliationRetryDelayMilliseconds, RhiReconciliationSourceReplayPlan,
-    RhiReconciliationSourceResult, RhiReconciliationUnixMilliseconds, RhiRuntimeContext,
-    RhiStateMetadata, RhiTradeMutationAdmissionLimits, RhiTradeMutationAuthoredTimePolicy,
+    RhiReconciliationAttemptResults, RhiReconciliationCommitErrorKind,
+    RhiReconciliationJobErrorKind, RhiReconciliationJobPolicy, RhiReconciliationJobState,
+    RhiReconciliationLease, RhiReconciliationLeaseOwner, RhiReconciliationRetryDelayMilliseconds,
+    RhiReconciliationSourceReplayPlan, RhiReconciliationSourceResult,
+    RhiReconciliationUnixMilliseconds, RhiRuntimeContext, RhiStateMetadata,
+    RhiTradeMutationAdmissionLimits, RhiTradeMutationAuthoredTimePolicy,
     RhiTradeMutationObservedAtUnixSeconds, RhiTradeSourceCompletion, TradeId,
     admit_rhi_trade_mutation_event, initialize_rhi_state, open_rhi_state_inspection,
     open_rhi_state_read_write, parse_rhi_cli_v1_from, parse_rhi_config_v1,
@@ -916,7 +917,7 @@ async fn attempt_diagnostics_are_redacted_and_source_free() {
 #[tokio::test]
 async fn replay_plan_binds_overlap_deduplicates_and_retains_first_provenance() {
     let started_ms = 1_784_347_200_000;
-    let (root, runtime, metadata, configuration, host, plan) =
+    let (root, runtime, metadata, configuration, host, _lease, plan) =
         replay_fixture("replay-plan", EXAMPLE, started_ms).await;
     let request = &plan.requests()[0];
     let cursor_plan =
@@ -975,6 +976,178 @@ async fn replay_plan_binds_overlap_deduplicates_and_retains_first_provenance() {
     drop((configuration, metadata, runtime, root));
 }
 
+#[tokio::test]
+async fn source_replay_commit_is_atomic_idempotent_and_mints_durable_cursor_evidence() {
+    let started_ms = 1_784_347_200_000;
+    let (root, runtime, metadata, configuration, host, lease, plan) =
+        replay_fixture("replay-commit", EXAMPLE, started_ms).await;
+    let request = &plan.requests()[0];
+    let wire = replay_wire();
+    let make_replay = || {
+        RhiReconciliationSourceReplayPlan::from_request(&plan, request, &configuration, None)
+            .expect("replay plan")
+            .finish(
+                request,
+                RhiTradeSourceCompletion::Complete,
+                now(started_ms),
+                now(started_ms + 2_000),
+                [admitted_replay(&configuration, &wire, 1_784_347_200)],
+            )
+            .expect("replay")
+    };
+    let first_replay = make_replay();
+    let retry_replay = make_replay();
+    let resume_plan = plan.clone();
+    let attempts = host.repositories().reconciliation_attempts();
+    let committed = attempts
+        .commit_source_replays(lease, plan.clone(), [first_replay])
+        .await
+        .expect("commit");
+    assert!(committed.created());
+    assert_eq!(committed.source_result_count(), 1);
+    assert_eq!(committed.checkpoint_advance_count(), 1);
+    assert!(committed.dirty_generation_advanced());
+    assert_eq!(committed.committed_cursors().len(), 1);
+    assert_eq!(
+        committed.committed_cursors()[0]
+            .cursor()
+            .created_at_unix_seconds(),
+        1_784_347_200
+    );
+    let resumed = RhiReconciliationSourceReplayPlan::from_request(
+        &resume_plan,
+        &resume_plan.requests()[0],
+        &configuration,
+        Some(committed.committed_cursors()[0].clone()),
+    )
+    .expect("committed cursor resumes exact scope");
+    assert_eq!(resumed.since_unix_seconds(), 1_784_346_900);
+
+    let reconciled = attempts
+        .commit_source_replays(lease, plan, [retry_replay])
+        .await
+        .expect("idempotent reconcile");
+    assert!(!reconciled.created());
+    assert_eq!(reconciled.source_result_count(), 1);
+    assert_eq!(reconciled.checkpoint_advance_count(), 1);
+    assert!(!reconciled.dirty_generation_advanced());
+    host.close().await.expect("close");
+
+    let options = SqliteConnectOptions::new()
+        .filename(runtime.artifacts().state_database())
+        .create_if_missing(false)
+        .foreign_keys(true);
+    let mut connection = SqliteConnection::connect_with(&options)
+        .await
+        .expect("offline fixture connection");
+    let attempt_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM evidence_reconciliations")
+        .fetch_one(&mut connection)
+        .await
+        .expect("attempt count");
+    let source_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM evidence_reconciliation_sources")
+            .fetch_one(&mut connection)
+            .await
+            .expect("source count");
+    let checkpoint_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM relay_checkpoints")
+        .fetch_one(&mut connection)
+        .await
+        .expect("checkpoint count");
+    let generation: i64 = sqlx::query_scalar("SELECT generation FROM trade_dirty_generations")
+        .fetch_one(&mut connection)
+        .await
+        .expect("generation");
+    assert_eq!(
+        (attempt_count, source_count, checkpoint_count, generation),
+        (1, 1, 1, 2)
+    );
+    connection.close().await.expect("fixture close");
+    drop((configuration, metadata, runtime, root));
+}
+
+#[tokio::test]
+async fn incomplete_results_never_advance_and_stale_leases_fail_closed() {
+    let started_ms = 1_784_347_200_000;
+    let (root, runtime, metadata, configuration, host, lease, plan) =
+        replay_fixture("replay-incomplete", EXAMPLE, started_ms).await;
+    let request = &plan.requests()[0];
+    let wire = replay_wire();
+    let incomplete =
+        RhiReconciliationSourceReplayPlan::from_request(&plan, request, &configuration, None)
+            .expect("replay plan")
+            .finish(
+                request,
+                RhiTradeSourceCompletion::IncompleteUnavailable,
+                now(started_ms),
+                now(started_ms + 2_000),
+                [admitted_replay(&configuration, &wire, 1_784_347_200)],
+            )
+            .expect("incomplete replay");
+    let committed = host
+        .repositories()
+        .reconciliation_attempts()
+        .commit_source_replays(lease, plan, [incomplete])
+        .await
+        .expect("incomplete commit");
+    assert_eq!(committed.checkpoint_advance_count(), 0);
+    assert!(committed.committed_cursors().is_empty());
+    assert!(committed.dirty_generation_advanced());
+    host.close().await.expect("close");
+    drop((configuration, metadata, runtime, root));
+
+    let started_ms = 1_784_347_300_000;
+    let (root, runtime, metadata, configuration, host, lease, plan) =
+        replay_fixture("replay-stale-lease", EXAMPLE, started_ms).await;
+    let request = &plan.requests()[0];
+    let replay =
+        RhiReconciliationSourceReplayPlan::from_request(&plan, request, &configuration, None)
+            .expect("replay plan")
+            .finish(
+                request,
+                RhiTradeSourceCompletion::Complete,
+                now(started_ms),
+                now(started_ms + 2_000),
+                [],
+            )
+            .expect("empty replay");
+    host.repositories()
+        .reconciliation_jobs()
+        .renew(lease, now(started_ms + 20_000))
+        .await
+        .expect("renewed lease");
+    let error = host
+        .repositories()
+        .reconciliation_attempts()
+        .commit_source_replays(lease, plan, [replay])
+        .await
+        .expect_err("stale lease");
+    assert_eq!(error.kind(), RhiReconciliationCommitErrorKind::LeaseLost);
+    assert!(Error::source(&error).is_none());
+    host.close().await.expect("close");
+    let options = SqliteConnectOptions::new()
+        .filename(runtime.artifacts().state_database())
+        .create_if_missing(false)
+        .foreign_keys(true);
+    let mut connection = SqliteConnection::connect_with(&options)
+        .await
+        .expect("offline fixture connection");
+    let attempt_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM evidence_reconciliations")
+        .fetch_one(&mut connection)
+        .await
+        .expect("attempt count");
+    let checkpoint_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM relay_checkpoints")
+        .fetch_one(&mut connection)
+        .await
+        .expect("checkpoint count");
+    let generation: i64 = sqlx::query_scalar("SELECT generation FROM trade_dirty_generations")
+        .fetch_one(&mut connection)
+        .await
+        .expect("generation");
+    assert_eq!((attempt_count, checkpoint_count, generation), (0, 0, 1));
+    connection.close().await.expect("fixture close");
+    drop((configuration, metadata, runtime, root));
+}
+
 async fn attempt_fixture(
     instance: &str,
 ) -> (
@@ -1025,6 +1198,7 @@ async fn replay_fixture(
     RhiStateMetadata,
     rhi::RhiConfigDocumentV1,
     rhi::RhiStateHost,
+    RhiReconciliationLease,
     RhiReconciliationAttemptPlan,
 ) {
     let root = tempfile::tempdir().expect("root");
@@ -1054,7 +1228,7 @@ async fn replay_fixture(
         .expect("job");
     let plan = RhiReconciliationAttemptPlan::from_claim(lease, &configuration, now(started_ms))
         .expect("plan");
-    (root, runtime, metadata, configuration, host, plan)
+    (root, runtime, metadata, configuration, host, lease, plan)
 }
 
 fn replay_wire() -> Vec<u8> {

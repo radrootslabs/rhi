@@ -467,6 +467,12 @@ impl<'host> RhiReconciliationJobRepository<'host> {
     }
 }
 
+impl<'host> RhiReconciliationAttemptRepository<'host> {
+    pub(crate) const fn host(&self) -> &'host RhiStateHost {
+        self.host
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

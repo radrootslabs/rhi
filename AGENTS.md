@@ -217,8 +217,9 @@
 - Create-new state begins at the shared schema-v1 baseline and applies the
   governed RHI schema-v2 configuration-binding migration, schema-v3
   immutable trade-evidence migration, schema-v4 source-checkpoint and
-  dirty-generation migration, and schema-v5 bounded reconciliation-job
-  migration. Retain at most 1,024 consecutive
+  dirty-generation migration, schema-v5 bounded reconciliation-job migration,
+  and schema-v6 immutable reconciliation-attempt/source-result migration.
+  Retain at most 1,024 consecutive
   immutable configuration generations containing only normalized
   config/evidence-policy digests, public identity, exact contract versions,
   injected apply time, and bounded build identity. Persist each canonical
@@ -234,6 +235,13 @@
   use intent-open, discover source generation under retained authority, and
   match the latest durable binding; configuration apply is an exclusive offline
   operation.
+- Commit one exact reconciliation-attempt replay inventory only through the
+  typed attempt repository. Revalidate the exact live lease, dirty generation,
+  evidence policy, and every scoped prior checkpoint before mutation; persist
+  evidence, immutable results, the exact ordered fact/provenance inventory
+  digest, at most one dirty advance, and eligible checkpoints atomically.
+  Incomplete or unsupported results never advance, and committed cursor
+  evidence is minted only after durable commit confirmation.
 - Never hold a database transaction while waiting for a source, relay, DNS,
   identity provider, clock, entropy, signing, reduction, or backoff.
 - Never prune active jobs/outboxes, migration history, current identity/policy

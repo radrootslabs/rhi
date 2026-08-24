@@ -121,6 +121,21 @@ impl RhiTradeSourceObservation {
             observed_at: event.observed_at_unix_seconds(),
         }
     }
+
+    pub(crate) fn from_persistence_parts(
+        source_id: Box<str>,
+        policy: RhiEvidencePolicyDigest,
+        record: &PersistenceRecord,
+        observed_at: RhiTradeMutationObservedAtUnixSeconds,
+    ) -> Self {
+        Self {
+            source_id,
+            policy,
+            event_id: record.event_id,
+            event_signature: record.event_signature,
+            observed_at,
+        }
+    }
 }
 
 impl fmt::Debug for RhiTradeSourceObservation {
@@ -290,6 +305,7 @@ impl RhiStateRepositories<'_> {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct PersistenceRecord {
     pub(crate) mutation_id: [u8; 32],
     pub(crate) trade_id: [u8; 16],

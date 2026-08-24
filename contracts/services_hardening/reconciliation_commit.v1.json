@@ -1,0 +1,101 @@
+{
+  "schema": "radroots.rhi.reconciliation-commit",
+  "schema_version": 1,
+  "contract_version": 1,
+  "state_schema_version": 6,
+  "authority": "sealed_reconciliation_attempt_repository",
+  "input": {
+    "lease": "exact_live_compare_and_swap_lease",
+    "attempt": "exact_claim_derived_attempt_plan",
+    "source_inventory": "exact_canonical_request_order_bounded_to_configured_count_plus_one",
+    "events": "signature_verified_admitted_replay_facts_only",
+    "time": "injected_source_result_milliseconds_only"
+  },
+  "transaction": {
+    "mode": "one_short_sqlx_transaction",
+    "fences_before_mutation": [
+      "exact_live_lease_row",
+      "exact_trade_dirty_generation",
+      "exact_evidence_policy_digest",
+      "exact_per_source_prior_checkpoint"
+    ],
+    "atomic_writes": [
+      "canonical_mutations",
+      "signed_events",
+      "source_observations",
+      "immutable_attempt",
+      "immutable_source_results",
+      "exact_source_inventory_digests",
+      "at_most_one_dirty_generation_advance",
+      "eligible_source_checkpoints"
+    ],
+    "source_or_network_wait": false
+  },
+  "checkpoint": {
+    "scope": [
+      "source_id",
+      "trade_id",
+      "evidence_policy_digest",
+      "selector_digest"
+    ],
+    "advance_only_when": "completion_is_complete_and_candidate_is_strictly_newer_than_prior",
+    "forbidden_completion_classes": [
+      "incomplete_timeout",
+      "incomplete_unavailable",
+      "incomplete_resource_limit",
+      "incomplete_unknown",
+      "unsupported"
+    ],
+    "public_evidence": "sealed_and_minted_only_after_durable_commit_confirmation"
+  },
+  "dirty_generation": {
+    "advance_only_for": "newly_inserted_canonical_mutation_or_signed_event",
+    "advance_count_maximum_per_attempt": 1,
+    "observation_only_or_exact_replay": "no_advance"
+  },
+  "idempotency": {
+    "key": "attempt_id",
+    "source_inventory_identity": "domain_separated_sha256_over_exact_ordered_persisted_facts_and_provenance",
+    "exact_committed_inventory": "reconciled_as_created_false",
+    "mismatch": "conflict",
+    "lost_success_retry": "checked_before_live_lease_and_generation_fences"
+  },
+  "schema_objects": {
+    "tables": [
+      "evidence_reconciliations",
+      "evidence_reconciliation_sources"
+    ],
+    "immutability": "no_update_and_no_delete_triggers",
+    "source_count_maximum": 16
+  },
+  "diagnostics": "crate_owned_source_free_redacted",
+  "effects": {
+    "sqlite": true,
+    "filesystem": false,
+    "source_or_relay": false,
+    "network": false,
+    "task_spawn": false,
+    "ambient_clock": false,
+    "ambient_entropy": false
+  },
+  "forbidden": [
+    "caller_forged_cursor_evidence",
+    "raw_or_unverified_event_persistence",
+    "partial_attempt_commit",
+    "cursor_advance_for_incomplete_or_unsupported_result",
+    "cursor_advance_before_evidence_commit",
+    "dirty_advance_for_observation_only",
+    "stale_lease_commit",
+    "stale_generation_commit",
+    "stale_checkpoint_commit",
+    "unbounded_result_iterator",
+    "raw_sqlx_authority_escape"
+  ],
+  "deferred": [
+    "evidence_manifest",
+    "lineage_reducer",
+    "attestation",
+    "publication",
+    "job_finalization"
+  ]
+}

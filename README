@@ -168,8 +168,9 @@ their later ordered checkpoints. The exact machine contract is
 sealed prior-cursor evidence, configured overlap, and an inclusive query start
 under a domain-separated identity. The evidence is sealed to the source,
 trade, evidence-policy digest, and selector digest, so callers cannot forge or
-relabel progress. Step 189 provides no evidence-minting path: Step 190 alone
-may construct it after the replay and cursor commit atomically. Initial
+relabel progress. This pure replay model provides no evidence-minting path; the
+atomic commit boundary below alone constructs it after replay and cursor commit.
+Initial
 queries use the configured lookback; resumed queries subtract the configured
 overlap from the prior authored-time
 cursor so equal-timestamp events remain discoverable. A cursor becomes
@@ -184,9 +185,33 @@ conflicting mutation or signed-event identity reuse. Result counts and bytes
 are derived from the distinct canonical inventory rather than caller claims.
 It performs no SQLite, source, relay, network, filesystem, task, clock, or
 entropy operation. Durable scope revalidation, result/completion persistence,
-and checkpoint advancement remain Step 190 authority. The exact machine
-contract is
+and checkpoint advancement belong to the atomic commit boundary below. The
+exact machine contract is
 [`reconciliation_replay.v1.json`](contracts/services_hardening/reconciliation_replay.v1.json).
+
+## Atomic reconciliation result commit
+
+`RhiReconciliationAttemptRepository::commit_source_replays` accepts exactly one
+bounded replay result for every request in a claim-derived attempt. One short
+SQLx transaction first revalidates the exact live lease, trade dirty generation,
+evidence-policy digest, and each source-scoped prior checkpoint. It then commits
+canonical mutations, signed events, first-source observations, the immutable
+attempt and source-result inventory, a domain-separated digest of every exact
+ordered persisted fact and provenance value, at most one dirty-generation
+advance, and only eligible cursor checkpoints as one atomic unit. No source,
+relay, network, clock, entropy, or task operation occurs inside that
+transaction.
+
+Only exact `complete` evidence with a strictly newer candidate advances a
+checkpoint. Timeout, unavailable, resource-limited, unknown, and unsupported
+results remain durable but never become progress. Newly inserted canonical
+mutation or signed-event evidence advances the dirty generation once for the
+whole attempt; observation-only replay does not. Exact retry of an already
+committed attempt reconciles idempotently before stale lease or generation
+fences, while any inventory mismatch fails closed. Sealed source/trade/policy/
+selector cursor evidence is minted only after durable commit confirmation. The
+exact machine contract is
+[`reconciliation_commit.v1.json`](contracts/services_hardening/reconciliation_commit.v1.json).
 
 ## Existing-state runtime foundation
 
@@ -285,13 +310,16 @@ Path resolution performs no directory creation or filesystem I/O.
 RHI owns one `state.sqlite` per service instance. Create-new initialization
 starts from the shared schema-v1 baseline and immediately applies the pinned
 schema-v2 configuration migration, schema-v3 immutable trade-evidence
-migration, schema-v4 source-checkpoint and dirty-generation migration, and
-schema-v5 bounded reconciliation-job migration.
-Version five contains the six shared immutable service-metadata and
+migration, schema-v4 source-checkpoint and dirty-generation migration,
+schema-v5 bounded reconciliation-job migration, and schema-v6 immutable
+reconciliation-result migration.
+Version six contains the six shared immutable service-metadata and
 migration-ledger objects, the bounded append-only `rhi_config_bindings` table,
 separate immutable tables for canonical mutations, signed Nostr events, and
 accepted source observations, and generation-guarded relay checkpoints and
 per-trade dirty generations with their enforcement triggers and indexes.
+It also retains immutable attempt and source-result rows under no-update and
+no-delete triggers.
 Exact literal SHA-256 values bind both migrations, every schema snapshot, and
 the schema catalog. RHI validates every identity before it can become database
 authority.
@@ -308,9 +336,8 @@ atomically, treats exact replay idempotently, and explicitly closes state.
 Catalog construction itself performs no filesystem or SQLite I/O and owns no
 pool, connection, transaction, query, or migration executor. The sealed state
 host alone executes the governed migrations and typed state transactions.
-Durable source-attempt/completion inventory, reconciliation jobs, reports,
-attestations, and publication state remain reserved for their later owning
-checkpoints.
+Evidence manifests, reports, attestations, publication state, and final job
+completion remain reserved for their later owning checkpoints.
 
 The sealed RHI state-host lifecycle now reserves and initializes a missing
 canonical database only through an explicit create-new operation. Ordinary
