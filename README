@@ -542,8 +542,13 @@ identity init, status, and public export; service status and metrics snapshot;
 reconciliation status, jobs, and refresh; source listing; trade projection and
 report queries; publication backlog, targets, and retry; desired-presence
 inspection, render, and refresh; and doctor. The parser performs no command
-execution. Later ordered steps bind exact command inputs and each offline,
-daemon, or live Unix-admin authority.
+execution. The admitted invocation projects once into a sealed execution plan:
+`run` selects daemon authority; config initialization, validation, schema, and
+apply, exclusive state maintenance, initial identity provisioning, and doctor
+select offline authority; and the remaining twenty commands map one-to-one to
+the final twenty permissioned Unix-admin routes. No live command carries an
+offline or direct-SQLite fallback. Later ordered steps bind each command's exact
+input and execute the already-selected authority without reparsing arguments.
 
 Ordinary `run` accepts no identity-generation, identity-path, log-path,
 database-path, worker, environment-file, or arbitrary path-leaf flag. Identity

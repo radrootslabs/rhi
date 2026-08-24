@@ -114,6 +114,131 @@ pub enum RhiPresenceCommandV1 {
     Refresh,
 }
 
+/// The only three process authorities selected by the hardened CLI.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RhiCliPrimaryAuthorityV1 {
+    Daemon,
+    Offline,
+    LiveUnixAdmin,
+}
+
+/// The closed offline operation classes selected before any state access.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RhiCliOfflineOperationV1 {
+    Config,
+    StateExclusive,
+    IdentityExclusive,
+    Doctor,
+}
+
+/// The closed Unix-admin operations reachable from the command inventory.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RhiCliAdminOperationV1 {
+    Status,
+    EffectiveConfig,
+    IdentityStatus,
+    IdentityPublic,
+    StateStatus,
+    StateBackup,
+    MetricsSnapshot,
+    ReconciliationStatus,
+    ReconciliationJobs,
+    ReconciliationRefresh,
+    Sources,
+    TradeProjection,
+    TradeReportCurrent,
+    TradeReports,
+    PublicationBacklog,
+    PublicationTargets,
+    PublicationRetry,
+    PresenceDesired,
+    PresenceRender,
+    PresenceRefresh,
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+impl RhiCliAdminOperationV1 {
+    /// Returns the exact native Unix-admin route selected by this operation.
+    #[must_use]
+    pub const fn route(self) -> crate::RhiAdminRoute {
+        match self {
+            Self::Status => crate::RhiAdminRoute::Status,
+            Self::EffectiveConfig => crate::RhiAdminRoute::EffectiveConfig,
+            Self::IdentityStatus => crate::RhiAdminRoute::IdentityStatus,
+            Self::IdentityPublic => crate::RhiAdminRoute::IdentityPublic,
+            Self::StateStatus => crate::RhiAdminRoute::StateStatus,
+            Self::StateBackup => crate::RhiAdminRoute::StateBackup,
+            Self::MetricsSnapshot => crate::RhiAdminRoute::MetricsSnapshot,
+            Self::ReconciliationStatus => crate::RhiAdminRoute::ReconciliationStatus,
+            Self::ReconciliationJobs => crate::RhiAdminRoute::ReconciliationJobs,
+            Self::ReconciliationRefresh => crate::RhiAdminRoute::ReconciliationRefresh,
+            Self::Sources => crate::RhiAdminRoute::Sources,
+            Self::TradeProjection => crate::RhiAdminRoute::TradeProjection,
+            Self::TradeReportCurrent => crate::RhiAdminRoute::TradeReportCurrent,
+            Self::TradeReports => crate::RhiAdminRoute::TradeReports,
+            Self::PublicationBacklog => crate::RhiAdminRoute::PublicationBacklog,
+            Self::PublicationTargets => crate::RhiAdminRoute::PublicationTargets,
+            Self::PublicationRetry => crate::RhiAdminRoute::PublicationRetry,
+            Self::PresenceDesired => crate::RhiAdminRoute::PresenceDesired,
+            Self::PresenceRender => crate::RhiAdminRoute::PresenceRender,
+            Self::PresenceRefresh => crate::RhiAdminRoute::PresenceRefresh,
+        }
+    }
+}
+
+/// A sealed, side-effect-free execution plan for one admitted CLI invocation.
+///
+/// Construction is owned by [`plan_rhi_cli_v1`]. Live commands carry only a
+/// governed Unix-admin operation and never receive an offline or direct-SQLite
+/// fallback.
+///
+/// ```compile_fail
+/// use rhi::{RhiCliExecutionPlanV1, RhiCliPrimaryAuthorityV1};
+///
+/// let _ = RhiCliExecutionPlanV1 {
+///     primary_authority: RhiCliPrimaryAuthorityV1::Offline,
+///     offline_operation: None,
+///     admin_operation: None,
+/// };
+/// ```
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct RhiCliExecutionPlanV1 {
+    primary_authority: RhiCliPrimaryAuthorityV1,
+    offline_operation: Option<RhiCliOfflineOperationV1>,
+    admin_operation: Option<RhiCliAdminOperationV1>,
+}
+
+impl RhiCliExecutionPlanV1 {
+    /// Returns the sole selected process authority.
+    #[must_use]
+    pub const fn primary_authority(&self) -> RhiCliPrimaryAuthorityV1 {
+        self.primary_authority
+    }
+
+    /// Returns the bounded offline operation, when the plan admits one.
+    #[must_use]
+    pub const fn offline_operation(&self) -> Option<RhiCliOfflineOperationV1> {
+        self.offline_operation
+    }
+
+    /// Returns the bounded Unix-admin operation, when the plan admits one.
+    #[must_use]
+    pub const fn admin_operation(&self) -> Option<RhiCliAdminOperationV1> {
+        self.admin_operation
+    }
+}
+
+impl fmt::Debug for RhiCliExecutionPlanV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RhiCliExecutionPlanV1")
+            .field("primary_authority", &self.primary_authority)
+            .field("offline_operation", &self.offline_operation)
+            .field("admin_operation", &self.admin_operation)
+            .finish()
+    }
+}
+
 /// Stable source-free classification for command-line admission failures.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RhiCliV1ErrorKind {
@@ -276,6 +401,117 @@ where
         output_mode: parsed.output.into(),
         command: parsed.command.into(),
     })
+}
+
+/// Selects the sole permitted execution authority for an admitted command.
+///
+/// This function performs no filesystem, database, socket, environment, task,
+/// or process work. Later executors consume the plan without reparsing process
+/// arguments. No live command receives direct SQLite or offline fallback
+/// authority.
+#[must_use]
+pub const fn plan_rhi_cli_v1(invocation: &RhiCliInvocationV1) -> RhiCliExecutionPlanV1 {
+    match invocation.command {
+        RhiCommandV1::Run => daemon_plan(),
+        RhiCommandV1::Config(RhiConfigCommandV1::Init)
+        | RhiCommandV1::Config(RhiConfigCommandV1::Validate)
+        | RhiCommandV1::Config(RhiConfigCommandV1::Schema)
+        | RhiCommandV1::Config(RhiConfigCommandV1::Apply) => {
+            offline_plan(RhiCliOfflineOperationV1::Config)
+        }
+        RhiCommandV1::Config(RhiConfigCommandV1::Show) => {
+            admin_plan(RhiCliAdminOperationV1::EffectiveConfig)
+        }
+        RhiCommandV1::State(RhiStateCommandV1::Init)
+        | RhiCommandV1::State(RhiStateCommandV1::Restore)
+        | RhiCommandV1::State(RhiStateCommandV1::Verify)
+        | RhiCommandV1::State(RhiStateCommandV1::Migrate) => {
+            offline_plan(RhiCliOfflineOperationV1::StateExclusive)
+        }
+        RhiCommandV1::State(RhiStateCommandV1::Status) => {
+            admin_plan(RhiCliAdminOperationV1::StateStatus)
+        }
+        RhiCommandV1::State(RhiStateCommandV1::Backup) => {
+            admin_plan(RhiCliAdminOperationV1::StateBackup)
+        }
+        RhiCommandV1::Identity(RhiIdentityCommandV1::Init) => {
+            offline_plan(RhiCliOfflineOperationV1::IdentityExclusive)
+        }
+        RhiCommandV1::Identity(RhiIdentityCommandV1::Status) => {
+            admin_plan(RhiCliAdminOperationV1::IdentityStatus)
+        }
+        RhiCommandV1::Identity(RhiIdentityCommandV1::ExportPublic) => {
+            admin_plan(RhiCliAdminOperationV1::IdentityPublic)
+        }
+        RhiCommandV1::Status => admin_plan(RhiCliAdminOperationV1::Status),
+        RhiCommandV1::Metrics(RhiMetricsCommandV1::Snapshot) => {
+            admin_plan(RhiCliAdminOperationV1::MetricsSnapshot)
+        }
+        RhiCommandV1::Reconciliation(RhiReconciliationCommandV1::Status) => {
+            admin_plan(RhiCliAdminOperationV1::ReconciliationStatus)
+        }
+        RhiCommandV1::Reconciliation(RhiReconciliationCommandV1::Jobs) => {
+            admin_plan(RhiCliAdminOperationV1::ReconciliationJobs)
+        }
+        RhiCommandV1::Reconciliation(RhiReconciliationCommandV1::Refresh) => {
+            admin_plan(RhiCliAdminOperationV1::ReconciliationRefresh)
+        }
+        RhiCommandV1::Sources(RhiSourcesCommandV1::List) => {
+            admin_plan(RhiCliAdminOperationV1::Sources)
+        }
+        RhiCommandV1::Trade(RhiTradeCommandV1::Projection) => {
+            admin_plan(RhiCliAdminOperationV1::TradeProjection)
+        }
+        RhiCommandV1::Trade(RhiTradeCommandV1::ReportCurrent) => {
+            admin_plan(RhiCliAdminOperationV1::TradeReportCurrent)
+        }
+        RhiCommandV1::Trade(RhiTradeCommandV1::Reports) => {
+            admin_plan(RhiCliAdminOperationV1::TradeReports)
+        }
+        RhiCommandV1::Publication(RhiPublicationCommandV1::Backlog) => {
+            admin_plan(RhiCliAdminOperationV1::PublicationBacklog)
+        }
+        RhiCommandV1::Publication(RhiPublicationCommandV1::Targets) => {
+            admin_plan(RhiCliAdminOperationV1::PublicationTargets)
+        }
+        RhiCommandV1::Publication(RhiPublicationCommandV1::Retry) => {
+            admin_plan(RhiCliAdminOperationV1::PublicationRetry)
+        }
+        RhiCommandV1::Presence(RhiPresenceCommandV1::Desired) => {
+            admin_plan(RhiCliAdminOperationV1::PresenceDesired)
+        }
+        RhiCommandV1::Presence(RhiPresenceCommandV1::Render) => {
+            admin_plan(RhiCliAdminOperationV1::PresenceRender)
+        }
+        RhiCommandV1::Presence(RhiPresenceCommandV1::Refresh) => {
+            admin_plan(RhiCliAdminOperationV1::PresenceRefresh)
+        }
+        RhiCommandV1::Doctor => offline_plan(RhiCliOfflineOperationV1::Doctor),
+    }
+}
+
+const fn daemon_plan() -> RhiCliExecutionPlanV1 {
+    RhiCliExecutionPlanV1 {
+        primary_authority: RhiCliPrimaryAuthorityV1::Daemon,
+        offline_operation: None,
+        admin_operation: None,
+    }
+}
+
+const fn offline_plan(operation: RhiCliOfflineOperationV1) -> RhiCliExecutionPlanV1 {
+    RhiCliExecutionPlanV1 {
+        primary_authority: RhiCliPrimaryAuthorityV1::Offline,
+        offline_operation: Some(operation),
+        admin_operation: None,
+    }
+}
+
+const fn admin_plan(operation: RhiCliAdminOperationV1) -> RhiCliExecutionPlanV1 {
+    RhiCliExecutionPlanV1 {
+        primary_authority: RhiCliPrimaryAuthorityV1::LiveUnixAdmin,
+        offline_operation: None,
+        admin_operation: Some(operation),
+    }
 }
 
 fn validate_bootstrap_paths(

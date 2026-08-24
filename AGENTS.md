@@ -413,6 +413,14 @@
   use the exact lowercase-hex trade-ID type. Identity rotation remains offline
   create-new plus validated configuration apply and restart; Unix peer
   admission grants no direct SQLite or identity-provider mutation authority.
+- Step 210 freezes the one-parse CLI execution split. Every admitted command
+  selects exactly daemon, offline, or permissioned Unix-admin authority. All
+  twenty live commands map one-to-one to the final twenty-route inventory and
+  carry no offline or direct-SQLite fallback. Config initialization,
+  validation, schema, and apply; exclusive state maintenance; initial identity
+  provisioning; and doctor remain offline. Do not reparse process arguments or
+  let a live CLI plan obtain SQLite, identity-provider, source, relay, task,
+  signal, or runtime authority.
 - Optional TCP operations expose only cached `/livez`, `/readyz`, and
   `/metrics`; requests must not perform SQLite, source, relay, DNS, identity,
   evidence, or credential probes.

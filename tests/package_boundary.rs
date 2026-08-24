@@ -242,6 +242,11 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "RhiAdminServer",
         "RhiBoundAdminServer",
         "build_rhi_admin_router",
+        "RhiCliPrimaryAuthorityV1",
+        "RhiCliOfflineOperationV1",
+        "RhiCliAdminOperationV1",
+        "RhiCliExecutionPlanV1",
+        "plan_rhi_cli_v1",
         "RhiPublicationErrorKind",
         "RhiPublicationMode",
         "RhiPublicationRetryPolicy",
@@ -356,6 +361,10 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
     assert!(PUBLIC_API.contains("pub enum rhi::RhiPresenceDesiredErrorKind"));
     assert!(PUBLIC_API.contains("pub struct rhi::RhiSignedPresenceDocument"));
     assert!(PUBLIC_API.contains("pub enum rhi::RhiPresencePublicationErrorKind"));
+    assert!(PUBLIC_API.contains("pub struct rhi::RhiCliExecutionPlanV1"));
+    assert!(PUBLIC_API.contains(
+        "pub const fn rhi::plan_rhi_cli_v1(&rhi::RhiCliInvocationV1) -> rhi::RhiCliExecutionPlanV1"
+    ));
     assert!(!PUBLIC_API.contains("rhi::adapters::"));
     assert!(!PUBLIC_API.contains("rhi::features::"));
     assert!(!PUBLIC_API.contains("rhi::runtime_adapters::"));
@@ -365,6 +374,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
     assert!(!PUBLIC_API.contains("rhi::publication_submission::"));
     assert!(!PUBLIC_API.contains("rhi::presence_publication::"));
     assert!(!PUBLIC_API.contains("rhi::admin_v1::"));
+    assert!(!PUBLIC_API.contains("rhi::cli_v1::"));
 }
 
 #[test]

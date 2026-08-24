@@ -46,10 +46,11 @@ pub use admin_v1::{
     RhiBoundAdminServer, build_rhi_admin_router,
 };
 pub use cli_v1::{
-    RhiBootstrapProfileV1, RhiCliInvocationV1, RhiCliOutputModeV1, RhiCliV1Error,
+    RhiBootstrapProfileV1, RhiCliAdminOperationV1, RhiCliExecutionPlanV1, RhiCliInvocationV1,
+    RhiCliOfflineOperationV1, RhiCliOutputModeV1, RhiCliPrimaryAuthorityV1, RhiCliV1Error,
     RhiCliV1ErrorKind, RhiCommandV1, RhiConfigCommandV1, RhiIdentityCommandV1, RhiMetricsCommandV1,
     RhiPresenceCommandV1, RhiPublicationCommandV1, RhiReconciliationCommandV1, RhiSourcesCommandV1,
-    RhiStateCommandV1, RhiTradeCommandV1, parse_rhi_cli_v1_from,
+    RhiStateCommandV1, RhiTradeCommandV1, parse_rhi_cli_v1_from, plan_rhi_cli_v1,
 };
 pub use config_v1::{
     RHI_CONFIG_DOCUMENT_MAX_UTF8_BYTES, RHI_CONFIG_EFFECTIVE_MAX_UTF8_BYTES, RHI_CONFIG_SCHEMA,

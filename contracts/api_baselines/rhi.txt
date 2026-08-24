@@ -83,9 +83,41 @@ pub enum rhi::RhiBootstrapProfileV1
 pub rhi::RhiBootstrapProfileV1::Interactive
 pub rhi::RhiBootstrapProfileV1::RepoLocal
 pub rhi::RhiBootstrapProfileV1::ServiceHost
+pub enum rhi::RhiCliAdminOperationV1
+pub rhi::RhiCliAdminOperationV1::EffectiveConfig
+pub rhi::RhiCliAdminOperationV1::IdentityPublic
+pub rhi::RhiCliAdminOperationV1::IdentityStatus
+pub rhi::RhiCliAdminOperationV1::MetricsSnapshot
+pub rhi::RhiCliAdminOperationV1::PresenceDesired
+pub rhi::RhiCliAdminOperationV1::PresenceRefresh
+pub rhi::RhiCliAdminOperationV1::PresenceRender
+pub rhi::RhiCliAdminOperationV1::PublicationBacklog
+pub rhi::RhiCliAdminOperationV1::PublicationRetry
+pub rhi::RhiCliAdminOperationV1::PublicationTargets
+pub rhi::RhiCliAdminOperationV1::ReconciliationJobs
+pub rhi::RhiCliAdminOperationV1::ReconciliationRefresh
+pub rhi::RhiCliAdminOperationV1::ReconciliationStatus
+pub rhi::RhiCliAdminOperationV1::Sources
+pub rhi::RhiCliAdminOperationV1::StateBackup
+pub rhi::RhiCliAdminOperationV1::StateStatus
+pub rhi::RhiCliAdminOperationV1::Status
+pub rhi::RhiCliAdminOperationV1::TradeProjection
+pub rhi::RhiCliAdminOperationV1::TradeReportCurrent
+pub rhi::RhiCliAdminOperationV1::TradeReports
+impl rhi::RhiCliAdminOperationV1
+pub const fn rhi::RhiCliAdminOperationV1::route(self) -> rhi::RhiAdminRoute
+pub enum rhi::RhiCliOfflineOperationV1
+pub rhi::RhiCliOfflineOperationV1::Config
+pub rhi::RhiCliOfflineOperationV1::Doctor
+pub rhi::RhiCliOfflineOperationV1::IdentityExclusive
+pub rhi::RhiCliOfflineOperationV1::StateExclusive
 pub enum rhi::RhiCliOutputModeV1
 pub rhi::RhiCliOutputModeV1::Human
 pub rhi::RhiCliOutputModeV1::Json
+pub enum rhi::RhiCliPrimaryAuthorityV1
+pub rhi::RhiCliPrimaryAuthorityV1::Daemon
+pub rhi::RhiCliPrimaryAuthorityV1::LiveUnixAdmin
+pub rhi::RhiCliPrimaryAuthorityV1::Offline
 pub enum rhi::RhiCliV1ErrorKind
 pub rhi::RhiCliV1ErrorKind::InvalidArguments
 pub rhi::RhiCliV1ErrorKind::InvalidConfigPath
@@ -735,6 +767,13 @@ impl rhi::RhiBoundAdminServer
 pub async fn rhi::RhiBoundAdminServer::serve(self, rhi::RhiAdminCancellationToken) -> core::result::Result<(), rhi::RhiAdminServerError>
 impl core::fmt::Debug for rhi::RhiBoundAdminServer
 pub fn rhi::RhiBoundAdminServer::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiCliExecutionPlanV1
+impl rhi::RhiCliExecutionPlanV1
+pub const fn rhi::RhiCliExecutionPlanV1::admin_operation(&self) -> core::option::Option<rhi::RhiCliAdminOperationV1>
+pub const fn rhi::RhiCliExecutionPlanV1::offline_operation(&self) -> core::option::Option<rhi::RhiCliOfflineOperationV1>
+pub const fn rhi::RhiCliExecutionPlanV1::primary_authority(&self) -> rhi::RhiCliPrimaryAuthorityV1
+impl core::fmt::Debug for rhi::RhiCliExecutionPlanV1
+pub fn rhi::RhiCliExecutionPlanV1::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiCliInvocationV1
 impl rhi::RhiCliInvocationV1
 pub const fn rhi::RhiCliInvocationV1::command(&self) -> rhi::RhiCommandV1
@@ -2023,6 +2062,7 @@ pub async fn rhi::open_rhi_state_read_write(&rhi::RhiRuntimeContext, &rhi::RhiSt
 pub async fn rhi::open_rhi_state_read_write_from_config(&rhi::RhiRuntimeContext, &rhi::RhiConfigDocumentV1, radroots_service_sqlite::migration::MigrationAppliedAtUnixSeconds, &radroots_service_sqlite::migration::MigrationBuildIdentity) -> core::result::Result<rhi::RhiStateHost, rhi::RhiStateHostError>
 pub fn rhi::parse_rhi_cli_v1_from<I, T>(I) -> core::result::Result<rhi::RhiCliInvocationV1, rhi::RhiCliV1Error> where I: core::iter::traits::collect::IntoIterator<Item = T>, T: core::convert::Into<std::ffi::os_str::OsString> + core::clone::Clone
 pub fn rhi::parse_rhi_config_v1(&[u8], rhi::RhiConfigProfile) -> core::result::Result<rhi::RhiConfigDocumentV1, rhi::RhiConfigV1Error>
+pub const fn rhi::plan_rhi_cli_v1(&rhi::RhiCliInvocationV1) -> rhi::RhiCliExecutionPlanV1
 pub fn rhi::provision_rhi_encrypted_identity(&rhi::RhiIdentityEnvelopeBinding, &rhi::RhiWrappingCredential, rhi::RhiEncryptedIdentityProvisioningMaterial) -> core::result::Result<rhi::RhiDecryptedIdentity, rhi::RhiEncryptedIdentityEnvelopeError>
 pub fn rhi::reduce_rhi_reconciliation_manifest(rhi::RhiReconciliationManifest) -> core::result::Result<rhi::RhiReconciliationProjection, rhi::RhiReconciliationReducerError>
 pub fn rhi::resolve_rhi_runtime_context(&radroots_runtime_paths::roots::RadrootsPathResolver, &rhi::RhiCliInvocationV1) -> core::result::Result<rhi::RhiRuntimeContext, rhi::RhiRuntimeContextError>

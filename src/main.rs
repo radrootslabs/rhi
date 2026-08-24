@@ -5,7 +5,7 @@ use std::process::ExitCode;
 
 use rhi::{
     RadrootsHostEnvironment, RadrootsPathResolver, RadrootsPlatform, parse_rhi_cli_v1_from,
-    resolve_rhi_runtime_context,
+    plan_rhi_cli_v1, resolve_rhi_runtime_context,
 };
 
 fn main() -> ExitCode {
@@ -27,6 +27,7 @@ fn exit_code_from_run(result: Result<(), ()>) -> ExitCode {
 }
 
 fn execute(invocation: rhi::RhiCliInvocationV1) -> Result<(), ()> {
+    let _plan = plan_rhi_cli_v1(&invocation);
     let resolver = RadrootsPathResolver::new(RadrootsPlatform::current(), host_environment());
     let _context = resolve_rhi_runtime_context(&resolver, &invocation).map_err(|_| ())?;
     Err(())
