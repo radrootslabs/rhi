@@ -133,6 +133,26 @@ pub enum rhi::RhiPresenceCommandV1
 pub rhi::RhiPresenceCommandV1::Desired
 pub rhi::RhiPresenceCommandV1::Refresh
 pub rhi::RhiPresenceCommandV1::Render
+pub enum rhi::RhiPresenceDesiredErrorKind
+pub rhi::RhiPresenceDesiredErrorKind::Binding
+pub rhi::RhiPresenceDesiredErrorKind::CommitOutcomeUnknown
+pub rhi::RhiPresenceDesiredErrorKind::InvalidConfiguration
+pub rhi::RhiPresenceDesiredErrorKind::InvalidMode
+pub rhi::RhiPresenceDesiredErrorKind::ResourceExhausted
+pub rhi::RhiPresenceDesiredErrorKind::Storage
+pub rhi::RhiPresenceDesiredErrorKind::TargetInventory
+impl rhi::RhiPresenceDesiredErrorKind
+pub const fn rhi::RhiPresenceDesiredErrorKind::code(self) -> &'static str
+pub enum rhi::RhiPresenceDesiredMode
+pub rhi::RhiPresenceDesiredMode::Disabled
+pub rhi::RhiPresenceDesiredMode::Enabled
+impl rhi::RhiPresenceDesiredMode
+pub const fn rhi::RhiPresenceDesiredMode::code(self) -> &'static str
+pub enum rhi::RhiPresenceDocumentKind
+pub rhi::RhiPresenceDocumentKind::ApplicationHandler
+pub rhi::RhiPresenceDocumentKind::ServiceProfile
+impl rhi::RhiPresenceDocumentKind
+pub const fn rhi::RhiPresenceDocumentKind::code(self) -> &'static str
 pub enum rhi::RhiPublicationAttemptEvidenceErrorKind
 pub rhi::RhiPublicationAttemptEvidenceErrorKind::InvalidAttemptNumber
 pub rhi::RhiPublicationAttemptEvidenceErrorKind::InvalidTargetOrdinal
@@ -620,6 +640,9 @@ impl core::fmt::Debug for rhi::RhiDecryptedIdentity
 pub fn rhi::RhiDecryptedIdentity::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiDesiredPresenceRepository<'host>
 impl rhi::RhiDesiredPresenceRepository<'_>
+pub async fn rhi::RhiDesiredPresenceRepository<'_>::commit(&self, &rhi::RhiPresenceDesiredAuthority) -> core::result::Result<rhi::RhiPresenceDesiredCommitOutcome, rhi::RhiPresenceDesiredError>
+pub async fn rhi::RhiDesiredPresenceRepository<'_>::current(&self) -> core::result::Result<core::option::Option<rhi::RhiPresenceDesiredState>, rhi::RhiPresenceDesiredError>
+impl rhi::RhiDesiredPresenceRepository<'_>
 pub const fn rhi::RhiDesiredPresenceRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
 pub const fn rhi::RhiDesiredPresenceRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
 impl core::fmt::Debug for rhi::RhiDesiredPresenceRepository<'_>
@@ -714,6 +737,50 @@ pub const fn rhi::RhiPreparedPublicationAttempt::exact_signed_event_bytes(&self)
 pub fn rhi::RhiPreparedPublicationAttempt::relay_id(&self) -> &str
 impl core::fmt::Debug for rhi::RhiPreparedPublicationAttempt
 pub fn rhi::RhiPreparedPublicationAttempt::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPresenceDesiredAuthority
+impl rhi::RhiPresenceDesiredAuthority
+pub const fn rhi::RhiPresenceDesiredAuthority::desired_sha256(&self) -> &[u8; 32]
+pub fn rhi::RhiPresenceDesiredAuthority::document_kinds(&self) -> &[rhi::RhiPresenceDocumentKind]
+pub fn rhi::RhiPresenceDesiredAuthority::from_config(&rhi::RhiConfigDocumentV1) -> core::result::Result<Self, rhi::RhiPresenceDesiredError>
+pub const fn rhi::RhiPresenceDesiredAuthority::mode(&self) -> rhi::RhiPresenceDesiredMode
+pub const fn rhi::RhiPresenceDesiredAuthority::queue_capacity(&self) -> u32
+pub const fn rhi::RhiPresenceDesiredAuthority::target_set_sha256(&self) -> &[u8; 32]
+pub fn rhi::RhiPresenceDesiredAuthority::targets(&self) -> &[rhi::RhiPresenceTarget]
+impl core::fmt::Debug for rhi::RhiPresenceDesiredAuthority
+pub fn rhi::RhiPresenceDesiredAuthority::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPresenceDesiredCommitOutcome
+impl rhi::RhiPresenceDesiredCommitOutcome
+pub const fn rhi::RhiPresenceDesiredCommitOutcome::changed(self) -> bool
+pub const fn rhi::RhiPresenceDesiredCommitOutcome::state(self) -> rhi::RhiPresenceDesiredState
+pub struct rhi::RhiPresenceDesiredError
+impl rhi::RhiPresenceDesiredError
+pub const fn rhi::RhiPresenceDesiredError::code(self) -> &'static str
+pub const fn rhi::RhiPresenceDesiredError::kind(self) -> rhi::RhiPresenceDesiredErrorKind
+impl core::error::Error for rhi::RhiPresenceDesiredError
+impl core::fmt::Debug for rhi::RhiPresenceDesiredError
+pub fn rhi::RhiPresenceDesiredError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiPresenceDesiredError
+pub fn rhi::RhiPresenceDesiredError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPresenceDesiredState
+impl rhi::RhiPresenceDesiredState
+pub const fn rhi::RhiPresenceDesiredState::application_handler(self) -> bool
+pub const fn rhi::RhiPresenceDesiredState::desired_sha256(&self) -> &[u8; 32]
+pub const fn rhi::RhiPresenceDesiredState::generation(self) -> u64
+pub const fn rhi::RhiPresenceDesiredState::mode(self) -> rhi::RhiPresenceDesiredMode
+pub const fn rhi::RhiPresenceDesiredState::profile(self) -> bool
+pub const fn rhi::RhiPresenceDesiredState::queue_capacity(self) -> u32
+pub const fn rhi::RhiPresenceDesiredState::required_target_count(self) -> u8
+pub const fn rhi::RhiPresenceDesiredState::target_count(self) -> u8
+pub const fn rhi::RhiPresenceDesiredState::target_set_sha256(&self) -> &[u8; 32]
+impl core::fmt::Debug for rhi::RhiPresenceDesiredState
+pub fn rhi::RhiPresenceDesiredState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPresenceTarget
+impl rhi::RhiPresenceTarget
+pub const fn rhi::RhiPresenceTarget::ordinal(&self) -> u8
+pub fn rhi::RhiPresenceTarget::relay_id(&self) -> &str
+pub const fn rhi::RhiPresenceTarget::required(&self) -> bool
+impl core::fmt::Debug for rhi::RhiPresenceTarget
+pub fn rhi::RhiPresenceTarget::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiProjectionRepository<'host>
 impl rhi::RhiProjectionRepository<'_>
 pub const fn rhi::RhiProjectionRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
@@ -1570,6 +1637,8 @@ pub const rhi::RHI_ENCRYPTED_IDENTITY_BACKUP_INCLUDED: bool
 pub const rhi::RHI_ENCRYPTED_IDENTITY_ENVELOPE_CONTRACT_VERSION: u32
 pub const rhi::RHI_ENCRYPTED_IDENTITY_ENVELOPE_MAX_BYTES: usize
 pub const rhi::RHI_MIGRATION_CATALOG_SHA256: [u8; 32]
+pub const rhi::RHI_PRESENCE_DESIRED_CONTRACT_VERSION: u32
+pub const rhi::RHI_PRESENCE_DESIRED_MAX_TARGETS: usize
 pub const rhi::RHI_PROVIDER_CONTRACT_VERSION: u32
 pub const rhi::RHI_PUBLICATION_ATTEMPT_EVIDENCE_CONTRACT_VERSION: u32
 pub const rhi::RHI_PUBLICATION_ATTEMPT_NUMBER_MAXIMUM: u16
@@ -1625,6 +1694,9 @@ pub const rhi::RHI_STATE_SCHEMA_VERSION_7_SHA256: [u8; 32]
 pub const rhi::RHI_STATE_SCHEMA_VERSION_8_MIGRATION_SHA256: [u8; 32]
 pub const rhi::RHI_STATE_SCHEMA_VERSION_8_OBJECT_COUNT: u32
 pub const rhi::RHI_STATE_SCHEMA_VERSION_8_SHA256: [u8; 32]
+pub const rhi::RHI_STATE_SCHEMA_VERSION_9_MIGRATION_SHA256: [u8; 32]
+pub const rhi::RHI_STATE_SCHEMA_VERSION_9_OBJECT_COUNT: u32
+pub const rhi::RHI_STATE_SCHEMA_VERSION_9_SHA256: [u8; 32]
 pub const rhi::RHI_STATUS_CONTRACT_VERSION: u32
 pub const rhi::RHI_TRADE_EVENT_EXTRA_FIELD_MAX_COUNT: usize
 pub const rhi::RHI_TRADE_EVENT_EXTRA_JSON_MAX_BYTES: usize
@@ -1672,6 +1744,7 @@ pub fn rhi::rhi_schema_catalog() -> core::result::Result<radroots_service_sqlite
 pub const fn rhi::rhi_state_repository_descriptors() -> &'static [rhi::RhiStateRepositoryDescriptor; 18]
 pub async fn rhi::stage_rhi_state_restore(&rhi::RhiRuntimeContext, &rhi::RhiStateMetadata, rhi::RhiVerifiedStateBackup) -> core::result::Result<rhi::RhiStagedStateRestore, rhi::RhiStateMaintenanceError>
 pub fn rhi::trade_mutation_subscription_kinds() -> alloc::vec::Vec<u32>
+pub fn rhi::validate_rhi_presence_desired_authority(&rhi::RhiConfigDocumentV1, &rhi::RhiPresenceDesiredAuthority) -> core::result::Result<(), rhi::RhiPresenceDesiredError>
 pub fn rhi::validate_rhi_state_catalogs(&radroots_service_sqlite::migration::MigrationCatalog, &radroots_service_sqlite::integrity::catalog::SchemaCatalog) -> core::result::Result<(), rhi::RhiStateCatalogError>
 pub fn rhi::verify_rhi_state_backup(&[u8], radroots_service_sqlite::backup::manifest::BackupManifestSha256, &std::path::Path, &rhi::RhiStateMetadata, core::num::nonzero::NonZeroU64) -> core::result::Result<rhi::RhiVerifiedStateBackup, rhi::RhiStateMaintenanceError>
 pub type rhi::RhiReconciliationCoverage = radroots_trade::evidence::RadrootsTradeEvidenceCoverageV1

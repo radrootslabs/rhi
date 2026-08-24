@@ -106,13 +106,17 @@ async fn downgrade_fixture_to_schema_v7(runtime: &rhi::RhiRuntimeContext) {
     .await
     .expect("migration delete guard SQL");
     for statement in [
+        "DROP TRIGGER presence_desired_state_guard_insert",
+        "DROP TRIGGER presence_desired_state_guard_update",
+        "DROP TRIGGER presence_desired_state_no_delete",
+        "DROP TABLE presence_desired_state",
         "DROP TRIGGER reconciliation_jobs_shape_guard_insert",
         "DROP TRIGGER reconciliation_jobs_shape_guard_update",
         "DROP TRIGGER radroots_service_metadata_guard_update",
         "DROP TRIGGER schema_migrations_no_update",
         "DROP TRIGGER schema_migrations_no_delete",
         "UPDATE radroots_service_metadata SET state_schema_version = 7 WHERE singleton = 1",
-        "DELETE FROM schema_migrations WHERE version = 8",
+        "DELETE FROM schema_migrations WHERE version IN (8, 9)",
     ] {
         sqlx::query(statement)
             .execute(&mut connection)
@@ -418,7 +422,7 @@ async fn schema_v8_scans_historical_nullable_job_state_and_installs_permanent_gu
         let (applied_at, build) = migration_evidence();
         initialize_rhi_state(&runtime, &metadata, applied_at, &build)
             .await
-            .expect("schema-v8 initialization");
+            .expect("current-schema initialization");
         downgrade_fixture_to_schema_v7(&runtime).await;
         insert_historical_reconciliation_job(&runtime, state, next_attempt, owner, expiry).await;
 
@@ -450,7 +454,7 @@ async fn schema_v8_scans_historical_nullable_job_state_and_installs_permanent_gu
     let (applied_at, build) = migration_evidence();
     initialize_rhi_state(&runtime, &metadata, applied_at, &build)
         .await
-        .expect("schema-v8 initialization");
+        .expect("current-schema initialization");
     downgrade_fixture_to_schema_v7(&runtime).await;
     insert_historical_reconciliation_job(
         &runtime,
@@ -479,7 +483,7 @@ async fn schema_v8_scans_historical_nullable_job_state_and_installs_permanent_gu
     .fetch_one(&mut connection)
     .await
     .expect("migrated schema state");
-    assert_eq!(migrated, (8, 1, 2, 0));
+    assert_eq!(migrated, (9, 1, 2, 0));
 
     let invalid_insert = sqlx::query(
         r#"INSERT INTO reconciliation_jobs (

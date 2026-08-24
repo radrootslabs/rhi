@@ -343,6 +343,25 @@ outcomes, retry, recovery, and wave qualification. The exact machine contract
 is
 [`publication_outbox.v1.json`](contracts/services_hardening/publication_outbox.v1.json).
 
+## Deterministic durable presence intent
+
+`RhiPresenceDesiredAuthority::from_config` derives the exact ordered
+service-profile and application-handler intent from one complete admitted
+configuration. It binds the verified service public identity, the configured
+relay-ID order and requiredness, and the bounded presence queue under separate
+domain-separated target-set and semantic desired-state digests. An independent
+validator re-derives that authority from the same complete configuration.
+
+Schema v9 stores only one sealed semantic desired-state snapshot. The first
+commit creates generation one, exact semantic replay performs no write, and a
+semantic change advances exactly one compare-and-swap generation. Every commit
+must still match the latest durable configuration binding. The table stores no
+relay URL, filesystem path, rendered event, signature, authored time, delivery
+attempt, or network result, and its triggers reject deletion and ungoverned
+updates. Rendering, signing, target delivery state, retries, and relay I/O remain
+owned by Step 205. The exact machine contract is
+[`presence_desired_state.v1.json`](contracts/services_hardening/presence_desired_state.v1.json).
+
 ## Atomic reconciliation finalization commit
 
 `RhiReconciliationAttemptRepository::commit_finalization` borrows one sealed,

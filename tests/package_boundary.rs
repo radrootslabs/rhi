@@ -11,6 +11,9 @@ const RUNTIME_ADAPTERS: &str = include_str!("../src/runtime_adapters.rs");
 const RUNTIME_ADAPTER_CONTRACT: &str =
     include_str!("../contracts/services_hardening/runtime_adapters.v1.json");
 const RUNTIME_FOUNDATION: &str = include_str!("../src/runtime_foundation.rs");
+const PRESENCE_DESIRED: &str = include_str!("../src/presence_desired.rs");
+const PRESENCE_DESIRED_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/presence_desired_state.v1.json");
 const PUBLICATION: &str = include_str!("../src/publication.rs");
 const PUBLICATION_ATTEMPT: &str = include_str!("../src/publication_attempt.rs");
 const PUBLICATION_ATTEMPT_CONTRACT: &str =
@@ -69,6 +72,7 @@ const SOURCES: &[&str] = &[
     include_str!("../src/features/trade_agreement_attestation.rs"),
     include_str!("../src/identity_credential.rs"),
     include_str!("../src/identity_envelope.rs"),
+    include_str!("../src/presence_desired.rs"),
     include_str!("../src/publication.rs"),
     include_str!("../src/publication_attempt.rs"),
     include_str!("../src/publication_execution.rs"),
@@ -148,6 +152,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "features",
         "identity_credential",
         "identity_envelope",
+        "presence_desired",
         "publication",
         "publication_attempt",
         "publication_execution",
@@ -197,6 +202,12 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "RhiStateCatalogError",
         "RhiRuntimeAdapters",
         "RhiPublicationAuthority",
+        "RhiPresenceDesiredAuthority",
+        "RhiPresenceDesiredCommitOutcome",
+        "RhiPresenceDesiredErrorKind",
+        "RhiPresenceDesiredState",
+        "validate_rhi_presence_desired_authority",
+        "RHI_PRESENCE_DESIRED_CONTRACT_VERSION",
         "RhiPublicationErrorKind",
         "RhiPublicationMode",
         "RhiPublicationRetryPolicy",
@@ -306,6 +317,9 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
     assert_eq!(public_modules, ["pub mod rhi"]);
     assert!(PUBLIC_API.contains("pub struct rhi::NostrEventAdapter<'a>"));
     assert!(PUBLIC_API.contains("pub struct rhi::TradeAgreementAttestationError"));
+    assert!(PUBLIC_API.contains("pub struct rhi::RhiPresenceDesiredAuthority"));
+    assert!(PUBLIC_API.contains("pub struct rhi::RhiPresenceDesiredState"));
+    assert!(PUBLIC_API.contains("pub enum rhi::RhiPresenceDesiredErrorKind"));
     assert!(!PUBLIC_API.contains("rhi::adapters::"));
     assert!(!PUBLIC_API.contains("rhi::features::"));
     assert!(!PUBLIC_API.contains("rhi::runtime_adapters::"));
@@ -313,6 +327,47 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
     assert!(!PUBLIC_API.contains("rhi::publication_attempt::"));
     assert!(!PUBLIC_API.contains("rhi::publication_execution::"));
     assert!(!PUBLIC_API.contains("rhi::publication_submission::"));
+}
+
+#[test]
+fn presence_desired_state_is_config_bound_durable_and_effect_free() {
+    let contract: serde_json::Value =
+        serde_json::from_str(PRESENCE_DESIRED_CONTRACT).expect("presence-desired-state contract");
+    assert_eq!(contract["schema"], "radroots.rhi.presence-desired-state");
+    assert_eq!(contract["contract_version"], 1);
+    assert_eq!(contract["authority"]["maximum_targets"], 32);
+    assert_eq!(contract["durable_state"]["write_class"], "compare_and_swap");
+    assert_eq!(contract["durable_state"]["rows"], "exactly_zero_or_one");
+    assert_eq!(contract["effects"]["network"], false);
+    assert_eq!(contract["effects"]["relay_io"], false);
+    for required in [
+        "pub fn validate_rhi_presence_desired_authority(",
+        "require_current_config(transaction, authority).await?",
+        "LIMIT 1",
+        "LIMIT 2",
+        "ServiceSqliteTransactionErrorKind::CommitOutcomeUnknown",
+    ] {
+        assert!(
+            PRESENCE_DESIRED.contains(required),
+            "presence desired-state boundary is missing {required}"
+        );
+    }
+    for forbidden in [
+        "SystemTime",
+        "OsRng",
+        "thread_rng",
+        "tokio::spawn",
+        "std::net",
+        "EventSink",
+        "sign_nostr_event",
+    ] {
+        assert!(
+            !PRESENCE_DESIRED.contains(forbidden),
+            "presence desired-state boundary gained forbidden authority {forbidden}"
+        );
+    }
+    assert!(!ROOT.contains("pub mod presence_desired"));
+    assert!(!PUBLIC_API.contains("rhi::presence_desired::"));
 }
 
 #[test]
@@ -799,7 +854,7 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .lines()
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
-    assert_eq!(public_error_count, 29);
+    assert_eq!(public_error_count, 30);
 }
 
 #[test]
@@ -1233,6 +1288,8 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "## Canonical signed reconciliation attestation",
         "[`reconciliation_attestation.v1.json`](contracts/services_hardening/reconciliation_attestation.v1.json)",
         "## Explicit publication authority and durable schema",
+        "## Deterministic durable presence intent",
+        "[`presence_desired_state.v1.json`](contracts/services_hardening/presence_desired_state.v1.json)",
         "[`publication_outbox.v1.json`](contracts/services_hardening/publication_outbox.v1.json)",
         "## Bounded publication attempt evidence",
         "[`publication_attempt_evidence.v1.json`](contracts/services_hardening/publication_attempt_evidence.v1.json)",

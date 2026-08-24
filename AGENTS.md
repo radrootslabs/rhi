@@ -211,6 +211,15 @@
   acknowledgement never proves delivery or failure.
 - Keep profile and application-handler presence as deterministic durable desired
   state with the same commit-before-I/O and exact-byte retry discipline.
+- Derive presence desired state only from one complete admitted configuration,
+  bind it to the latest durable configuration before mutation, and advance its
+  singleton generation only when the semantic presence authority changes.
+  Durable desired state contains only the closed mode, document-presence bits,
+  bounded target counts, queue capacity, and governed digests; it never stores
+  relay URLs, rendered or signed events, attempts, schedules, or outcomes.
+- Keep rendered and independently verified signed presence bytes, per-document
+  target state, attempt evidence, retry scheduling, and relay I/O with the next
+  ordered checkpoint. Never reconstruct exact committed bytes during retry.
 
 ## 7. Configuration, identity, state, and process boundaries
 

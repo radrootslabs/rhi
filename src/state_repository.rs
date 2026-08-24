@@ -479,6 +479,12 @@ impl<'host> RhiPublicationOutboxRepository<'host> {
     }
 }
 
+impl<'host> RhiDesiredPresenceRepository<'host> {
+    pub(crate) const fn host(&self) -> &'host RhiStateHost {
+        self.host
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,0 +1,94 @@
+{
+  "schema": "radroots.rhi.presence-desired-state",
+  "contract_version": 1,
+  "authority": {
+    "source": "complete_admitted_rhi_config_v1",
+    "modes": ["disabled", "enabled"],
+    "document_order": ["service_profile", "application_handler"],
+    "target_order": "configured_presence_target_relay_id_order",
+    "target_requiredness": "configured_relay_required_value",
+    "maximum_targets": 32,
+    "queue_capacity": {
+      "disabled": 0,
+      "enabled_minimum": 1,
+      "enabled_maximum": 4096
+    },
+    "independent_validation": "exact_rederivation_from_same_complete_config"
+  },
+  "target_set_digest": {
+    "hash": "sha256",
+    "domain_ascii_nul": "radroots.rhi.presence_target_set.v1\\0",
+    "framing": [
+      "target_count_u32_be",
+      "for_each_target_in_order:ordinal_u32_be",
+      "relay_id_utf8_length_u64_be",
+      "relay_id_exact_utf8",
+      "required_u8"
+    ]
+  },
+  "desired_state_digest": {
+    "hash": "sha256",
+    "domain_ascii_nul": "radroots.rhi.presence_desired_state.v1\\0",
+    "framing": [
+      "mode_u8_disabled_0_enabled_1",
+      "document_count_u32_be",
+      "ordered_document_kind_u8_profile_0_application_handler_1",
+      "target_count_u32_be",
+      "for_each_target_same_framing_as_target_set",
+      "queue_capacity_u32_be",
+      "service_public_key_utf8_length_u64_be",
+      "service_public_key_exact_lowerhex_utf8"
+    ],
+    "excludes": [
+      "configuration_fields_unrelated_to_presence",
+      "rendered_event",
+      "signature",
+      "authored_time",
+      "entropy",
+      "attempt",
+      "relay_url",
+      "network_outcome"
+    ]
+  },
+  "durable_state": {
+    "table": "presence_desired_state",
+    "write_class": "compare_and_swap",
+    "rows": "exactly_zero_or_one",
+    "first_generation": 1,
+    "maximum_generation": 9223372036854775807,
+    "exact_replay": "no_mutation_same_generation",
+    "semantic_change": "single_cas_generation_increment",
+    "delete": "forbidden",
+    "current_config_binding": "required_before_commit",
+    "read_bounds": "at_most_two_rows_with_bounded_blob_and_text_projection"
+  },
+  "commit_boundary": {
+    "before_rendering": true,
+    "before_signing": true,
+    "before_relay_io": true,
+    "commit_outcome_unknown": "typed_and_not_retried_as_uncommitted_without_reread"
+  },
+  "step_205_deferrals": [
+    "rendered_typed_events",
+    "exact_signed_bytes",
+    "per_document_target_state",
+    "delivery_attempts",
+    "retry_schedule",
+    "relay_io",
+    "observed_outcomes"
+  ],
+  "reference_vector": {
+    "config_fixture": "contracts/services_hardening/config.v1.example.toml",
+    "target_set_sha256": "959f04012841ae6e9bf3e109468b4f66cfa9d966aac1df36df09e45c1e1c48f9",
+    "desired_state_sha256": "7235f1e386e839427625dc364df7b51ee74d39d5f170e12b25cf2c42fd7731f0"
+  },
+  "effects": {
+    "sqlite": "typed_repository_commit_and_read_only",
+    "clock": false,
+    "entropy": false,
+    "filesystem": false,
+    "task_spawn": false,
+    "network": false,
+    "relay_io": false
+  }
+}

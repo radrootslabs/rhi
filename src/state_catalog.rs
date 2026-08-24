@@ -12,7 +12,7 @@ use radroots_service_sqlite::{
 pub const RHI_STATE_BASE_SCHEMA_VERSION: u32 = 1;
 
 /// The newest governed RHI state schema understood by this binary.
-pub const RHI_STATE_SCHEMA_VERSION: u32 = 8;
+pub const RHI_STATE_SCHEMA_VERSION: u32 = 9;
 
 /// The shared metadata and migration-ledger objects present at schema v1.
 pub const RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT: u32 = 6;
@@ -38,10 +38,13 @@ pub const RHI_STATE_SCHEMA_VERSION_7_OBJECT_COUNT: u32 = 63;
 /// The shared objects plus fail-closed reconciliation-job shape guards.
 pub const RHI_STATE_SCHEMA_VERSION_8_OBJECT_COUNT: u32 = 65;
 
+/// The shared objects plus deterministic durable presence desired state.
+pub const RHI_STATE_SCHEMA_VERSION_9_OBJECT_COUNT: u32 = 69;
+
 /// SHA-256 identity of the ordered migration catalog rooted at schema v1.
 pub const RHI_MIGRATION_CATALOG_SHA256: [u8; 32] = [
-    0xe6, 0x5a, 0xd1, 0x15, 0x5c, 0x9d, 0xa2, 0x70, 0x32, 0x81, 0x99, 0x22, 0x68, 0x53, 0x0c, 0x87,
-    0xe5, 0x24, 0x8a, 0x52, 0xf7, 0x66, 0x01, 0x1c, 0x23, 0x5e, 0x1f, 0xdb, 0x67, 0x1c, 0x77, 0x4f,
+    0x7f, 0x8c, 0x03, 0xb4, 0x81, 0x84, 0x08, 0xb5, 0x86, 0x74, 0x74, 0x12, 0xc2, 0x65, 0xac, 0x72,
+    0xcd, 0x4d, 0xd8, 0x8a, 0x29, 0x0d, 0x8b, 0xbe, 0xe1, 0xd5, 0xf6, 0x8a, 0xdb, 0xf7, 0xaf, 0xd0,
 ];
 
 /// SHA-256 identity of the exact schema-v1 object snapshot.
@@ -134,10 +137,22 @@ pub const RHI_STATE_SCHEMA_VERSION_8_SHA256: [u8; 32] = [
     0xcc, 0xac, 0x90, 0x53, 0x8e, 0x0c, 0xd4, 0x9a, 0x4e, 0xe2, 0x14, 0xcb, 0x0a, 0x39, 0xc6, 0x18,
 ];
 
+/// SHA-256 identity of the schema-v9 presence desired-state migration.
+pub const RHI_STATE_SCHEMA_VERSION_9_MIGRATION_SHA256: [u8; 32] = [
+    0x32, 0xda, 0xbe, 0x77, 0x72, 0x89, 0xe0, 0xfb, 0x6e, 0x64, 0xa4, 0xc1, 0xf8, 0x25, 0x78, 0x43,
+    0xfc, 0x08, 0x01, 0x83, 0x21, 0xc3, 0xb7, 0xec, 0x5c, 0xa5, 0x84, 0xfa, 0x18, 0x62, 0xbd, 0xcc,
+];
+
+/// SHA-256 identity of the exact schema-v9 object snapshot.
+pub const RHI_STATE_SCHEMA_VERSION_9_SHA256: [u8; 32] = [
+    0x55, 0x51, 0xe8, 0x79, 0x05, 0x44, 0xa7, 0xc7, 0x8c, 0x83, 0x76, 0xc5, 0xcc, 0xf8, 0x3d, 0xd2,
+    0xa8, 0x48, 0x6d, 0x2d, 0xc0, 0x8b, 0x6a, 0x78, 0x08, 0xbb, 0x20, 0x07, 0xc9, 0x43, 0x35, 0xec,
+];
+
 /// SHA-256 identity of the schema catalog bound to the migration catalog.
 pub const RHI_STATE_SCHEMA_CATALOG_SHA256: [u8; 32] = [
-    0x93, 0x30, 0x35, 0x1d, 0x30, 0x0f, 0x70, 0x0f, 0x31, 0x7e, 0xd2, 0xc7, 0x2c, 0xbb, 0xb0, 0x85,
-    0x22, 0xa8, 0x27, 0xb9, 0x62, 0xfe, 0x6c, 0xcb, 0x34, 0x3e, 0x3e, 0xe7, 0x1f, 0xdf, 0xd0, 0x7c,
+    0x5b, 0xea, 0x3e, 0x3e, 0xc6, 0xbe, 0x3f, 0x12, 0x49, 0xad, 0x19, 0xed, 0x7b, 0x2d, 0x2e, 0x87,
+    0x2c, 0x34, 0x02, 0x55, 0x79, 0xa5, 0x99, 0xf2, 0x54, 0xde, 0x8e, 0x80, 0xcb, 0xa9, 0xb3, 0xc7,
 ];
 
 macro_rules! rhi_config_bindings_table_sql {
@@ -747,6 +762,87 @@ const CREATE_RECONCILIATION_JOB_SHAPE_GUARDS_MIGRATION_SQL: &str = concat!(
     reconciliation_jobs_shape_guard_insert_sql!(),
     ";\n",
     reconciliation_jobs_shape_guard_update_sql!(),
+    ";",
+);
+
+macro_rules! presence_desired_state_table_sql {
+    () => {
+        r#"CREATE TABLE presence_desired_state (
+    singleton INTEGER NOT NULL PRIMARY KEY CHECK (singleton = 1),
+    generation INTEGER NOT NULL
+        CHECK (generation BETWEEN 1 AND 9223372036854775807),
+    enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+    profile INTEGER NOT NULL CHECK (profile IN (0, 1)),
+    application_handler INTEGER NOT NULL CHECK (application_handler IN (0, 1)),
+    target_set_sha256 BLOB NOT NULL CHECK (length(target_set_sha256) = 32),
+    target_count INTEGER NOT NULL CHECK (target_count BETWEEN 0 AND 32),
+    required_target_count INTEGER NOT NULL
+        CHECK (required_target_count BETWEEN 0 AND target_count),
+    queue_capacity INTEGER NOT NULL CHECK (queue_capacity BETWEEN 0 AND 4096),
+    desired_sha256 BLOB NOT NULL UNIQUE CHECK (length(desired_sha256) = 32),
+    CHECK (
+        (enabled = 0 AND profile = 0 AND application_handler = 0
+            AND target_count = 0 AND required_target_count = 0
+            AND queue_capacity = 0)
+        OR
+        (enabled = 1 AND (profile = 1 OR application_handler = 1)
+            AND target_count BETWEEN 1 AND 32
+            AND queue_capacity BETWEEN 1 AND 4096)
+    )
+) STRICT"#
+    };
+}
+
+macro_rules! presence_desired_state_guard_insert_sql {
+    () => {
+        r#"CREATE TRIGGER presence_desired_state_guard_insert
+BEFORE INSERT ON presence_desired_state
+WHEN NEW.generation != 1
+    OR EXISTS (SELECT 1 FROM presence_desired_state)
+BEGIN
+    SELECT RAISE(ABORT, 'presence desired-state insertion is invalid');
+END"#
+    };
+}
+
+macro_rules! presence_desired_state_guard_update_sql {
+    () => {
+        r#"CREATE TRIGGER presence_desired_state_guard_update
+BEFORE UPDATE ON presence_desired_state
+WHEN NEW.singleton != OLD.singleton
+    OR OLD.generation >= 9223372036854775807
+    OR NEW.generation != OLD.generation + 1
+    OR NEW.desired_sha256 = OLD.desired_sha256
+BEGIN
+    SELECT RAISE(ABORT, 'presence desired-state transition is invalid');
+END"#
+    };
+}
+
+macro_rules! presence_desired_state_no_delete_sql {
+    () => {
+        r#"CREATE TRIGGER presence_desired_state_no_delete
+BEFORE DELETE ON presence_desired_state
+BEGIN
+    SELECT RAISE(ABORT, 'presence desired state is retained');
+END"#
+    };
+}
+
+const CREATE_PRESENCE_DESIRED_STATE_TABLE_SQL: &str = presence_desired_state_table_sql!();
+const CREATE_PRESENCE_DESIRED_STATE_GUARD_INSERT_SQL: &str =
+    presence_desired_state_guard_insert_sql!();
+const CREATE_PRESENCE_DESIRED_STATE_GUARD_UPDATE_SQL: &str =
+    presence_desired_state_guard_update_sql!();
+const CREATE_PRESENCE_DESIRED_STATE_NO_DELETE_SQL: &str = presence_desired_state_no_delete_sql!();
+const CREATE_PRESENCE_DESIRED_STATE_MIGRATION_SQL: &str = concat!(
+    presence_desired_state_table_sql!(),
+    ";\n",
+    presence_desired_state_guard_insert_sql!(),
+    ";\n",
+    presence_desired_state_guard_update_sql!(),
+    ";\n",
+    presence_desired_state_no_delete_sql!(),
     ";",
 );
 
@@ -1538,6 +1634,22 @@ const TRADE_DIRTY_GENERATIONS_NO_DELETE_SHA256: [u8; 32] = [
     0x36, 0x66, 0x3a, 0x1a, 0xd4, 0x65, 0x41, 0x9f, 0x23, 0x1e, 0xe6, 0xcd, 0x1e, 0xd1, 0x6d, 0xa4,
     0x26, 0xac, 0x7d, 0x70, 0xde, 0xc3, 0x67, 0x75, 0x55, 0x62, 0xa8, 0x45, 0x52, 0x86, 0x54, 0x23,
 ];
+const PRESENCE_DESIRED_STATE_TABLE_SHA256: [u8; 32] = [
+    0x78, 0x4d, 0xfc, 0x23, 0xd5, 0x05, 0xba, 0x09, 0xb3, 0x73, 0x76, 0xf0, 0x18, 0xaa, 0x03, 0xc6,
+    0x3d, 0x98, 0x77, 0x1e, 0xba, 0xd6, 0x73, 0x25, 0x4a, 0x38, 0x46, 0xe3, 0x72, 0xc0, 0x80, 0x40,
+];
+const PRESENCE_DESIRED_STATE_GUARD_INSERT_SHA256: [u8; 32] = [
+    0xe5, 0x55, 0xa5, 0x87, 0xa9, 0x73, 0x2f, 0xae, 0x7c, 0x2d, 0x4e, 0xde, 0xb1, 0x88, 0x93, 0x33,
+    0x4a, 0xa4, 0x23, 0x12, 0x22, 0x7a, 0x71, 0xca, 0x6c, 0x2b, 0x38, 0x1f, 0x0b, 0x56, 0xad, 0x8b,
+];
+const PRESENCE_DESIRED_STATE_GUARD_UPDATE_SHA256: [u8; 32] = [
+    0xb3, 0x2a, 0xc0, 0x44, 0xd6, 0x8c, 0x40, 0xfa, 0x3e, 0xbc, 0x57, 0x8a, 0x2d, 0x59, 0xcb, 0x1b,
+    0xd6, 0x87, 0xd5, 0x3d, 0xa0, 0xc7, 0xec, 0x99, 0xb5, 0x1e, 0x63, 0xc9, 0x72, 0xeb, 0x27, 0x14,
+];
+const PRESENCE_DESIRED_STATE_NO_DELETE_SHA256: [u8; 32] = [
+    0xca, 0xcd, 0xcf, 0x6f, 0x3b, 0x34, 0xc0, 0x7d, 0x6c, 0xf1, 0x1a, 0xab, 0x03, 0xd5, 0x19, 0x7c,
+    0xca, 0x44, 0xab, 0x2e, 0x4f, 0x77, 0x65, 0x29, 0x75, 0x02, 0x4b, 0xbf, 0x1f, 0x04, 0xdc, 0x3f,
+];
 
 /// Stable classes for invalid embedded RHI catalog definitions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1608,8 +1720,7 @@ impl fmt::Debug for RhiStateCatalogError {
 
 impl Error for RhiStateCatalogError {}
 
-/// Constructs the exact ordered RHI migration catalog.
-pub fn rhi_migration_catalog() -> Result<MigrationCatalog, RhiStateCatalogError> {
+fn build_rhi_migration_catalog() -> Result<MigrationCatalog, RhiStateCatalogError> {
     let configuration = MigrationDescriptor::sql(
         2,
         "create_configuration_binding_history",
@@ -1659,6 +1770,13 @@ pub fn rhi_migration_catalog() -> Result<MigrationCatalog, RhiStateCatalogError>
         MigrationChecksum::from_bytes(RHI_STATE_SCHEMA_VERSION_8_MIGRATION_SHA256),
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::MigrationCatalog))?;
+    let presence_desired_state = MigrationDescriptor::sql(
+        9,
+        "create_presence_desired_state",
+        CREATE_PRESENCE_DESIRED_STATE_MIGRATION_SQL,
+        MigrationChecksum::from_bytes(RHI_STATE_SCHEMA_VERSION_9_MIGRATION_SHA256),
+    )
+    .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::MigrationCatalog))?;
     let catalog = MigrationCatalog::new([
         configuration,
         trade_evidence,
@@ -1667,10 +1785,17 @@ pub fn rhi_migration_catalog() -> Result<MigrationCatalog, RhiStateCatalogError>
         reconciliation_results,
         report_publication,
         reconciliation_job_shape_guards,
+        presence_desired_state,
     ])
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::MigrationCatalog))?;
+    Ok(catalog)
+}
+
+/// Constructs the exact ordered RHI migration catalog.
+pub fn rhi_migration_catalog() -> Result<MigrationCatalog, RhiStateCatalogError> {
+    let catalog = build_rhi_migration_catalog()?;
     if catalog.current_version() != RHI_STATE_SCHEMA_VERSION
-        || catalog.descriptors().len() != 7
+        || catalog.descriptors().len() != 8
         || catalog.digest().as_bytes() != &RHI_MIGRATION_CATALOG_SHA256
     {
         return Err(RhiStateCatalogError::new(
@@ -1683,6 +1808,14 @@ pub fn rhi_migration_catalog() -> Result<MigrationCatalog, RhiStateCatalogError>
 /// Constructs the exact RHI schema catalog bound to the migration catalog.
 pub fn rhi_schema_catalog() -> Result<SchemaCatalog, RhiStateCatalogError> {
     let migrations = rhi_migration_catalog()?;
+    let catalog = build_rhi_schema_catalog(&migrations)?;
+    validate_rhi_state_catalogs(&migrations, &catalog)?;
+    Ok(catalog)
+}
+
+fn build_rhi_schema_catalog(
+    migrations: &MigrationCatalog,
+) -> Result<SchemaCatalog, RhiStateCatalogError> {
     let version_one = SchemaVersionCatalog::new(
         RHI_STATE_BASE_SCHEMA_VERSION,
         [],
@@ -1726,13 +1859,19 @@ pub fn rhi_schema_catalog() -> Result<SchemaCatalog, RhiStateCatalogError> {
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
     let version_eight = SchemaVersionCatalog::new(
-        RHI_STATE_SCHEMA_VERSION,
+        8,
         rhi_schema_version_eight_objects()?,
         SchemaDigest::from_bytes(RHI_STATE_SCHEMA_VERSION_8_SHA256),
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
+    let version_nine = SchemaVersionCatalog::new(
+        RHI_STATE_SCHEMA_VERSION,
+        rhi_schema_version_nine_objects()?,
+        SchemaDigest::from_bytes(RHI_STATE_SCHEMA_VERSION_9_SHA256),
+    )
+    .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
     let catalog = SchemaCatalog::new(
-        &migrations,
+        migrations,
         [
             version_one,
             version_two,
@@ -1742,10 +1881,10 @@ pub fn rhi_schema_catalog() -> Result<SchemaCatalog, RhiStateCatalogError> {
             version_six,
             version_seven,
             version_eight,
+            version_nine,
         ],
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
-    validate_rhi_state_catalogs(&migrations, &catalog)?;
     Ok(catalog)
 }
 
@@ -1756,10 +1895,10 @@ pub fn validate_rhi_state_catalogs(
 ) -> Result<(), RhiStateCatalogError> {
     let versions = schema.versions();
     let valid = migrations.current_version() == RHI_STATE_SCHEMA_VERSION
-        && migrations.descriptors().len() == 7
+        && migrations.descriptors().len() == 8
         && migrations.digest().as_bytes() == &RHI_MIGRATION_CATALOG_SHA256
         && schema.migration_catalog_digest() == migrations.digest()
-        && versions.len() == 8
+        && versions.len() == 9
         && versions[0].version() == RHI_STATE_BASE_SCHEMA_VERSION
         && versions[0].object_count() == RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT
         && versions[0].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_1_SHA256
@@ -1781,9 +1920,12 @@ pub fn validate_rhi_state_catalogs(
         && versions[6].version() == 7
         && versions[6].object_count() == RHI_STATE_SCHEMA_VERSION_7_OBJECT_COUNT
         && versions[6].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_7_SHA256
-        && versions[7].version() == RHI_STATE_SCHEMA_VERSION
+        && versions[7].version() == 8
         && versions[7].object_count() == RHI_STATE_SCHEMA_VERSION_8_OBJECT_COUNT
         && versions[7].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_8_SHA256
+        && versions[8].version() == RHI_STATE_SCHEMA_VERSION
+        && versions[8].object_count() == RHI_STATE_SCHEMA_VERSION_9_OBJECT_COUNT
+        && versions[8].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_9_SHA256
         && schema.digest().as_bytes() == &RHI_STATE_SCHEMA_CATALOG_SHA256;
     if valid {
         Ok(())
@@ -1865,6 +2007,51 @@ fn rhi_schema_version_eight_objects() -> Result<Vec<SchemaObject>, RhiStateCatal
     let mut objects = rhi_schema_version_seven_objects()?;
     objects.extend(rhi_reconciliation_job_shape_guard_objects()?);
     Ok(objects)
+}
+
+fn rhi_schema_version_nine_objects() -> Result<Vec<SchemaObject>, RhiStateCatalogError> {
+    let mut objects = rhi_schema_version_eight_objects()?;
+    objects.extend(rhi_presence_desired_state_objects()?);
+    Ok(objects)
+}
+
+fn rhi_presence_desired_state_objects() -> Result<[SchemaObject; 4], RhiStateCatalogError> {
+    let object = |kind, name, sql, digest| {
+        SchemaObject::new(
+            kind,
+            name,
+            "presence_desired_state",
+            sql,
+            SchemaDigest::from_bytes(digest),
+        )
+        .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))
+    };
+    Ok([
+        object(
+            SchemaObjectKind::Table,
+            "presence_desired_state",
+            CREATE_PRESENCE_DESIRED_STATE_TABLE_SQL,
+            PRESENCE_DESIRED_STATE_TABLE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "presence_desired_state_guard_insert",
+            CREATE_PRESENCE_DESIRED_STATE_GUARD_INSERT_SQL,
+            PRESENCE_DESIRED_STATE_GUARD_INSERT_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "presence_desired_state_guard_update",
+            CREATE_PRESENCE_DESIRED_STATE_GUARD_UPDATE_SQL,
+            PRESENCE_DESIRED_STATE_GUARD_UPDATE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "presence_desired_state_no_delete",
+            CREATE_PRESENCE_DESIRED_STATE_NO_DELETE_SQL,
+            PRESENCE_DESIRED_STATE_NO_DELETE_SHA256,
+        )?,
+    ])
 }
 
 fn rhi_reconciliation_job_shape_guard_objects() -> Result<[SchemaObject; 2], RhiStateCatalogError> {

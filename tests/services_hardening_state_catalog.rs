@@ -20,8 +20,9 @@ use rhi::{
     RHI_STATE_SCHEMA_VERSION_7_MIGRATION_SHA256, RHI_STATE_SCHEMA_VERSION_7_OBJECT_COUNT,
     RHI_STATE_SCHEMA_VERSION_7_SHA256, RHI_STATE_SCHEMA_VERSION_8_MIGRATION_SHA256,
     RHI_STATE_SCHEMA_VERSION_8_OBJECT_COUNT, RHI_STATE_SCHEMA_VERSION_8_SHA256,
-    RhiStateCatalogErrorKind, rhi_migration_catalog, rhi_schema_catalog,
-    validate_rhi_state_catalogs,
+    RHI_STATE_SCHEMA_VERSION_9_MIGRATION_SHA256, RHI_STATE_SCHEMA_VERSION_9_OBJECT_COUNT,
+    RHI_STATE_SCHEMA_VERSION_9_SHA256, RhiStateCatalogErrorKind, rhi_migration_catalog,
+    rhi_schema_catalog, validate_rhi_state_catalogs,
 };
 
 const CATALOG_SOURCE: &str = include_str!("../src/state_catalog.rs");
@@ -29,14 +30,14 @@ const LIB_SOURCE: &str = include_str!("../src/lib.rs");
 const MANIFEST: &str = include_str!("../Cargo.toml");
 
 #[test]
-fn schema_v1_through_v8_catalogs_have_exact_literal_identities() {
+fn schema_v1_through_v9_catalogs_have_exact_literal_identities() {
     let migrations = rhi_migration_catalog().expect("RHI migration catalog");
     let schema = rhi_schema_catalog().expect("RHI schema catalog");
 
     assert_eq!(RHI_STATE_BASE_SCHEMA_VERSION, 1);
-    assert_eq!(RHI_STATE_SCHEMA_VERSION, 8);
-    assert_eq!(migrations.descriptors().len(), 7);
-    assert_eq!(migrations.current_version(), 8);
+    assert_eq!(RHI_STATE_SCHEMA_VERSION, 9);
+    assert_eq!(migrations.descriptors().len(), 8);
+    assert_eq!(migrations.current_version(), 9);
     assert_eq!(migrations.descriptors()[0].target_version(), 2);
     assert_eq!(
         migrations.descriptors()[0].name().as_str(),
@@ -100,12 +101,21 @@ fn schema_v1_through_v8_catalogs_have_exact_literal_identities() {
         migrations.descriptors()[6].checksum().as_bytes(),
         &RHI_STATE_SCHEMA_VERSION_8_MIGRATION_SHA256
     );
+    assert_eq!(migrations.descriptors()[7].target_version(), 9);
+    assert_eq!(
+        migrations.descriptors()[7].name().as_str(),
+        "create_presence_desired_state"
+    );
+    assert_eq!(
+        migrations.descriptors()[7].checksum().as_bytes(),
+        &RHI_STATE_SCHEMA_VERSION_9_MIGRATION_SHA256
+    );
     assert_eq!(
         migrations.digest().as_bytes(),
         &RHI_MIGRATION_CATALOG_SHA256
     );
 
-    assert_eq!(schema.versions().len(), 8);
+    assert_eq!(schema.versions().len(), 9);
     let version = schema.versions()[0];
     assert_eq!(version.version(), 1);
     assert_eq!(
@@ -194,13 +204,24 @@ fn schema_v1_through_v8_catalogs_have_exact_literal_identities() {
         version.digest().as_bytes(),
         &RHI_STATE_SCHEMA_VERSION_8_SHA256
     );
+    let version = schema.versions()[8];
+    assert_eq!(version.version(), 9);
+    assert_eq!(
+        version.object_count(),
+        RHI_STATE_SCHEMA_VERSION_9_OBJECT_COUNT
+    );
+    assert_eq!(version.object_count(), 69);
+    assert_eq!(
+        version.digest().as_bytes(),
+        &RHI_STATE_SCHEMA_VERSION_9_SHA256
+    );
     assert_eq!(schema.digest().as_bytes(), &RHI_STATE_SCHEMA_CATALOG_SHA256);
     assert_eq!(schema.migration_catalog_digest(), migrations.digest());
     validate_rhi_state_catalogs(&migrations, &schema).expect("exact catalogs");
 
     assert_eq!(
         lower_hex(&RHI_MIGRATION_CATALOG_SHA256),
-        "e65ad1155c9da2703281992268530c87e5248a52f766011c235e1fdb671c774f"
+        "7f8c03b4818408b586747412c265ac72cd4dd88a290d8bbee1d5f68adbf7afd0"
     );
     assert_eq!(
         lower_hex(&RHI_STATE_SCHEMA_VERSION_1_SHA256),
@@ -263,8 +284,16 @@ fn schema_v1_through_v8_catalogs_have_exact_literal_identities() {
         "7cef559ae1e6efe158c5d1de50114ebaccac90538e0cd49a4ee214cb0a39c618"
     );
     assert_eq!(
+        lower_hex(&RHI_STATE_SCHEMA_VERSION_9_MIGRATION_SHA256),
+        "32dabe777289e0fb6e64a4c1f8257843fc08018321c3b7ec5ca584fa1862bdcc"
+    );
+    assert_eq!(
+        lower_hex(&RHI_STATE_SCHEMA_VERSION_9_SHA256),
+        "5551e8790544a7c78c8376c5ccf83dd2a8486d2dc08b6a7808bb2007c94335ec"
+    );
+    assert_eq!(
         lower_hex(&RHI_STATE_SCHEMA_CATALOG_SHA256),
-        "9330351d300f700f317ed2c72cbbb08522a827b962fe6ccb343e3ee71fdfd07c"
+        "5bea3e3ec6be3f1249ad19ed7b2d2e872c34025579a599f254de8e80cba9b3c7"
     );
 }
 
@@ -328,6 +357,10 @@ fn independent_validator_rejects_migration_or_schema_drift() {
         SchemaVersionCatalog::computed_digest(8, [version_two_object()]).expect("v8 digest");
     let version_eight = SchemaVersionCatalog::new(8, [version_two_object()], snapshot_digest)
         .expect("version eight");
+    let snapshot_digest =
+        SchemaVersionCatalog::computed_digest(9, [version_two_object()]).expect("v9 digest");
+    let version_nine = SchemaVersionCatalog::new(9, [version_two_object()], snapshot_digest)
+        .expect("version nine");
     let schema = SchemaCatalog::new(
         &exact_migrations,
         [
@@ -339,6 +372,7 @@ fn independent_validator_rejects_migration_or_schema_drift() {
             version_six,
             version_seven,
             version_eight,
+            version_nine,
         ],
     )
     .expect("drift schema catalog");
@@ -401,6 +435,10 @@ fn catalog_errors_are_stable_source_free_and_redacted() {
         SchemaVersionCatalog::computed_digest(8, [secret_object()]).expect("v8 digest");
     let version_eight = SchemaVersionCatalog::new(8, [secret_object()], version_eight_digest)
         .expect("version eight");
+    let version_nine_digest =
+        SchemaVersionCatalog::computed_digest(9, [secret_object()]).expect("v9 digest");
+    let version_nine =
+        SchemaVersionCatalog::new(9, [secret_object()], version_nine_digest).expect("version nine");
     let schema = SchemaCatalog::new(
         &migrations,
         [
@@ -412,6 +450,7 @@ fn catalog_errors_are_stable_source_free_and_redacted() {
             version_six,
             version_seven,
             version_eight,
+            version_nine,
         ],
     )
     .expect("schema catalog");

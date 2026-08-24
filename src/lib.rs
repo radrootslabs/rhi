@@ -8,6 +8,7 @@ mod config_v1;
 mod features;
 mod identity_credential;
 mod identity_envelope;
+mod presence_desired;
 mod publication;
 mod publication_attempt;
 mod publication_execution;
@@ -68,6 +69,12 @@ pub use identity_envelope::{
     RhiEncryptedIdentityProvisioningMaterial, RhiIdentityEnvelopeBinding, RhiIdentityProviderKind,
     RhiIdentityRole, RhiWrappingCredential, open_rhi_encrypted_identity,
     provision_rhi_encrypted_identity,
+};
+pub use presence_desired::{
+    RHI_PRESENCE_DESIRED_CONTRACT_VERSION, RHI_PRESENCE_DESIRED_MAX_TARGETS,
+    RhiPresenceDesiredAuthority, RhiPresenceDesiredCommitOutcome, RhiPresenceDesiredError,
+    RhiPresenceDesiredErrorKind, RhiPresenceDesiredMode, RhiPresenceDesiredState,
+    RhiPresenceDocumentKind, RhiPresenceTarget, validate_rhi_presence_desired_authority,
 };
 pub use publication::{
     RHI_PUBLICATION_CONTRACT_VERSION, RHI_PUBLICATION_MAX_ATTEMPTS, RHI_PUBLICATION_MAX_TARGETS,
@@ -188,8 +195,9 @@ pub use state_catalog::{
     RHI_STATE_SCHEMA_VERSION_7_MIGRATION_SHA256, RHI_STATE_SCHEMA_VERSION_7_OBJECT_COUNT,
     RHI_STATE_SCHEMA_VERSION_7_SHA256, RHI_STATE_SCHEMA_VERSION_8_MIGRATION_SHA256,
     RHI_STATE_SCHEMA_VERSION_8_OBJECT_COUNT, RHI_STATE_SCHEMA_VERSION_8_SHA256,
-    RhiStateCatalogError, RhiStateCatalogErrorKind, rhi_migration_catalog, rhi_schema_catalog,
-    validate_rhi_state_catalogs,
+    RHI_STATE_SCHEMA_VERSION_9_MIGRATION_SHA256, RHI_STATE_SCHEMA_VERSION_9_OBJECT_COUNT,
+    RHI_STATE_SCHEMA_VERSION_9_SHA256, RhiStateCatalogError, RhiStateCatalogErrorKind,
+    rhi_migration_catalog, rhi_schema_catalog, validate_rhi_state_catalogs,
 };
 pub use state_config::{
     RHI_CONFIG_BINDING_MAX_GENERATIONS, RhiConfigApplyError, RhiConfigApplyErrorKind,
