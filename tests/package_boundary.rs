@@ -41,6 +41,8 @@ const PUBLICATION_EXECUTION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/publication_execution.v1.json");
 const PUBLICATION_WAVE_QUALIFICATION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/publication_wave_qualification.v1.json");
+const FAILURE_QUALIFICATION_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/failure_qualification.v1.json");
 const PUBLICATION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/publication_outbox.v1.json");
 const PUBLICATION_SUBMISSION: &str = include_str!("../src/publication_submission.rs");
@@ -1234,6 +1236,35 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
     assert_eq!(public_error_count, 39);
+}
+
+#[test]
+fn failure_qualification_is_source_locked_bounded_and_nonexpansive() {
+    let contract: serde_json::Value = serde_json::from_str(FAILURE_QUALIFICATION_CONTRACT)
+        .expect("failure qualification contract");
+    assert_eq!(contract["schema"], "radroots.rhi.failure-qualification.v1");
+    assert_eq!(contract["step"], 214);
+    assert_eq!(contract["service"], "rhi");
+    assert_eq!(
+        contract["source_lock"]["lib_revision"],
+        "21b11e7a5120ea949f7ad0838c746873fc73aac2"
+    );
+    assert_eq!(contract["resource_bounds"]["source_result_events"], 4_096);
+    assert_eq!(
+        contract["resource_bounds"]["source_result_bytes"],
+        8_388_608
+    );
+    assert_eq!(contract["resource_bounds"]["reconciliation_queue"], 65_536);
+    assert_eq!(contract["resource_bounds"]["publication_queue"], 65_536);
+    assert_eq!(contract["invariants"]["malformed_history_repaired"], false);
+    assert_eq!(
+        contract["invariants"]["sqlx_is_only_high_level_sqlite_authority"],
+        true
+    );
+    assert_eq!(
+        contract["invariants"]["production_failpoint_surface"],
+        false
+    );
 }
 
 #[test]

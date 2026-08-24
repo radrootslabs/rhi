@@ -447,6 +447,14 @@
   work or leave cleanup owned synchronously by that future, with no detached
   probe task. Keep paths, raw errors, arbitrary summaries, and protected values
   out of the bounded canonical report and process diagnostics.
+- Step 214 freezes the failure-resilience qualification corpus across bounded
+  resources and backlogs, durable state and disk posture, corruption and
+  malformed history, cancellation and outage recovery, and safe errors. Keep
+  every named component vector executable and bind shared durability evidence
+  to the exact retained Lib source lock. Do not add a second SQLite authority,
+  a production failpoint surface, or a test environment selector. Step 215
+  alone owns actual-process and bounded-soak qualification; Steps 216 and 217
+  own native release evidence and promotion respectively.
 - Keep plaintext keys, decrypted identity, wrapping credentials, tokens, raw
   sensitive evidence, private identifiers, paths, upstream errors, and
   equivalent protected material out of config, logs, status, metrics, audit,

@@ -768,6 +768,25 @@ and digest, and the positive backup-size limit. RHI adds no SQLite dependency,
 raw connection, background runtime, implicit deadline, or direct file-copy
 authority.
 
+## Failure-resilience qualification
+
+The machine-readable
+[`failure_qualification.v1.json`](contracts/services_hardening/failure_qualification.v1.json)
+contract freezes the Step 214 evidence corpus for resource and backlog bounds,
+disk and durable-state behavior, corruption and malformed history,
+cancellation, outage recovery, and safe errors. Every RHI entry names an
+executable component test, while shared SQLite durability, capacity,
+corruption, migration-history, cancellation, backup, close, and restore
+evidence is bound to the exact retained Lib source lock. SQLx remains the sole
+high-level SQLite authority; no production failpoint or environment-selected
+test path is introduced.
+
+This checkpoint is deliberately component-scoped. The actual-process and
+bounded-soak qualification remains Step 215 ownership, native release
+artifacts remain Step 216 ownership, and promotion and parent-pin alignment
+remain Step 217 ownership. Nix, OCI, signing, publication, and deployment are
+deferred and unclaimed.
+
 ## Standalone native release contract
 
 The capsule owns a private `cargo xtask native-release` generator and the
