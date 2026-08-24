@@ -159,11 +159,30 @@ pub rhi::RhiPublicationErrorKind::InvalidConfiguration
 pub rhi::RhiPublicationErrorKind::TargetInventory
 impl rhi::RhiPublicationErrorKind
 pub const fn rhi::RhiPublicationErrorKind::code(self) -> &'static str
+pub enum rhi::RhiPublicationExecutionErrorKind
+pub rhi::RhiPublicationExecutionErrorKind::ClockUnavailable
+pub rhi::RhiPublicationExecutionErrorKind::CommitOutcomeUnknown
+pub rhi::RhiPublicationExecutionErrorKind::EntropyUnavailable
+pub rhi::RhiPublicationExecutionErrorKind::InvalidInput
+pub rhi::RhiPublicationExecutionErrorKind::InvalidMode
+pub rhi::RhiPublicationExecutionErrorKind::Invariant
+pub rhi::RhiPublicationExecutionErrorKind::LeaseLost
+pub rhi::RhiPublicationExecutionErrorKind::NotReady
+pub rhi::RhiPublicationExecutionErrorKind::Storage
+impl rhi::RhiPublicationExecutionErrorKind
+pub const fn rhi::RhiPublicationExecutionErrorKind::code(self) -> &'static str
 pub enum rhi::RhiPublicationMode
 pub rhi::RhiPublicationMode::Disabled
 pub rhi::RhiPublicationMode::Required
 impl rhi::RhiPublicationMode
 pub const fn rhi::RhiPublicationMode::code(self) -> &'static str
+pub enum rhi::RhiPublicationOutboxState
+pub rhi::RhiPublicationOutboxState::Blocked
+pub rhi::RhiPublicationOutboxState::Complete
+pub rhi::RhiPublicationOutboxState::Leased
+pub rhi::RhiPublicationOutboxState::Pending
+impl rhi::RhiPublicationOutboxState
+pub const fn rhi::RhiPublicationOutboxState::code(self) -> &'static str
 pub enum rhi::RhiPublicationSubmissionErrorKind
 pub rhi::RhiPublicationSubmissionErrorKind::Binding
 pub rhi::RhiPublicationSubmissionErrorKind::NotFound
@@ -686,6 +705,15 @@ impl rhi::RhiNormalizedConfigDigest
 pub const fn rhi::RhiNormalizedConfigDigest::as_bytes(&self) -> &[u8; 32]
 impl core::fmt::Debug for rhi::RhiNormalizedConfigDigest
 pub fn rhi::RhiNormalizedConfigDigest::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPreparedPublicationAttempt
+impl rhi::RhiPreparedPublicationAttempt
+pub const fn rhi::RhiPreparedPublicationAttempt::attempt_id(&self) -> rhi::RhiPublicationAttemptId
+pub const fn rhi::RhiPreparedPublicationAttempt::attempt_number(&self) -> u16
+pub const fn rhi::RhiPreparedPublicationAttempt::deadline_at(&self) -> rhi::RhiPublicationUnixMilliseconds
+pub const fn rhi::RhiPreparedPublicationAttempt::exact_signed_event_bytes(&self) -> &[u8]
+pub fn rhi::RhiPreparedPublicationAttempt::relay_id(&self) -> &str
+impl core::fmt::Debug for rhi::RhiPreparedPublicationAttempt
+pub fn rhi::RhiPreparedPublicationAttempt::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiProjectionRepository<'host>
 impl rhi::RhiProjectionRepository<'_>
 pub const fn rhi::RhiProjectionRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
@@ -698,6 +726,15 @@ pub const fn rhi::RhiProvenanceRepository<'_>::descriptor(&self) -> rhi::RhiStat
 pub const fn rhi::RhiProvenanceRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
 impl core::fmt::Debug for rhi::RhiProvenanceRepository<'_>
 pub fn rhi::RhiProvenanceRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPublicationAttemptCommit
+impl rhi::RhiPublicationAttemptCommit
+pub const fn rhi::RhiPublicationAttemptCommit::attempt_id(self) -> rhi::RhiPublicationAttemptId
+pub const fn rhi::RhiPublicationAttemptCommit::attempt_number(self) -> u16
+pub const fn rhi::RhiPublicationAttemptCommit::outbox_id(self) -> rhi::RhiPublicationOutboxId
+pub const fn rhi::RhiPublicationAttemptCommit::outbox_state(self) -> rhi::RhiPublicationOutboxState
+pub const fn rhi::RhiPublicationAttemptCommit::outcome(self) -> rhi::RhiPublicationAttemptOutcome
+pub const fn rhi::RhiPublicationAttemptCommit::target_ordinal(self) -> u8
+pub const fn rhi::RhiPublicationAttemptCommit::target_state(self) -> rhi::RhiPublicationTargetState
 pub struct rhi::RhiPublicationAttemptEvidence
 impl rhi::RhiPublicationAttemptEvidence
 pub const fn rhi::RhiPublicationAttemptEvidence::attempt_number(&self) -> u16
@@ -755,6 +792,26 @@ impl core::fmt::Debug for rhi::RhiPublicationError
 pub fn rhi::RhiPublicationError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for rhi::RhiPublicationError
 pub fn rhi::RhiPublicationError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPublicationExecutionError
+impl rhi::RhiPublicationExecutionError
+pub const fn rhi::RhiPublicationExecutionError::code(self) -> &'static str
+pub const fn rhi::RhiPublicationExecutionError::kind(self) -> rhi::RhiPublicationExecutionErrorKind
+impl core::error::Error for rhi::RhiPublicationExecutionError
+impl core::fmt::Debug for rhi::RhiPublicationExecutionError
+pub fn rhi::RhiPublicationExecutionError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiPublicationExecutionError
+pub fn rhi::RhiPublicationExecutionError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPublicationLease
+impl rhi::RhiPublicationLease
+pub const fn rhi::RhiPublicationLease::expires_at(self) -> rhi::RhiPublicationUnixMilliseconds
+pub const fn rhi::RhiPublicationLease::outbox_id(self) -> rhi::RhiPublicationOutboxId
+impl core::fmt::Debug for rhi::RhiPublicationLease
+pub fn rhi::RhiPublicationLease::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPublicationLeaseOwner(_)
+impl rhi::RhiPublicationLeaseOwner
+pub fn rhi::RhiPublicationLeaseOwner::from_bytes([u8; 16]) -> core::result::Result<Self, rhi::RhiPublicationExecutionError>
+impl core::fmt::Debug for rhi::RhiPublicationLeaseOwner
+pub fn rhi::RhiPublicationLeaseOwner::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiPublicationOutboxId(_)
 impl rhi::RhiPublicationOutboxId
 pub const fn rhi::RhiPublicationOutboxId::as_bytes(&self) -> &[u8; 32]
@@ -762,12 +819,22 @@ impl core::fmt::Debug for rhi::RhiPublicationOutboxId
 pub fn rhi::RhiPublicationOutboxId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiPublicationOutboxRepository<'host>
 impl rhi::RhiPublicationOutboxRepository<'_>
+pub async fn rhi::RhiPublicationOutboxRepository<'_>::claim_next_publication(&self, rhi::RhiPublicationLeaseOwner, rhi::RhiPublicationUnixMilliseconds, &rhi::RhiPublicationAuthority) -> core::result::Result<core::option::Option<rhi::RhiPublicationLease>, rhi::RhiPublicationExecutionError>
+pub async fn rhi::RhiPublicationOutboxRepository<'_>::execute_next_publication(&self, rhi::RhiPublicationLeaseOwner, &rhi::RhiTimeEntropyAdapters, &dyn rhi::RhiExactPublicationSink, &rhi::RhiPublicationAuthority) -> core::result::Result<core::option::Option<rhi::RhiPublicationAttemptCommit>, rhi::RhiPublicationExecutionError>
+pub async fn rhi::RhiPublicationOutboxRepository<'_>::prepare_next_publication_target(&self, rhi::RhiPublicationLease, rhi::RhiPublicationUnixMilliseconds) -> core::result::Result<rhi::RhiPreparedPublicationAttempt, rhi::RhiPublicationExecutionError>
+pub async fn rhi::RhiPublicationOutboxRepository<'_>::record_publication_outcome(&self, &rhi::RhiPreparedPublicationAttempt, rhi::RhiPublicationUnixMilliseconds, rhi::RhiPublicationAttemptOutcome, rhi::RhiPublicationRetryDelayMilliseconds) -> core::result::Result<rhi::RhiPublicationAttemptCommit, rhi::RhiPublicationExecutionError>
+pub async fn rhi::RhiPublicationOutboxRepository<'_>::recover_one_expired_publication(&self, &rhi::RhiTimeEntropyAdapters, rhi::RhiPublicationUnixMilliseconds, &rhi::RhiPublicationAuthority) -> core::result::Result<bool, rhi::RhiPublicationExecutionError>
+impl rhi::RhiPublicationOutboxRepository<'_>
 pub const fn rhi::RhiPublicationOutboxRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
 pub const fn rhi::RhiPublicationOutboxRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
 impl rhi::RhiPublicationOutboxRepository<'_>
 pub async fn rhi::RhiPublicationOutboxRepository<'_>::read_committed_publication(&self, rhi::RhiPublicationOutboxId) -> core::result::Result<rhi::RhiCommittedPublication, rhi::RhiPublicationSubmissionError>
 impl core::fmt::Debug for rhi::RhiPublicationOutboxRepository<'_>
 pub fn rhi::RhiPublicationOutboxRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPublicationRetryDelayMilliseconds(_)
+impl rhi::RhiPublicationRetryDelayMilliseconds
+pub const fn rhi::RhiPublicationRetryDelayMilliseconds::get(self) -> u64
+pub fn rhi::RhiPublicationRetryDelayMilliseconds::new(u64) -> core::result::Result<Self, rhi::RhiPublicationExecutionError>
 pub struct rhi::RhiPublicationRetryPolicy
 impl rhi::RhiPublicationRetryPolicy
 pub const fn rhi::RhiPublicationRetryPolicy::attempt_deadline_milliseconds(self) -> u64
@@ -1507,6 +1574,7 @@ pub const rhi::RHI_PROVIDER_CONTRACT_VERSION: u32
 pub const rhi::RHI_PUBLICATION_ATTEMPT_EVIDENCE_CONTRACT_VERSION: u32
 pub const rhi::RHI_PUBLICATION_ATTEMPT_NUMBER_MAXIMUM: u16
 pub const rhi::RHI_PUBLICATION_CONTRACT_VERSION: u32
+pub const rhi::RHI_PUBLICATION_EXECUTION_CONTRACT_VERSION: u32
 pub const rhi::RHI_PUBLICATION_MAX_ATTEMPTS: u16
 pub const rhi::RHI_PUBLICATION_MAX_TARGETS: usize
 pub const rhi::RHI_PUBLICATION_SUBMISSION_CONTRACT_VERSION: u32
@@ -1571,6 +1639,8 @@ pub trait rhi::RhiCredentialAccess: core::marker::Send + core::marker::Sync
 pub fn rhi::RhiCredentialAccess::resolve_existing(&self, &rhi::RhiRuntimeContext, &rhi::RhiIdentityEnvelopeBinding) -> core::result::Result<rhi::RhiWrappingCredential, rhi::RhiCredentialResolutionError>
 impl rhi::RhiCredentialAccess for rhi::CanonicalRhiCredentialAccess
 pub fn rhi::CanonicalRhiCredentialAccess::resolve_existing(&self, &rhi::RhiRuntimeContext, &rhi::RhiIdentityEnvelopeBinding) -> core::result::Result<rhi::RhiWrappingCredential, rhi::RhiCredentialResolutionError>
+pub trait rhi::RhiExactPublicationSink: core::marker::Send + core::marker::Sync
+pub fn rhi::RhiExactPublicationSink::submit_exact<'a>(&'a self, &'a rhi::RhiPreparedPublicationAttempt) -> radroots_transport::source::BoxFuture<'a, rhi::RhiPublicationAttemptOutcome>
 pub trait rhi::RhiIdentityAccess: core::marker::Send + core::marker::Sync
 pub fn rhi::RhiIdentityAccess::open_existing(&self, &rhi::RhiIdentityEnvelopeBinding, &rhi::RhiWrappingCredential) -> core::result::Result<rhi::RhiDecryptedIdentity, rhi::RhiEncryptedIdentityEnvelopeError>
 impl rhi::RhiIdentityAccess for rhi::CanonicalRhiIdentityAccess

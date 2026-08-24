@@ -401,6 +401,27 @@ bindings when it persists Submitted before I/O and later commits an observed
 outcome. The exact machine contract is
 [`publication_attempt_evidence.v1.json`](contracts/services_hardening/publication_attempt_evidence.v1.json).
 
+## Durable exact-byte publication execution
+
+`RhiPublicationOutboxRepository` claims one due outbox with an injected
+nonzero owner and bounded lease only after binding the outbox and complete
+target inventory to the exact current required-publication authority. It
+persists the exact target as Submitted before remote I/O and exposes the
+original committed byte slice only through `RhiExactPublicationSink`. This
+dedicated boundary deliberately does not pass the payload through the generic
+typed-event sink: retries never parse, reconstruct, reserialize, or re-sign
+committed evidence.
+
+Observed outcomes append one immutable attempt row and compare-and-swap the
+target, persisted retry schedule, outbox disposition, and lease release in one
+short SQLx-owned transaction. Full-jitter exponential backoff uses only
+injected entropy. Cancellation or acknowledgement loss after Submitted remains
+Unknown; expired-lease recovery appends that conservative evidence before an
+exact-byte retry or exhaustion. No transaction remains open across relay I/O,
+and an unknown local commit must be reconciled by exact attempt identity. The
+exact machine contract is
+[`publication_execution.v1.json`](contracts/services_hardening/publication_execution.v1.json).
+
 ## Existing-state runtime foundation
 
 `open_rhi_runtime_foundation` opens only an already initialized database from

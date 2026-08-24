@@ -15,6 +15,9 @@ const PUBLICATION: &str = include_str!("../src/publication.rs");
 const PUBLICATION_ATTEMPT: &str = include_str!("../src/publication_attempt.rs");
 const PUBLICATION_ATTEMPT_CONTRACT: &str =
     include_str!("../contracts/services_hardening/publication_attempt_evidence.v1.json");
+const PUBLICATION_EXECUTION: &str = include_str!("../src/publication_execution.rs");
+const PUBLICATION_EXECUTION_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/publication_execution.v1.json");
 const PUBLICATION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/publication_outbox.v1.json");
 const PUBLICATION_SUBMISSION: &str = include_str!("../src/publication_submission.rs");
@@ -66,6 +69,7 @@ const SOURCES: &[&str] = &[
     include_str!("../src/identity_envelope.rs"),
     include_str!("../src/publication.rs"),
     include_str!("../src/publication_attempt.rs"),
+    include_str!("../src/publication_execution.rs"),
     include_str!("../src/publication_submission.rs"),
     include_str!("../src/reconciliation_attempt.rs"),
     include_str!("../src/reconciliation_attestation.rs"),
@@ -144,6 +148,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "identity_envelope",
         "publication",
         "publication_attempt",
+        "publication_execution",
         "publication_submission",
         "reconciliation_attempt",
         "reconciliation_attestation",
@@ -204,6 +209,15 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "RHI_PUBLICATION_ATTEMPT_EVIDENCE_CONTRACT_VERSION",
         "RHI_PUBLICATION_ATTEMPT_NUMBER_MAXIMUM",
         "RHI_PUBLICATION_TARGET_ORDINAL_MAXIMUM",
+        "RhiExactPublicationSink",
+        "RhiPreparedPublicationAttempt",
+        "RhiPublicationAttemptCommit",
+        "RhiPublicationExecutionErrorKind",
+        "RhiPublicationLease",
+        "RhiPublicationLeaseOwner",
+        "RhiPublicationOutboxState",
+        "RhiPublicationRetryDelayMilliseconds",
+        "RHI_PUBLICATION_EXECUTION_CONTRACT_VERSION",
         "RhiCommittedPublication",
         "RhiPublicationOutboxId",
         "RhiPublicationSubmissionErrorKind",
@@ -295,6 +309,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
     assert!(!PUBLIC_API.contains("rhi::runtime_adapters::"));
     assert!(!PUBLIC_API.contains("rhi::publication::"));
     assert!(!PUBLIC_API.contains("rhi::publication_attempt::"));
+    assert!(!PUBLIC_API.contains("rhi::publication_execution::"));
     assert!(!PUBLIC_API.contains("rhi::publication_submission::"));
 }
 
@@ -424,6 +439,66 @@ fn publication_attempt_evidence_is_closed_bounded_and_effect_free() {
     }
     assert!(!ROOT.contains("pub mod publication_attempt"));
     assert!(!PUBLIC_API.contains("rhi::publication_attempt::"));
+}
+
+#[test]
+fn publication_execution_is_sqlx_owned_exact_byte_and_fail_closed() {
+    let contract: serde_json::Value = serde_json::from_str(PUBLICATION_EXECUTION_CONTRACT)
+        .expect("publication-execution contract");
+    assert_eq!(contract["schema"], "radroots.rhi.publication-execution");
+    assert_eq!(contract["contract_version"], 1);
+    assert_eq!(
+        contract["storage_authority"],
+        "single_service_sqlite_host_sqlx_transactions"
+    );
+    assert_eq!(
+        contract["claim"]["authority"],
+        "exact_current_required_authority_and_target_set"
+    );
+    assert_eq!(contract["attempt"]["remote_io_outside_transaction"], true);
+    assert_eq!(contract["exact_byte_sink"]["parse"], false);
+    assert_eq!(contract["exact_byte_sink"]["reserialize"], false);
+    assert_eq!(
+        contract["cancellation_and_recovery"]["after_durable_submitted"],
+        "unknown_until_independent_evidence"
+    );
+    for required in [
+        "pub trait RhiExactPublicationSink: Send + Sync",
+        "pub async fn claim_next_publication(",
+        "pub async fn prepare_next_publication_target(",
+        "pub async fn record_publication_outcome(",
+        "pub async fn recover_one_expired_publication(",
+        "pub async fn execute_next_publication(",
+        "read_committed(transaction, lease.outbox.id)",
+        "state = 'submitted'",
+        "INSERT INTO publication_attempts",
+        "ServiceSqliteTransactionErrorKind::CommitOutcomeUnknown",
+    ] {
+        assert!(
+            PUBLICATION_EXECUTION.contains(required),
+            "publication execution is missing {required}"
+        );
+    }
+    for forbidden in [
+        "radroots_event_codec",
+        "Nip01EventWire",
+        "DeliveryPayload",
+        "EventSink",
+        "serde_json",
+        "SystemTime",
+        "thread_rng",
+        "OsRng",
+        "tokio::spawn",
+        "SqliteConnection",
+        "SqlitePool",
+    ] {
+        assert!(
+            !PUBLICATION_EXECUTION.contains(forbidden),
+            "publication execution gained forbidden authority {forbidden}"
+        );
+    }
+    assert!(!ROOT.contains("pub mod publication_execution"));
+    assert!(!PUBLIC_API.contains("rhi::publication_execution::"));
 }
 
 #[test]
@@ -713,7 +788,7 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .lines()
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
-    assert_eq!(public_error_count, 28);
+    assert_eq!(public_error_count, 29);
 }
 
 #[test]
@@ -1150,6 +1225,8 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "[`publication_outbox.v1.json`](contracts/services_hardening/publication_outbox.v1.json)",
         "## Bounded publication attempt evidence",
         "[`publication_attempt_evidence.v1.json`](contracts/services_hardening/publication_attempt_evidence.v1.json)",
+        "## Durable exact-byte publication execution",
+        "[`publication_execution.v1.json`](contracts/services_hardening/publication_execution.v1.json)",
         "The event body and exact kind-3441 structural tags",
         "without rebuilding, reserializing, or",
         "Coverage is exactly `Missing`, `Partial`, `ScopeSatisfied`, or `Unsupported`",

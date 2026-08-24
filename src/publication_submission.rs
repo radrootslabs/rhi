@@ -217,7 +217,7 @@ impl RhiPublicationOutboxRepository<'_> {
     }
 }
 
-async fn read_committed(
+pub(crate) async fn read_committed(
     transaction: &mut ServiceSqliteTransaction<'_>,
     requested_outbox_id: RhiPublicationOutboxId,
 ) -> Result<RhiCommittedPublication, ReadError> {
@@ -268,7 +268,7 @@ fn blob32(row: &sqlx::sqlite::SqliteRow, column: &str) -> Result<[u8; 32], ReadE
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ReadError {
+pub(crate) enum ReadError {
     NotFound,
     Binding,
     Storage,

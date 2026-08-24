@@ -182,6 +182,16 @@ impl RhiTimeEntropyAdapters {
         })
     }
 
+    pub(crate) fn now_utc_milliseconds(&self) -> Result<u64, RhiRuntimeAdapterError> {
+        self.now_utc()?
+            .get()
+            .checked_mul(1_000)
+            .filter(|value| *value <= i64::MAX as u64)
+            .ok_or_else(|| {
+                RhiRuntimeAdapterError::new(RhiRuntimeAdapterErrorKind::WallClockUnavailable)
+            })
+    }
+
     /// Reads one observation from the injected process-local monotonic domain.
     #[must_use]
     pub fn now_monotonic(&self) -> MonotonicTime {

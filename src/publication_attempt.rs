@@ -99,7 +99,7 @@ impl RhiPublicationAttemptOutcome {
 
 /// Bounded injected wall-clock value in integer UTC milliseconds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct RhiPublicationUnixMilliseconds(u64);
+pub struct RhiPublicationUnixMilliseconds(pub(crate) u64);
 
 impl RhiPublicationUnixMilliseconds {
     /// Validates an injected timestamp against SQLite's signed representation.
@@ -119,7 +119,7 @@ impl RhiPublicationUnixMilliseconds {
 
 /// Domain-separated identity of one exact outbox-target attempt.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct RhiPublicationAttemptId([u8; 32]);
+pub struct RhiPublicationAttemptId(pub(crate) [u8; 32]);
 
 impl RhiPublicationAttemptId {
     /// Returns the exact identity bytes.
@@ -127,6 +127,25 @@ impl RhiPublicationAttemptId {
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
+}
+
+pub(crate) const fn attempt_id_from_durable_bytes(bytes: [u8; 32]) -> RhiPublicationAttemptId {
+    RhiPublicationAttemptId(bytes)
+}
+
+pub(crate) fn derive_attempt_id(
+    outbox_id: crate::RhiPublicationOutboxId,
+    event_sha256: [u8; 32],
+    target_ordinal: u8,
+    attempt_number: u16,
+) -> RhiPublicationAttemptId {
+    let mut digest = Sha256::new();
+    digest.update(ATTEMPT_ID_DOMAIN);
+    digest.update(outbox_id.as_bytes());
+    digest.update(event_sha256);
+    digest.update(u32::from(target_ordinal).to_be_bytes());
+    digest.update(u32::from(attempt_number).to_be_bytes());
+    RhiPublicationAttemptId(digest.finalize().into())
 }
 
 impl fmt::Debug for RhiPublicationAttemptId {
@@ -183,14 +202,8 @@ impl RhiPublicationAttemptEvidence {
         }
         let outbox_id = publication.outbox_id();
         let event_sha256 = *publication.event_sha256();
-        let mut digest = Sha256::new();
-        digest.update(ATTEMPT_ID_DOMAIN);
-        digest.update(outbox_id.as_bytes());
-        digest.update(event_sha256);
-        digest.update(u32::from(target_ordinal).to_be_bytes());
-        digest.update(u32::from(attempt_number).to_be_bytes());
         Ok(Self {
-            id: RhiPublicationAttemptId(digest.finalize().into()),
+            id: derive_attempt_id(outbox_id, event_sha256, target_ordinal, attempt_number),
             outbox_id,
             event_sha256,
             target_ordinal,

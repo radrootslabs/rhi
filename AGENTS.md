@@ -300,6 +300,15 @@
   codes, raw relay diagnostics, reversed timestamps, or implicit clock reads.
   The model is not claim, transition, or relay authority. The durable executor
   must revalidate every live target, lease, revision, attempt, and byte binding.
+- Execute publication only through the dedicated exact-byte sink. Persist
+  Submitted before remote I/O, never hold a SQLx write transaction across that
+  I/O, and never parse, rebuild, reserialize, or re-sign the committed payload.
+  Append the closed attempt evidence and compare-and-swap target schedule,
+  outbox disposition, and lease release together. Cancellation or lost
+  acknowledgement after Submitted is Unknown until independent evidence;
+  expired-lease recovery must retain that evidence before bounded injected-
+  jitter retry. Never persist raw relay diagnostics or blindly repeat an
+  unknown local commit.
 - Commit one exact reconciliation-attempt replay inventory only through the
   typed attempt repository. Revalidate the exact live lease, dirty generation,
   evidence policy, and every scoped prior checkpoint before mutation; persist

@@ -1,29 +1,45 @@
 #![forbid(unsafe_code)]
 #![cfg(any(target_os = "linux", target_os = "macos"))]
 
-use std::{error::Error, fs, os::unix::fs::PermissionsExt, path::Path, time::Duration};
+use std::{
+    error::Error,
+    fs,
+    os::unix::fs::PermissionsExt,
+    path::Path,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 use nostr::{Keys, SecretKey};
-use radroots_service_host::{EntropyError, EntropySource};
+use radroots_service_host::{
+    EntropyError, EntropySource, SystemMonotonicClock, UnixTimeSeconds, WallClock, WallClockError,
+};
 use radroots_service_sqlite::{MigrationAppliedAtUnixSeconds, MigrationBuildIdentity};
 use radroots_storage::event::SourceGeneration;
+use radroots_transport::BoxFuture;
 use rhi::{
     RadrootsHostEnvironment, RadrootsPathResolver, RadrootsPlatform, RhiDecryptedIdentity,
     RhiEncryptedIdentityProvisioningMaterial, RhiEvidenceAttestationSupersession,
-    RhiIdentityEnvelopeBinding, RhiPublicationAuthority, RhiPublicationMode,
-    RhiReconciliationAttemptErrorKind, RhiReconciliationAttemptPlan,
-    RhiReconciliationAttemptResults, RhiReconciliationAttestationErrorKind,
-    RhiReconciliationCommitErrorKind, RhiReconciliationFinalizationCommitErrorKind,
-    RhiReconciliationFinalizationErrorKind, RhiReconciliationJobErrorKind,
-    RhiReconciliationJobPolicy, RhiReconciliationJobState, RhiReconciliationLease,
-    RhiReconciliationLeaseOwner, RhiReconciliationRetryDelayMilliseconds,
+    RhiExactPublicationSink, RhiIdentityEnvelopeBinding, RhiPreparedPublicationAttempt,
+    RhiPublicationAttemptOutcome, RhiPublicationAuthority, RhiPublicationLeaseOwner,
+    RhiPublicationMode, RhiPublicationOutboxState, RhiPublicationRetryDelayMilliseconds,
+    RhiPublicationTargetState, RhiPublicationUnixMilliseconds, RhiReconciliationAttemptErrorKind,
+    RhiReconciliationAttemptPlan, RhiReconciliationAttemptResults,
+    RhiReconciliationAttestationErrorKind, RhiReconciliationCommitErrorKind,
+    RhiReconciliationFinalizationCommitErrorKind, RhiReconciliationFinalizationErrorKind,
+    RhiReconciliationJobErrorKind, RhiReconciliationJobPolicy, RhiReconciliationJobState,
+    RhiReconciliationLease, RhiReconciliationLeaseOwner, RhiReconciliationRetryDelayMilliseconds,
     RhiReconciliationScopePrerequisites, RhiReconciliationSourceReplayPlan,
     RhiReconciliationSourceResult, RhiReconciliationUnixMilliseconds, RhiRuntimeContext,
-    RhiStateMetadata, RhiTradeMutationAdmissionLimits, RhiTradeMutationAuthoredTimePolicy,
-    RhiTradeMutationObservedAtUnixSeconds, RhiTradeSourceCompletion, TradeId, UnixTimeSeconds,
-    admit_rhi_trade_mutation_event, build_rhi_signed_evidence_attestation, initialize_rhi_state,
-    open_rhi_state_inspection, open_rhi_state_read_write, parse_rhi_cli_v1_from,
-    parse_rhi_config_v1, provision_rhi_encrypted_identity, reduce_rhi_reconciliation_manifest,
+    RhiStateMetadata, RhiTimeEntropyAdapters, RhiTradeMutationAdmissionLimits,
+    RhiTradeMutationAuthoredTimePolicy, RhiTradeMutationObservedAtUnixSeconds,
+    RhiTradeSourceCompletion, TradeId, admit_rhi_trade_mutation_event,
+    build_rhi_signed_evidence_attestation, initialize_rhi_state, open_rhi_state_inspection,
+    open_rhi_state_read_write, parse_rhi_cli_v1_from, parse_rhi_config_v1,
+    provision_rhi_encrypted_identity, reduce_rhi_reconciliation_manifest,
     resolve_rhi_runtime_context, resolve_rhi_wrapping_credential,
 };
 use sha2::{Digest, Sha256};
@@ -1610,6 +1626,63 @@ impl EntropySource for FailingAttestationEntropy {
     }
 }
 
+#[derive(Clone, Copy)]
+struct FixedPublicationWall(u64);
+
+impl WallClock for FixedPublicationWall {
+    fn now_utc(&self) -> Result<UnixTimeSeconds, WallClockError> {
+        Ok(UnixTimeSeconds::new(self.0))
+    }
+}
+
+struct RecordingExactPublicationSink {
+    expected: Arc<Vec<u8>>,
+    calls: Arc<AtomicUsize>,
+    outcome: RhiPublicationAttemptOutcome,
+}
+
+impl RhiExactPublicationSink for RecordingExactPublicationSink {
+    fn submit_exact<'a>(
+        &'a self,
+        attempt: &'a RhiPreparedPublicationAttempt,
+    ) -> BoxFuture<'a, RhiPublicationAttemptOutcome> {
+        Box::pin(async move {
+            assert_eq!(attempt.exact_signed_event_bytes(), self.expected.as_slice());
+            assert_eq!(attempt.relay_id(), "relay-primary");
+            assert!(attempt.deadline_at().get() > 0);
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.outcome
+        })
+    }
+}
+
+struct PendingExactPublicationSink;
+
+impl RhiExactPublicationSink for PendingExactPublicationSink {
+    fn submit_exact<'a>(
+        &'a self,
+        _attempt: &'a RhiPreparedPublicationAttempt,
+    ) -> BoxFuture<'a, RhiPublicationAttemptOutcome> {
+        Box::pin(std::future::pending())
+    }
+}
+
+fn publication_now(value: u64) -> RhiPublicationUnixMilliseconds {
+    RhiPublicationUnixMilliseconds::new(value).expect("publication time")
+}
+
+fn publication_owner(byte: u8) -> RhiPublicationLeaseOwner {
+    RhiPublicationLeaseOwner::from_bytes([byte; 16]).expect("publication owner")
+}
+
+fn publication_adapters(seconds: u64) -> RhiTimeEntropyAdapters {
+    RhiTimeEntropyAdapters::new(
+        FixedPublicationWall(seconds),
+        SystemMonotonicClock::new(),
+        FixedAttestationEntropy(0xff),
+    )
+}
+
 fn attestation_secret() -> [u8; 32] {
     [1; 32]
 }
@@ -2037,6 +2110,506 @@ JOIN publication_outbox AS outbox ON outbox.event_id = event.event_id"#,
         signed,
         publication,
         manifest,
+        configuration,
+        metadata,
+        runtime,
+        root,
+    ));
+}
+
+#[tokio::test]
+async fn exact_byte_publication_persists_submitted_before_io_and_commits_accepted() {
+    let (
+        root,
+        runtime,
+        metadata,
+        configuration,
+        host,
+        lease,
+        signed,
+        publication,
+        manifest,
+        _trade,
+    ) = signed_finalization_fixture("publication-execution-accepted", false).await;
+    let repositories = host.repositories();
+    let finalized = repositories
+        .reconciliation_attempts()
+        .commit_finalization(&signed, &publication, now(1_784_347_208_000))
+        .await
+        .expect("finalization");
+    let outbox_id = finalized.outbox_id().expect("outbox");
+    let expected = Arc::new(signed.signed_event_bytes().to_vec());
+    let calls = Arc::new(AtomicUsize::new(0));
+    let sink = RecordingExactPublicationSink {
+        expected: Arc::clone(&expected),
+        calls: Arc::clone(&calls),
+        outcome: RhiPublicationAttemptOutcome::Accepted,
+    };
+    let outcome = repositories
+        .publication_outbox()
+        .execute_next_publication(
+            publication_owner(0x91),
+            &publication_adapters(1_784_347_208),
+            &sink,
+            &publication,
+        )
+        .await
+        .expect("exact publication")
+        .expect("due publication");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(outcome.outbox_id(), outbox_id);
+    assert_eq!(outcome.target_ordinal(), 0);
+    assert_eq!(outcome.attempt_number(), 1);
+    assert_eq!(outcome.outcome(), RhiPublicationAttemptOutcome::Accepted);
+    assert_eq!(outcome.target_state(), RhiPublicationTargetState::Accepted);
+    assert_eq!(outcome.outbox_state(), RhiPublicationOutboxState::Complete);
+
+    let mut connection = fixture_connection(&runtime).await;
+    let durable: (String, i64, String, i64, i64, String, String) = sqlx::query_as(
+        r#"SELECT outbox.state, outbox.revision,
+            target.state, target.revision, target.attempt_count,
+            attempt.outcome, attempt.result_code
+FROM publication_outbox AS outbox
+JOIN publication_targets AS target ON target.outbox_id = outbox.outbox_id
+JOIN publication_attempts AS attempt
+    ON attempt.attempt_id = target.last_attempt_id
+WHERE outbox.outbox_id = ? AND target.target_ordinal = 0"#,
+    )
+    .bind(outbox_id.as_bytes().as_slice())
+    .fetch_one(&mut connection)
+    .await
+    .expect("durable publication outcome");
+    assert_eq!(
+        durable,
+        (
+            "complete".into(),
+            3,
+            "accepted".into(),
+            3,
+            1,
+            "accepted".into(),
+            "accepted".into()
+        )
+    );
+    let stored: Vec<u8> = sqlx::query_scalar(
+        r#"SELECT event.canonical_event_json
+FROM publication_outbox AS outbox
+JOIN signed_attestation_events AS event ON event.event_id = outbox.event_id
+WHERE outbox.outbox_id = ?"#,
+    )
+    .bind(outbox_id.as_bytes().as_slice())
+    .fetch_one(&mut connection)
+    .await
+    .expect("stored exact bytes");
+    assert_eq!(stored, expected.as_ref().clone());
+    connection.close().await.expect("fixture close");
+    host.close().await.expect("host close");
+    drop((
+        manifest,
+        publication,
+        signed,
+        lease,
+        configuration,
+        metadata,
+        runtime,
+        root,
+    ));
+}
+
+#[tokio::test]
+async fn cancelled_submitted_attempt_recovers_unknown_and_retries_exact_bytes_after_reopen() {
+    let (
+        root,
+        runtime,
+        metadata,
+        configuration,
+        host,
+        lease,
+        signed,
+        publication,
+        manifest,
+        _trade,
+    ) = signed_finalization_fixture("publication-execution-cancel", false).await;
+    let repositories = host.repositories();
+    let finalized = repositories
+        .reconciliation_attempts()
+        .commit_finalization(&signed, &publication, now(1_784_347_208_000))
+        .await
+        .expect("finalization");
+    let outbox_id = finalized.outbox_id().expect("outbox");
+    let claimed = repositories
+        .publication_outbox()
+        .claim_next_publication(
+            publication_owner(0x92),
+            publication_now(1_784_347_208_000),
+            &publication,
+        )
+        .await
+        .expect("claim")
+        .expect("due outbox");
+    let prepared = repositories
+        .publication_outbox()
+        .prepare_next_publication_target(claimed, publication_now(1_784_347_208_000))
+        .await
+        .expect("durable submitted");
+    assert_eq!(
+        prepared.exact_signed_event_bytes(),
+        signed.signed_event_bytes()
+    );
+    let pending = PendingExactPublicationSink.submit_exact(&prepared);
+    drop(pending);
+    drop(prepared);
+
+    let mut connection = fixture_connection(&runtime).await;
+    let submitted: (String, String, i64, i64) = sqlx::query_as(
+        r#"SELECT outbox.state, target.state, target.attempt_count,
+            (SELECT COUNT(*) FROM publication_attempts)
+FROM publication_outbox AS outbox
+JOIN publication_targets AS target ON target.outbox_id = outbox.outbox_id
+WHERE outbox.outbox_id = ? AND target.target_ordinal = 0"#,
+    )
+    .bind(outbox_id.as_bytes().as_slice())
+    .fetch_one(&mut connection)
+    .await
+    .expect("submitted state");
+    assert_eq!(submitted, ("leased".into(), "submitted".into(), 1, 0));
+    connection.close().await.expect("fixture close");
+    host.close().await.expect("host close");
+
+    let reopened = open_writer(&runtime, &metadata).await;
+    assert!(
+        reopened
+            .repositories()
+            .publication_outbox()
+            .recover_one_expired_publication(
+                &publication_adapters(1_784_347_224),
+                publication_now(1_784_347_224_000),
+                &publication,
+            )
+            .await
+            .expect("expired recovery")
+    );
+    let mut connection = fixture_connection(&runtime).await;
+    let recovered: (String, String, i64, String, i64) = sqlx::query_as(
+        r#"SELECT outbox.state, target.state, target.attempt_count,
+            attempt.outcome, target.next_attempt_unix_ms
+FROM publication_outbox AS outbox
+JOIN publication_targets AS target ON target.outbox_id = outbox.outbox_id
+JOIN publication_attempts AS attempt ON attempt.attempt_id = target.last_attempt_id
+WHERE outbox.outbox_id = ? AND target.target_ordinal = 0"#,
+    )
+    .bind(outbox_id.as_bytes().as_slice())
+    .fetch_one(&mut connection)
+    .await
+    .expect("recovered unknown");
+    assert_eq!(recovered.0, "pending");
+    assert_eq!(recovered.1, "unknown");
+    assert_eq!(recovered.2, 1);
+    assert_eq!(recovered.3, "unknown");
+    assert!(recovered.4 >= 1_784_347_224_000);
+    assert!(recovered.4 <= 1_784_347_224_250);
+    connection.close().await.expect("fixture close");
+
+    let expected = Arc::new(signed.signed_event_bytes().to_vec());
+    let calls = Arc::new(AtomicUsize::new(0));
+    let sink = RecordingExactPublicationSink {
+        expected: Arc::clone(&expected),
+        calls: Arc::clone(&calls),
+        outcome: RhiPublicationAttemptOutcome::Accepted,
+    };
+    let retried = reopened
+        .repositories()
+        .publication_outbox()
+        .execute_next_publication(
+            publication_owner(0x93),
+            &publication_adapters(1_784_347_300),
+            &sink,
+            &publication,
+        )
+        .await
+        .expect("exact retry")
+        .expect("retried target");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(retried.attempt_number(), 2);
+    assert_eq!(retried.outbox_state(), RhiPublicationOutboxState::Complete);
+    reopened.close().await.expect("reopened close");
+    drop((
+        manifest,
+        publication,
+        signed,
+        lease,
+        configuration,
+        metadata,
+        runtime,
+        root,
+    ));
+}
+
+#[tokio::test]
+async fn publication_outcome_commit_is_idempotent_and_inspection_is_nonmutating() {
+    let (
+        root,
+        runtime,
+        metadata,
+        configuration,
+        host,
+        lease,
+        signed,
+        publication,
+        manifest,
+        _trade,
+    ) = signed_finalization_fixture("publication-execution-reconcile", false).await;
+    let repositories = host.repositories();
+    let finalized = repositories
+        .reconciliation_attempts()
+        .commit_finalization(&signed, &publication, now(1_784_347_208_000))
+        .await
+        .expect("finalization");
+    let outbox_id = finalized.outbox_id().expect("outbox");
+    let claimed = repositories
+        .publication_outbox()
+        .claim_next_publication(
+            publication_owner(0x94),
+            publication_now(1_784_347_208_000),
+            &publication,
+        )
+        .await
+        .expect("claim")
+        .expect("due outbox");
+    let prepared = repositories
+        .publication_outbox()
+        .prepare_next_publication_target(claimed, publication_now(1_784_347_208_000))
+        .await
+        .expect("prepare");
+    let delay = RhiPublicationRetryDelayMilliseconds::new(0).expect("zero delay");
+    let first = repositories
+        .publication_outbox()
+        .record_publication_outcome(
+            &prepared,
+            publication_now(1_784_347_208_001),
+            RhiPublicationAttemptOutcome::Accepted,
+            delay,
+        )
+        .await
+        .expect("first commit");
+    let retry = repositories
+        .publication_outbox()
+        .record_publication_outcome(
+            &prepared,
+            publication_now(1_784_347_208_001),
+            RhiPublicationAttemptOutcome::Accepted,
+            delay,
+        )
+        .await
+        .expect("reconciled commit");
+    assert_eq!(retry, first);
+    assert_eq!(retry.outbox_id(), outbox_id);
+    host.close().await.expect("host close");
+
+    let inspection = open_rhi_state_inspection(&runtime, &metadata)
+        .await
+        .expect("inspection");
+    let error = inspection
+        .repositories()
+        .publication_outbox()
+        .claim_next_publication(
+            publication_owner(0x95),
+            publication_now(1_784_347_300_000),
+            &publication,
+        )
+        .await
+        .expect_err("inspection cannot claim");
+    assert_eq!(
+        error.kind(),
+        rhi::RhiPublicationExecutionErrorKind::InvalidMode
+    );
+    inspection.close().await.expect("inspection close");
+    drop((
+        manifest,
+        publication,
+        signed,
+        lease,
+        configuration,
+        metadata,
+        runtime,
+        root,
+    ));
+}
+
+#[tokio::test]
+async fn publication_execution_binds_live_authority_without_mutating_on_mismatch_or_disable() {
+    let (
+        root,
+        runtime,
+        metadata,
+        configuration,
+        host,
+        lease,
+        signed,
+        publication,
+        manifest,
+        _trade,
+    ) = signed_finalization_fixture("publication-execution-authority", false).await;
+    let repositories = host.repositories();
+    let finalized = repositories
+        .reconciliation_attempts()
+        .commit_finalization(&signed, &publication, now(1_784_347_208_000))
+        .await
+        .expect("finalization");
+    let outbox_id = finalized.outbox_id().expect("outbox");
+    let mut connection = fixture_connection(&runtime).await;
+    let before: (String, i64, String, i64, i64) = sqlx::query_as(
+        r#"SELECT outbox.state, outbox.revision, target.state,
+            target.revision, target.attempt_count
+FROM publication_outbox AS outbox
+JOIN publication_targets AS target ON target.outbox_id = outbox.outbox_id
+WHERE outbox.outbox_id = ? AND target.target_ordinal = 0"#,
+    )
+    .bind(outbox_id.as_bytes().as_slice())
+    .fetch_one(&mut connection)
+    .await
+    .expect("before authority mismatch");
+    connection.close().await.expect("fixture close");
+
+    let changed = EXAMPLE.replacen(
+        "attempt_deadline_ms = 15000",
+        "attempt_deadline_ms = 14999",
+        1,
+    );
+    let changed = parse_rhi_config_v1(changed.as_bytes(), rhi::RhiConfigProfile::RepoLocal)
+        .expect("changed configuration");
+    let mismatched = RhiPublicationAuthority::from_config(&changed).expect("changed authority");
+    let error = repositories
+        .publication_outbox()
+        .claim_next_publication(
+            publication_owner(0xa1),
+            publication_now(1_784_347_208_000),
+            &mismatched,
+        )
+        .await
+        .expect_err("mismatched authority");
+    assert_eq!(
+        error.kind(),
+        rhi::RhiPublicationExecutionErrorKind::Invariant
+    );
+
+    let publication_offset = EXAMPLE.find("[publication]").expect("publication section");
+    let presence_offset = EXAMPLE.find("[presence]").expect("presence section");
+    let disabled_source = format!(
+        "{}[publication]\nmode = \"disabled\"\n\n{}",
+        &EXAMPLE[..publication_offset],
+        &EXAMPLE[presence_offset..]
+    );
+    let disabled =
+        parse_rhi_config_v1(disabled_source.as_bytes(), rhi::RhiConfigProfile::RepoLocal)
+            .expect("disabled configuration");
+    let disabled = RhiPublicationAuthority::from_config(&disabled).expect("disabled authority");
+    assert!(
+        repositories
+            .publication_outbox()
+            .claim_next_publication(
+                publication_owner(0xa2),
+                publication_now(1_784_347_208_000),
+                &disabled,
+            )
+            .await
+            .expect("disabled authority")
+            .is_none()
+    );
+
+    let mut connection = fixture_connection(&runtime).await;
+    let after: (String, i64, String, i64, i64) = sqlx::query_as(
+        r#"SELECT outbox.state, outbox.revision, target.state,
+            target.revision, target.attempt_count
+FROM publication_outbox AS outbox
+JOIN publication_targets AS target ON target.outbox_id = outbox.outbox_id
+WHERE outbox.outbox_id = ? AND target.target_ordinal = 0"#,
+    )
+    .bind(outbox_id.as_bytes().as_slice())
+    .fetch_one(&mut connection)
+    .await
+    .expect("after authority mismatch");
+    assert_eq!(after, before);
+    connection.close().await.expect("fixture close");
+    host.close().await.expect("host close");
+    drop((
+        manifest,
+        publication,
+        signed,
+        lease,
+        configuration,
+        metadata,
+        runtime,
+        root,
+    ));
+}
+
+#[tokio::test]
+async fn terminal_required_rejection_blocks_the_outbox_without_retry_schedule() {
+    let (
+        root,
+        runtime,
+        metadata,
+        configuration,
+        host,
+        lease,
+        signed,
+        publication,
+        manifest,
+        _trade,
+    ) = signed_finalization_fixture("publication-execution-rejected", false).await;
+    let repositories = host.repositories();
+    let finalized = repositories
+        .reconciliation_attempts()
+        .commit_finalization(&signed, &publication, now(1_784_347_208_000))
+        .await
+        .expect("finalization");
+    let expected = Arc::new(signed.signed_event_bytes().to_vec());
+    let calls = Arc::new(AtomicUsize::new(0));
+    let sink = RecordingExactPublicationSink {
+        expected,
+        calls: Arc::clone(&calls),
+        outcome: RhiPublicationAttemptOutcome::Rejected,
+    };
+    let committed = repositories
+        .publication_outbox()
+        .execute_next_publication(
+            publication_owner(0xa3),
+            &publication_adapters(1_784_347_208),
+            &sink,
+            &publication,
+        )
+        .await
+        .expect("terminal rejection")
+        .expect("due outbox");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(committed.outcome(), RhiPublicationAttemptOutcome::Rejected);
+    assert_eq!(
+        committed.target_state(),
+        RhiPublicationTargetState::Rejected
+    );
+    assert_eq!(committed.outbox_state(), RhiPublicationOutboxState::Blocked);
+
+    let mut connection = fixture_connection(&runtime).await;
+    let durable: (String, Option<i64>, String, Option<i64>) = sqlx::query_as(
+        r#"SELECT outbox.state, outbox.next_attempt_unix_ms,
+            target.state, target.next_attempt_unix_ms
+FROM publication_outbox AS outbox
+JOIN publication_targets AS target ON target.outbox_id = outbox.outbox_id
+WHERE outbox.outbox_id = ? AND target.target_ordinal = 0"#,
+    )
+    .bind(finalized.outbox_id().expect("outbox").as_bytes().as_slice())
+    .fetch_one(&mut connection)
+    .await
+    .expect("terminal durable state");
+    assert_eq!(durable, ("blocked".into(), None, "rejected".into(), None));
+    connection.close().await.expect("fixture close");
+    host.close().await.expect("host close");
+    drop((
+        manifest,
+        publication,
+        signed,
+        lease,
         configuration,
         metadata,
         runtime,

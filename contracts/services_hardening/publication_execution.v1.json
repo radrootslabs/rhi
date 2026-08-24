@@ -1,0 +1,106 @@
+{
+  "schema": "radroots.rhi.publication-execution",
+  "schema_version": 1,
+  "contract_version": 1,
+  "storage_authority": "single_service_sqlite_host_sqlx_transactions",
+  "claim": {
+    "order": ["next_attempt_unix_ms", "created_at_unix_ms", "outbox_id"],
+    "authority": "exact_current_required_authority_and_target_set",
+    "owner_bytes": 16,
+    "owner_all_zero": false,
+    "lease_duration": "exact_attempt_deadline_ms",
+    "compare_and_swap": ["outbox_id", "revision", "state", "schedule", "updated_at"]
+  },
+  "attempt": {
+    "prepare_sequence": [
+      "revalidate_exact_unexpired_lease",
+      "validate_complete_immutable_target_inventory",
+      "select_first_due_target_by_ordinal",
+      "increment_attempt_and_persist_submitted",
+      "read_and_verify_exact_committed_event_bytes",
+      "return_sealed_exact_byte_capability"
+    ],
+    "remote_io_outside_transaction": true,
+    "outcome_sequence": [
+      "reconcile_exact_prior_success",
+      "revalidate_lease_and_submitted_target",
+      "append_immutable_attempt_evidence",
+      "compare_and_swap_target_outcome_and_schedule",
+      "derive_outbox_disposition_from_all_targets",
+      "release_lease_in_same_commit"
+    ],
+    "attempt_identity": "step_201_domain_derived",
+    "result_code": "exact_closed_outcome_code",
+    "accepted_is_terminal": true
+  },
+  "exact_byte_sink": {
+    "input": "borrowed_original_committed_signed_event_bytes",
+    "parse": false,
+    "rebuild": false,
+    "reserialize": false,
+    "resign": false,
+    "raw_result_or_error": false,
+    "closed_observation_only": true
+  },
+  "retry": {
+    "retryable_outcomes": ["rate_limited", "failed", "unknown"],
+    "terminal_outcomes": ["accepted", "rejected", "auth_required"],
+    "algorithm": "full_jitter_exponential_cap",
+    "upper_bound": "min(maximum_backoff_ms, initial_backoff_ms_times_two_to_attempt_minus_one)",
+    "delay_source": "injected_entropy",
+    "schedule_persisted_with_outcome": true,
+    "maximum_attempts": 100
+  },
+  "cancellation_and_recovery": {
+    "before_claim": "no_authoritative_effect",
+    "after_claim_before_submitted": "expired_lease_releases_to_existing_schedule",
+    "after_durable_submitted": "unknown_until_independent_evidence",
+    "lost_acknowledgement": "unknown_until_independent_evidence",
+    "expired_submitted": "append_unknown_then_schedule_exact_byte_retry_or_block",
+    "restart": "recover_at_most_one_bounded_expired_lease_per_call",
+    "commit_outcome_unknown": "reread_and_idempotently_reconcile_exact_attempt_identity"
+  },
+  "outbox_disposition": {
+    "complete": "all_required_targets_accepted",
+    "blocked": "any_required_target_terminal_nonaccepted_or_attempts_exhausted",
+    "pending": "minimum_persisted_required_target_retry_time",
+    "optional_targets_do_not_block_required_completion": true
+  },
+  "bounds": {
+    "target_count_maximum": 32,
+    "attempt_count_maximum": 100,
+    "relay_id_bytes_maximum": 64,
+    "signed_event_bytes_maximum": 32768,
+    "unix_milliseconds_maximum": 9223372036854775807,
+    "initial_backoff_ms_maximum": 60000,
+    "maximum_backoff_ms_maximum": 3600000,
+    "attempt_deadline_ms": { "minimum": 100, "maximum": 30000 }
+  },
+  "effects": {
+    "sqlite": "short_bounded_sqlx_transactions",
+    "remote_io": "only_after_durable_submitted",
+    "sqlite_transaction_during_remote_io": false,
+    "ambient_clock": false,
+    "ambient_entropy": false,
+    "detached_task": false
+  },
+  "deferred_to_step_203": [
+    "publication_wave_failpoint_matrix",
+    "concurrent_worker_qualification",
+    "historical_nullable_reconciliation_job_guard",
+    "wave_resource_qualification"
+  ],
+  "forbidden": [
+    "generic_typed_event_sink_for_committed_retry",
+    "event_parse_or_reconstruction",
+    "event_reserialization",
+    "event_resigning",
+    "relay_io_before_submitted_commit",
+    "write_transaction_during_relay_io",
+    "raw_relay_error_persistence",
+    "unbounded_inventory_read",
+    "caller_supplied_attempt_identity",
+    "blind_retry_after_unknown_commit",
+    "second_sqlite_pool_or_connection_authority"
+  ]
+}

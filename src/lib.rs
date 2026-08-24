@@ -10,6 +10,7 @@ mod identity_credential;
 mod identity_envelope;
 mod publication;
 mod publication_attempt;
+mod publication_execution;
 mod publication_submission;
 mod reconciliation_attempt;
 mod reconciliation_attestation;
@@ -79,6 +80,12 @@ pub use publication_attempt::{
     RhiPublicationAttemptEvidenceError, RhiPublicationAttemptEvidenceErrorKind,
     RhiPublicationAttemptId, RhiPublicationAttemptOutcome, RhiPublicationTargetState,
     RhiPublicationUnixMilliseconds,
+};
+pub use publication_execution::{
+    RHI_PUBLICATION_EXECUTION_CONTRACT_VERSION, RhiExactPublicationSink,
+    RhiPreparedPublicationAttempt, RhiPublicationAttemptCommit, RhiPublicationExecutionError,
+    RhiPublicationExecutionErrorKind, RhiPublicationLease, RhiPublicationLeaseOwner,
+    RhiPublicationOutboxState, RhiPublicationRetryDelayMilliseconds,
 };
 pub use publication_submission::{
     RHI_PUBLICATION_SUBMISSION_CONTRACT_VERSION, RhiCommittedPublication, RhiPublicationOutboxId,
