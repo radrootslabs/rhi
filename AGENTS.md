@@ -404,13 +404,15 @@
   identity rekey/replace vocabulary, and Step 209 alone may claim the complete
   20-route/33-model surface. Never expose the shared raw router, listener, JSON
   handler, or a caller-selected socket path.
-- Through Step 208, the active and final route sets are exactly seven common
-  plus thirteen domain routes. Pagination is bounded to 200 items, query fields
-  are closed, authenticated cursors remain bound by the handler to
-  route/filter/snapshot, and decoded trade parameters use the exact
-  lowercase-hex trade-ID type. Identity rotation remains offline create-new
-  plus validated configuration apply and restart; Unix peer admission grants
-  no direct SQLite or identity-provider mutation authority.
+- Through Step 209, the active and final route sets are exactly seven common
+  plus thirteen domain routes. The Step 209 wave contract freezes the complete
+  original-wire, version, pagination, idempotency, peer, removed-route, and
+  resource negative matrices against the exact Lib source lock. Pagination is
+  bounded to 200 items, query fields are closed, authenticated cursors remain
+  bound by the handler to route/filter/snapshot, and decoded trade parameters
+  use the exact lowercase-hex trade-ID type. Identity rotation remains offline
+  create-new plus validated configuration apply and restart; Unix peer
+  admission grants no direct SQLite or identity-provider mutation authority.
 - Optional TCP operations expose only cached `/livez`, `/readyz`, and
   `/metrics`; requests must not perform SQLite, source, relay, DNS, identity,
   evidence, or credential probes.

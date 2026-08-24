@@ -498,7 +498,7 @@ impl fmt::Display for RhiAdminRouterError {
 
 impl Error for RhiAdminRouterError {}
 
-/// Opaque RHI v1 router capability through Step 208.
+/// Opaque final RHI v1 router capability through Step 209.
 ///
 /// The underlying shared-host router remains an implementation detail. The
 /// later runtime-composition checkpoint consumes this capability without
@@ -627,7 +627,7 @@ impl fmt::Display for RhiAdminServerError {
 
 impl Error for RhiAdminServerError {}
 
-/// Unbound RHI Unix-admin server through Step 208.
+/// Unbound final RHI Unix-admin server through Step 209.
 ///
 /// Construction projects only the already-admitted Rhi configuration, seals
 /// the exact route inventory around the supplied domain handler, and uses the
@@ -679,7 +679,7 @@ impl fmt::Debug for RhiAdminServer {
     }
 }
 
-/// Bound RHI Unix-admin server through Step 208.
+/// Bound final RHI Unix-admin server through Step 209.
 pub struct RhiBoundAdminServer {
     inner: SharedAdminServer,
     binding: UnixAdminSocketBinding,
@@ -704,7 +704,7 @@ impl fmt::Debug for RhiBoundAdminServer {
     }
 }
 
-/// Registers the final seven common and thirteen domain routes through Step 208.
+/// Registers the final seven common and thirteen domain routes through Step 209.
 ///
 /// Live identity rekey and replace are absent by final offline-only policy.
 pub fn build_rhi_admin_router<H>(handler: Arc<H>) -> Result<RhiAdminRouter, RhiAdminRouterError>
@@ -1919,6 +1919,7 @@ mod tests {
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     mod native {
+        use std::collections::BTreeMap;
         use std::fs;
         use std::path::Path;
         use std::sync::Mutex;
@@ -1931,15 +1932,18 @@ mod tests {
         const CONFIG: &str = include_str!("../contracts/services_hardening/config.v1.example.toml");
 
         type FixtureCall = (RhiAdminRoute, Option<String>, Option<String>, Box<[u8]>);
+        type FixtureOperation = (RhiAdminRoute, Box<[u8]>);
 
         struct FixtureHandler {
             calls: Mutex<Vec<FixtureCall>>,
+            operations: Mutex<BTreeMap<String, FixtureOperation>>,
         }
 
         impl FixtureHandler {
             fn new() -> Self {
                 Self {
                     calls: Mutex::new(Vec::new()),
+                    operations: Mutex::new(BTreeMap::new()),
                 }
             }
         }
@@ -1947,11 +1951,6 @@ mod tests {
         impl RhiAdminHandler for FixtureHandler {
             fn handle<'a>(&'a self, request: RhiAdminRequestDocument) -> RhiAdminFuture<'a> {
                 Box::pin(async move {
-                    if request.operation_id() == Some("conflict") {
-                        return Err(RhiAdminHandlerError::new(
-                            RhiAdminHandlerErrorKind::OperationIdConflict,
-                        ));
-                    }
                     if request
                         .model_bytes()
                         .windows(15)
@@ -1960,6 +1959,23 @@ mod tests {
                         return Err(RhiAdminHandlerError::new(
                             RhiAdminHandlerErrorKind::InvalidCursor,
                         ));
+                    }
+                    if let Some(operation_id) = request.operation_id() {
+                        let mut operations = self.operations.lock().expect("operations");
+                        if let Some((route, request_bytes)) = operations.get(operation_id) {
+                            if *route != request.route()
+                                || request_bytes.as_ref() != request.model_bytes()
+                            {
+                                return Err(RhiAdminHandlerError::new(
+                                    RhiAdminHandlerErrorKind::OperationIdConflict,
+                                ));
+                            }
+                            return Ok(response_document(request.route()));
+                        }
+                        operations.insert(
+                            operation_id.to_owned(),
+                            (request.route(), request.model_bytes().into()),
+                        );
                     }
                     self.calls.lock().expect("calls").push((
                         request.route(),
@@ -2026,23 +2042,29 @@ mod tests {
             AdminClientTarget::new(format!("{path}?{}", serializer.finish())).expect("query target")
         }
 
-        async fn raw_post(socket: &Path, body: &str) -> String {
+        async fn raw_post(socket: &Path, path: &str, body: &str) -> String {
             let mut stream = tokio::net::UnixStream::connect(socket)
                 .await
                 .expect("raw connection");
             let request = format!(
-                "POST /v1/state/backup HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                "POST {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()
             );
-            stream
-                .write_all(request.as_bytes())
-                .await
-                .expect("raw request");
+            match stream.write_all(request.as_bytes()).await {
+                Ok(()) => {}
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::ConnectionReset
+                    ) => {}
+                Err(error) => panic!("raw request: {error}"),
+            }
             let mut response = Vec::new();
-            stream
-                .read_to_end(&mut response)
-                .await
-                .expect("raw response");
+            match stream.read_to_end(&mut response).await {
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::ConnectionReset => {}
+                Err(error) => panic!("raw response: {error}"),
+            }
             String::from_utf8(response).expect("HTTP response")
         }
 
@@ -2067,6 +2089,16 @@ mod tests {
             let client =
                 AdminClient::new(&socket, AdminTransportLimits::DEFAULT).expect("admin client");
 
+            use std::os::unix::fs::PermissionsExt as _;
+            assert_eq!(
+                fs::metadata(&socket)
+                    .expect("admin socket metadata")
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+
             for (index, route) in RhiAdminRoute::ACTIVE.into_iter().enumerate() {
                 let request = sample_model(route.request_model());
                 let target = target_for(route, &request);
@@ -2085,17 +2117,31 @@ mod tests {
                     .expect("route response model");
             }
 
-            let conflict_target =
+            let replay_target =
                 AdminClientTarget::new("/v1/state/backup").expect("mutation target");
-            let conflict_error = client
+            let replay_operation = AdminOperationId::new("operation-5").expect("operation ID");
+            let replay_request = sample_model("state_backup_request_v1");
+            client
                 .mutate::<_, Value>(
-                    &conflict_target,
-                    AdminOperationId::new("conflict").expect("operation ID"),
+                    &replay_target,
+                    replay_operation.clone(),
                     None,
-                    sample_model("state_backup_request_v1"),
+                    &replay_request,
                 )
                 .await
-                .expect_err("operation conflict");
+                .expect("exact operation replay");
+            let mut conflicting_request = replay_request;
+            conflicting_request
+                .as_object_mut()
+                .expect("backup request")
+                .insert(
+                    "target_path".to_owned(),
+                    Value::String("/tmp/different-backup".to_owned()),
+                );
+            let conflict_error = client
+                .mutate::<_, Value>(&replay_target, replay_operation, None, &conflicting_request)
+                .await
+                .expect_err("conflicting operation reuse");
             assert_eq!(
                 conflict_error
                     .failure()
@@ -2110,9 +2156,41 @@ mod tests {
                 r#"{"contract_version":1,"operation_id":"duplicate","request":{"confirmation":"confirm","expected_generation":0,"expected_generation":1,"target_path":"/tmp/backup"}}"#,
                 r#"{"contract_version":1,"operation_id":"null","request":{"confirmation":"confirm","expected_generation":null,"target_path":"/tmp/backup"}}"#,
             ] {
-                let response = raw_post(&socket, body).await;
+                let response = raw_post(&socket, "/v1/state/backup", body).await;
                 assert!(response.starts_with("HTTP/1.1 400 "), "{response}");
             }
+
+            for (index, route) in RhiAdminRoute::ACTIVE
+                .into_iter()
+                .filter(|route| route.is_mutation())
+                .enumerate()
+            {
+                let request = sample_model(route.request_model());
+                for version in [0, 2] {
+                    let body = serde_json::json!({
+                        "contract_version": version,
+                        "operation_id": format!("invalid-version-{index}-{version}"),
+                        "request": request,
+                    })
+                    .to_string();
+                    let response = raw_post(&socket, route.path(), &body).await;
+                    assert!(response.starts_with("HTTP/1.1 400 "), "{response}");
+                }
+                let missing_version = serde_json::json!({
+                    "operation_id": format!("missing-version-{index}"),
+                    "request": request,
+                })
+                .to_string();
+                let response = raw_post(&socket, route.path(), &missing_version).await;
+                assert!(response.starts_with("HTTP/1.1 400 "), "{response}");
+            }
+
+            let request_limit =
+                usize::try_from(AdminTransportLimits::DEFAULT.request_body_utf8_bytes())
+                    .expect("request limit");
+            let oversized = " ".repeat(request_limit + 1);
+            let response = raw_post(&socket, "/v1/state/backup", &oversized).await;
+            assert!(response.starts_with("HTTP/1.1 413 "), "{response}");
 
             let domain_target = AdminClientTarget::new("/v1/reconciliation/jobs?limit=201")
                 .expect("bounded domain route");
@@ -2138,6 +2216,8 @@ mod tests {
             let invalid_trade = AdminClientTarget::new("/v1/trades/not-hex/projection")
                 .expect("trade route target");
             assert!(client.get::<Value>(&invalid_trade).await.is_err());
+
+            assert!(AdminClientTarget::new("/v2/status").is_err());
 
             for (index, path) in ["/v1/identity/rekey", "/v1/identity/replace"]
                 .into_iter()

@@ -1,0 +1,104 @@
+{
+  "schema": "radroots.rhi.admin-wave-qualification",
+  "schema_version": 1,
+  "contract_version": 1,
+  "step": 209,
+  "wave": "130-b",
+  "service": "rhi",
+  "final_inventory": {
+    "route_count": 20,
+    "model_count": 33,
+    "common_route_count": 7,
+    "domain_route_count": 13,
+    "source": "operator_contract.v1.json"
+  },
+  "component_corpus": [
+    "complete_route_and_model_inventory_matches_the_machine_contract",
+    "strict_response_admission_rejects_duplicates_null_and_noncanonical_bytes",
+    "query_and_nested_type_admission_is_exact_and_bounded",
+    "public_diagnostics_are_source_free_and_content_free",
+    "twenty_active_routes_round_trip_over_the_hardened_unix_boundary",
+    "production_server_projects_exact_validated_admin_limits"
+  ],
+  "live_negative_matrix": {
+    "original_wire": [
+      "duplicate_request_field",
+      "nested_null",
+      "missing_contract_version"
+    ],
+    "version": [
+      "unknown_major_path",
+      "contract_version_zero_every_mutation",
+      "contract_version_two_every_mutation"
+    ],
+    "pagination": [
+      "noncanonical_limit",
+      "just_over_maximum_limit",
+      "duplicate_query_item",
+      "unknown_query_item",
+      "malformed_percent_encoding",
+      "noncanonical_cursor",
+      "handler_rejected_unbound_cursor"
+    ],
+    "idempotency": [
+      "exact_operation_replay_returns_success_without_second_commit",
+      "conflicting_operation_reuse_rejected"
+    ],
+    "peer": [
+      "owner_only_socket_mode",
+      "current_owner_round_trip",
+      "source_locked_linux_uid_or_gid_allow_and_other_deny"
+    ],
+    "removed_sensitive_routes": [
+      "identity_rekey_unavailable",
+      "identity_replace_unavailable"
+    ],
+    "resource": [
+      "request_body_just_over_limit",
+      "response_body_just_over_limit",
+      "page_limit_just_over_maximum",
+      "source_locked_header_query_connection_deadline_and_drain_limits"
+    ]
+  },
+  "source_locked_transport_evidence": {
+    "repository": "https://github.com/radrootslabs/lib",
+    "revision": "21b11e7a5120ea949f7ad0838c746873fc73aac2",
+    "package": "radroots_service_host",
+    "corpus": [
+      "serves_valid_json_with_exact_caller_correlation_and_no_web_headers",
+      "rejects_oversized_and_malformed_json_before_the_handler",
+      "rejects_invalid_mutation_envelopes_duplicates_and_nested_null_before_dispatch",
+      "parameterized_routes_percent_decode_bounded_values_without_service_authority",
+      "caller_correlation_precedes_entropy_and_survives_timeout_handoff",
+      "rejects_http_1_0_before_dispatch",
+      "request_deadline_returns_a_safe_timeout_and_cancels_the_handler_future",
+      "enforces_header_query_response_and_body_correlation_boundaries",
+      "connection_admission_never_exceeds_the_configured_limit",
+      "graceful_cancellation_stops_admission_and_drains_an_active_request",
+      "linux_process_credentials_allow_uid_or_gid_and_deny_otherwise",
+      "exact_positive_boundaries_are_accepted_for_every_field",
+      "zero_and_just_over_maximum_fail_for_every_field"
+    ]
+  },
+  "invariants": {
+    "active_equals_final_inventory": true,
+    "all_models_referenced_exactly": true,
+    "authoritative_commit_owned_by_handler": true,
+    "cursor_authentication_owned_by_handler": true,
+    "peer_authorization_owned_by_shared_transport": true,
+    "adapter_performs_sqlite": false,
+    "adapter_performs_relay_io": false,
+    "adapter_performs_identity_mutation": false,
+    "raw_shared_transport_public": false,
+    "unbounded_resource": false
+  },
+  "deferred": [
+    "rcld_promotion",
+    "parent_pin_alignment",
+    "nix",
+    "oci",
+    "terminal_consumer_convergence",
+    "rcld-rshr-180",
+    "rcld-rshr-190"
+  ]
+}

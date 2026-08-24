@@ -7,6 +7,8 @@ const ROOT: &str = include_str!("../src/lib.rs");
 const ADMIN: &str = include_str!("../src/admin_v1.rs");
 const ADMIN_IDENTITY_OFFLINE_CONTRACT: &str =
     include_str!("../contracts/services_hardening/admin_identity_offline.v1.json");
+const ADMIN_WAVE_QUALIFICATION_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/admin_wave_qualification.v1.json");
 const ADAPTERS: &str = include_str!("../src/adapters/mod.rs");
 const NOSTR_ADAPTERS: &str = include_str!("../src/adapters/nostr/mod.rs");
 const FEATURES: &str = include_str!("../src/features/mod.rs");
@@ -387,6 +389,12 @@ fn active_admin_boundary_hides_shared_transport_authority() {
     assert_eq!(offline["final_inventory"]["route_count"], 20);
     assert_eq!(offline["final_inventory"]["model_count"], 33);
     assert_eq!(offline["identity_rotation"]["unix_admin_mutation"], false);
+    let qualification: serde_json::Value = serde_json::from_str(ADMIN_WAVE_QUALIFICATION_CONTRACT)
+        .expect("admin wave qualification contract");
+    assert_eq!(qualification["step"], 209);
+    assert_eq!(qualification["wave"], "130-b");
+    assert_eq!(qualification["final_inventory"]["route_count"], 20);
+    assert_eq!(qualification["final_inventory"]["model_count"], 33);
     for forbidden in ["IdentityRekey", "IdentityReplace"] {
         assert!(!ADMIN.contains(forbidden));
         assert!(!PUBLIC_API.contains(forbidden));
@@ -1511,6 +1519,7 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "[`admin_common.v1.json`](contracts/services_hardening/admin_common.v1.json)",
         "[`admin_domain.v1.json`](contracts/services_hardening/admin_domain.v1.json)",
         "[`admin_identity_offline.v1.json`](contracts/services_hardening/admin_identity_offline.v1.json)",
+        "[`admin_wave_qualification.v1.json`](contracts/services_hardening/admin_wave_qualification.v1.json)",
     ] {
         assert!(README.contains(required), "README is missing {required}");
     }

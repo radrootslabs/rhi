@@ -584,10 +584,15 @@ suggested live provider authority. Identity rotation is only offline create-new
 envelope plus validated configuration apply and restart. Unix peer authorization
 remains a transport admission gate and grants neither direct SQLite nor
 identity-provider mutation authority. Step 209 qualifies the complete
-20-route/33-model inventory. The cumulative domain contract is
+20-route/33-model inventory with real Unix-socket original-wire, version,
+pagination, idempotency, peer-permission, removed-route, and resource negative
+matrices plus the exact source-locked shared-transport corpus. The cumulative
+domain contract is
 [`admin_domain.v1.json`](contracts/services_hardening/admin_domain.v1.json).
 The offline identity correction is
 [`admin_identity_offline.v1.json`](contracts/services_hardening/admin_identity_offline.v1.json).
+The completed admin-wave qualification is
+[`admin_wave_qualification.v1.json`](contracts/services_hardening/admin_wave_qualification.v1.json).
 
 ## Sealed service-instance paths
 
