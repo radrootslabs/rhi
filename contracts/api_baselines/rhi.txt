@@ -19,6 +19,66 @@ pub use rhi::TradeId
 pub use rhi::UnixTimeSeconds
 pub use rhi::WallClock
 pub use rhi::WallClockError
+pub enum rhi::RhiAdminDocumentErrorKind
+pub rhi::RhiAdminDocumentErrorKind::DuplicateField
+pub rhi::RhiAdminDocumentErrorKind::InvalidModel
+pub rhi::RhiAdminDocumentErrorKind::Malformed
+pub rhi::RhiAdminDocumentErrorKind::NonCanonical
+pub rhi::RhiAdminDocumentErrorKind::NullForbidden
+pub rhi::RhiAdminDocumentErrorKind::TooLarge
+pub enum rhi::RhiAdminHandlerErrorKind
+pub rhi::RhiAdminHandlerErrorKind::Conflict
+pub rhi::RhiAdminHandlerErrorKind::Internal
+pub rhi::RhiAdminHandlerErrorKind::InvalidCursor
+pub rhi::RhiAdminHandlerErrorKind::NotFound
+pub rhi::RhiAdminHandlerErrorKind::OperationIdConflict
+pub rhi::RhiAdminHandlerErrorKind::Unavailable
+pub enum rhi::RhiAdminMethod
+pub rhi::RhiAdminMethod::Get
+pub rhi::RhiAdminMethod::Post
+pub enum rhi::RhiAdminRoute
+pub rhi::RhiAdminRoute::EffectiveConfig
+pub rhi::RhiAdminRoute::IdentityPublic
+pub rhi::RhiAdminRoute::IdentityRekey
+pub rhi::RhiAdminRoute::IdentityReplace
+pub rhi::RhiAdminRoute::IdentityStatus
+pub rhi::RhiAdminRoute::MetricsSnapshot
+pub rhi::RhiAdminRoute::PresenceDesired
+pub rhi::RhiAdminRoute::PresenceRefresh
+pub rhi::RhiAdminRoute::PresenceRender
+pub rhi::RhiAdminRoute::PublicationBacklog
+pub rhi::RhiAdminRoute::PublicationRetry
+pub rhi::RhiAdminRoute::PublicationTargets
+pub rhi::RhiAdminRoute::ReconciliationJobs
+pub rhi::RhiAdminRoute::ReconciliationRefresh
+pub rhi::RhiAdminRoute::ReconciliationStatus
+pub rhi::RhiAdminRoute::Sources
+pub rhi::RhiAdminRoute::StateBackup
+pub rhi::RhiAdminRoute::StateStatus
+pub rhi::RhiAdminRoute::Status
+pub rhi::RhiAdminRoute::TradeProjection
+pub rhi::RhiAdminRoute::TradeReportCurrent
+pub rhi::RhiAdminRoute::TradeReports
+impl rhi::RhiAdminRoute
+pub const rhi::RhiAdminRoute::ALL: [Self; 22]
+pub const rhi::RhiAdminRoute::COMMON: [Self; 7]
+pub const fn rhi::RhiAdminRoute::is_mutation(self) -> bool
+pub const fn rhi::RhiAdminRoute::method(self) -> rhi::RhiAdminMethod
+pub const fn rhi::RhiAdminRoute::operation_id(self) -> &'static str
+pub const fn rhi::RhiAdminRoute::path(self) -> &'static str
+pub const fn rhi::RhiAdminRoute::request_model(self) -> &'static str
+pub const fn rhi::RhiAdminRoute::response_model(self) -> &'static str
+pub enum rhi::RhiAdminServerErrorKind
+pub rhi::RhiAdminServerErrorKind::Accept
+pub rhi::RhiAdminServerErrorKind::Bind
+pub rhi::RhiAdminServerErrorKind::ConnectionTaskPanicked
+pub rhi::RhiAdminServerErrorKind::InvalidConfiguration
+pub rhi::RhiAdminServerErrorKind::Listener
+pub rhi::RhiAdminServerErrorKind::Router
+pub rhi::RhiAdminServerErrorKind::ServerConfiguration
+pub rhi::RhiAdminServerErrorKind::WriterAuthority
+impl rhi::RhiAdminServerErrorKind
+pub const fn rhi::RhiAdminServerErrorKind::code(self) -> &'static str
 pub enum rhi::RhiBootstrapProfileV1
 pub rhi::RhiBootstrapProfileV1::Interactive
 pub rhi::RhiBootstrapProfileV1::RepoLocal
@@ -601,6 +661,55 @@ pub fn rhi::NostrEventAdapter<'a>::raw_author(&'a self) -> alloc::string::String
 pub fn rhi::NostrEventAdapter<'a>::raw_content(&'a self) -> &'a str
 pub fn rhi::NostrEventAdapter<'a>::raw_id(&'a self) -> alloc::string::String
 pub fn rhi::NostrEventAdapter<'a>::raw_kind(&'a self) -> u32
+pub struct rhi::RhiAdminCancellationToken
+impl rhi::RhiAdminCancellationToken
+pub fn rhi::RhiAdminCancellationToken::cancel(&self)
+pub fn rhi::RhiAdminCancellationToken::is_cancelled(&self) -> bool
+pub fn rhi::RhiAdminCancellationToken::new() -> Self
+impl core::fmt::Debug for rhi::RhiAdminCancellationToken
+pub fn rhi::RhiAdminCancellationToken::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiAdminDocumentError
+impl rhi::RhiAdminDocumentError
+pub const fn rhi::RhiAdminDocumentError::kind(self) -> rhi::RhiAdminDocumentErrorKind
+impl core::error::Error for rhi::RhiAdminDocumentError
+impl core::fmt::Display for rhi::RhiAdminDocumentError
+pub fn rhi::RhiAdminDocumentError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiAdminHandlerError
+impl rhi::RhiAdminHandlerError
+pub const fn rhi::RhiAdminHandlerError::kind(self) -> rhi::RhiAdminHandlerErrorKind
+pub const fn rhi::RhiAdminHandlerError::new(rhi::RhiAdminHandlerErrorKind) -> Self
+impl core::error::Error for rhi::RhiAdminHandlerError
+impl core::fmt::Display for rhi::RhiAdminHandlerError
+pub fn rhi::RhiAdminHandlerError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiAdminRequestDocument
+impl rhi::RhiAdminRequestDocument
+pub fn rhi::RhiAdminRequestDocument::correlation_id(&self) -> &str
+pub fn rhi::RhiAdminRequestDocument::model_bytes(&self) -> &[u8]
+pub fn rhi::RhiAdminRequestDocument::operation_id(&self) -> core::option::Option<&str>
+pub fn rhi::RhiAdminRequestDocument::parameter(&self, &str) -> core::option::Option<&str>
+pub const fn rhi::RhiAdminRequestDocument::route(&self) -> rhi::RhiAdminRoute
+impl core::fmt::Debug for rhi::RhiAdminRequestDocument
+pub fn rhi::RhiAdminRequestDocument::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiAdminResponseDocument
+impl rhi::RhiAdminResponseDocument
+pub fn rhi::RhiAdminResponseDocument::canonical_bytes(&self) -> &[u8]
+pub fn rhi::RhiAdminResponseDocument::from_canonical_bytes(rhi::RhiAdminRoute, &[u8]) -> core::result::Result<Self, rhi::RhiAdminDocumentError>
+pub const fn rhi::RhiAdminResponseDocument::route(&self) -> rhi::RhiAdminRoute
+impl core::fmt::Debug for rhi::RhiAdminResponseDocument
+pub fn rhi::RhiAdminResponseDocument::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiAdminRouterError
+impl core::error::Error for rhi::RhiAdminRouterError
+impl core::fmt::Display for rhi::RhiAdminRouterError
+pub fn rhi::RhiAdminRouterError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiAdminServerError
+impl rhi::RhiAdminServerError
+pub const fn rhi::RhiAdminServerError::code(self) -> &'static str
+pub const fn rhi::RhiAdminServerError::kind(self) -> rhi::RhiAdminServerErrorKind
+impl core::error::Error for rhi::RhiAdminServerError
+impl core::fmt::Debug for rhi::RhiAdminServerError
+pub fn rhi::RhiAdminServerError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiAdminServerError
+pub fn rhi::RhiAdminServerError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiAdmittedTradeMutationEvent
 impl rhi::RhiAdmittedTradeMutationEvent
 pub fn rhi::RhiAdmittedTradeMutationEvent::authored_at_unix_seconds(&self) -> u64
@@ -612,6 +721,11 @@ pub const fn rhi::RhiAdmittedTradeMutationEvent::observed_at_unix_seconds(&self)
 pub fn rhi::RhiAdmittedTradeMutationEvent::original_bytes(&self) -> &[u8]
 impl core::fmt::Debug for rhi::RhiAdmittedTradeMutationEvent
 pub fn rhi::RhiAdmittedTradeMutationEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiBoundCommonAdminServer
+impl rhi::RhiBoundCommonAdminServer
+pub async fn rhi::RhiBoundCommonAdminServer::serve(self, rhi::RhiAdminCancellationToken) -> core::result::Result<(), rhi::RhiAdminServerError>
+impl core::fmt::Debug for rhi::RhiBoundCommonAdminServer
+pub fn rhi::RhiBoundCommonAdminServer::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiCliInvocationV1
 impl rhi::RhiCliInvocationV1
 pub const fn rhi::RhiCliInvocationV1::command(&self) -> rhi::RhiCommandV1
@@ -638,6 +752,15 @@ pub const fn rhi::RhiCommittedPublication::exact_signed_event_bytes(&self) -> &[
 pub const fn rhi::RhiCommittedPublication::outbox_id(&self) -> rhi::RhiPublicationOutboxId
 impl core::fmt::Debug for rhi::RhiCommittedPublication
 pub fn rhi::RhiCommittedPublication::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiCommonAdminRouter
+impl core::fmt::Debug for rhi::RhiCommonAdminRouter
+pub fn rhi::RhiCommonAdminRouter::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiCommonAdminServer
+impl rhi::RhiCommonAdminServer
+pub async fn rhi::RhiCommonAdminServer::bind(self, &rhi::RhiRuntimeContext) -> core::result::Result<rhi::RhiBoundCommonAdminServer, rhi::RhiAdminServerError>
+pub fn rhi::RhiCommonAdminServer::new<H>(&rhi::RhiConfigDocumentV1, alloc::sync::Arc<H>) -> core::result::Result<Self, rhi::RhiAdminServerError> where H: rhi::RhiAdminHandler
+impl core::fmt::Debug for rhi::RhiCommonAdminServer
+pub fn rhi::RhiCommonAdminServer::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiConfigApplyError
 impl rhi::RhiConfigApplyError
 pub const fn rhi::RhiConfigApplyError::code(self) -> &'static str
@@ -1869,6 +1992,8 @@ pub const rhi::RHI_TRADE_SOURCE_RESULT_MAX_BYTES: usize
 pub const rhi::RHI_TRADE_SOURCE_RESULT_MAX_EVENTS: usize
 pub const rhi::RHI_WRAPPING_CREDENTIAL_ARTIFACT_BYTES: usize
 pub const rhi::RHI_WRAPPING_CREDENTIAL_CONTRACT_VERSION: u32
+pub trait rhi::RhiAdminHandler: core::marker::Send + core::marker::Sync + 'static
+pub fn rhi::RhiAdminHandler::handle<'a>(&'a self, rhi::RhiAdminRequestDocument) -> rhi::RhiAdminFuture<'a>
 pub trait rhi::RhiCredentialAccess: core::marker::Send + core::marker::Sync
 pub fn rhi::RhiCredentialAccess::resolve_existing(&self, &rhi::RhiRuntimeContext, &rhi::RhiIdentityEnvelopeBinding) -> core::result::Result<rhi::RhiWrappingCredential, rhi::RhiCredentialResolutionError>
 impl rhi::RhiCredentialAccess for rhi::CanonicalRhiCredentialAccess
@@ -1884,6 +2009,7 @@ pub fn rhi::CanonicalRhiIdentityAccess::open_existing(&self, &rhi::RhiIdentityEn
 pub fn rhi::admit_rhi_trade_mutation_event(rhi::RhiTradeMutationAdmissionLimits, &[u8], rhi::RhiTradeMutationObservedAtUnixSeconds, rhi::RhiTradeMutationAuthoredTimePolicy) -> core::result::Result<rhi::RhiAdmittedTradeMutationEvent, rhi::RhiTradeMutationAdmissionError>
 pub async fn rhi::apply_rhi_configuration(&rhi::RhiRuntimeContext, &rhi::RhiConfigDocumentV1, &rhi::RhiConfigDocumentV1, radroots_service_sqlite::migration::MigrationAppliedAtUnixSeconds, &radroots_service_sqlite::migration::MigrationBuildIdentity) -> core::result::Result<rhi::RhiConfigApplyOutcome, rhi::RhiConfigApplyError>
 pub fn rhi::attest_projection_claim(&radroots_trade::trade_contract_v1::RadrootsTradeProjectionV1, &radroots_event::id::MutationId, &rhi::TradeAgreementAttestationPolicy) -> core::result::Result<rhi::TradeAgreementAttestationReportV1, rhi::TradeAgreementAttestationError>
+pub fn rhi::build_rhi_common_admin_router<H>(alloc::sync::Arc<H>) -> core::result::Result<rhi::RhiCommonAdminRouter, rhi::RhiAdminRouterError> where H: rhi::RhiAdminHandler
 pub fn rhi::build_rhi_signed_evidence_attestation(rhi::RhiReconciliationFinalizationFence, &rhi::RhiDecryptedIdentity, radroots_service_host::time::UnixTimeSeconds, &dyn radroots_service_host::entropy::EntropySource, core::option::Option<rhi::RhiEvidenceAttestationSupersession>) -> core::result::Result<rhi::RhiSignedEvidenceAttestation, rhi::RhiReconciliationAttestationError>
 pub fn rhi::build_rhi_signed_presence_documents(rhi::RhiPresenceDesiredCommitOutcome, &rhi::RhiPresenceDesiredAuthority, &rhi::RhiDecryptedIdentity, radroots_service_host::time::UnixTimeSeconds, &dyn radroots_service_host::entropy::EntropySource) -> core::result::Result<rhi::RhiSignedPresenceDocuments, rhi::RhiPresencePublicationError>
 pub fn rhi::evaluate_rhi_reconciliation_claim(rhi::RhiReconciliationProjection, radroots_event::id::MutationId) -> rhi::RhiReconciliationEvaluation
@@ -1910,5 +2036,6 @@ pub fn rhi::validate_rhi_presence_desired_authority(&rhi::RhiConfigDocumentV1, &
 pub fn rhi::validate_rhi_signed_presence_documents(&rhi::RhiSignedPresenceDocuments, &rhi::RhiPresenceDesiredAuthority) -> core::result::Result<(), rhi::RhiPresencePublicationError>
 pub fn rhi::validate_rhi_state_catalogs(&radroots_service_sqlite::migration::MigrationCatalog, &radroots_service_sqlite::integrity::catalog::SchemaCatalog) -> core::result::Result<(), rhi::RhiStateCatalogError>
 pub fn rhi::verify_rhi_state_backup(&[u8], radroots_service_sqlite::backup::manifest::BackupManifestSha256, &std::path::Path, &rhi::RhiStateMetadata, core::num::nonzero::NonZeroU64) -> core::result::Result<rhi::RhiVerifiedStateBackup, rhi::RhiStateMaintenanceError>
+pub type rhi::RhiAdminFuture<'a> = core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = core::result::Result<rhi::RhiAdminResponseDocument, rhi::RhiAdminHandlerError>> + core::marker::Send + 'a)>>
 pub type rhi::RhiReconciliationCoverage = radroots_trade::evidence::RadrootsTradeEvidenceCoverageV1
 pub type rhi::RhiReconciliationOutcome = radroots_trade::evidence::RadrootsTradeEvidenceOutcomeV1

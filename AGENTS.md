@@ -398,6 +398,12 @@
   safe confirmation for destructive or identity-sensitive work. Never unlink
   a live socket owner; remove only a proven stale socket under the resolved
   instance runtime directory.
+- Keep the public RHI route and document vocabulary closed against the exact
+  operator contract. Register only routes owned by the current ordered step:
+  Step 206 owns the seven common routes, Step 207 owns domain routes, Step 208
+  owns sensitive routes, and Step 209 alone may claim the complete 22-route
+  surface. Never expose the shared raw router, listener, JSON handler, or a
+  caller-selected socket path.
 - Optional TCP operations expose only cached `/livez`, `/readyz`, and
   `/metrics`; requests must not perform SQLite, source, relay, DNS, identity,
   evidence, or credential probes.

@@ -3,6 +3,7 @@
 #![doc = include_str!("../README")]
 
 mod adapters;
+mod admin_v1;
 mod cli_v1;
 mod config_v1;
 mod features;
@@ -37,6 +38,13 @@ mod state_trade;
 mod trade_ingest;
 
 pub use adapters::nostr::event::NostrEventAdapter;
+pub use admin_v1::{
+    RhiAdminCancellationToken, RhiAdminDocumentError, RhiAdminDocumentErrorKind, RhiAdminFuture,
+    RhiAdminHandler, RhiAdminHandlerError, RhiAdminHandlerErrorKind, RhiAdminMethod,
+    RhiAdminRequestDocument, RhiAdminResponseDocument, RhiAdminRoute, RhiAdminRouterError,
+    RhiAdminServerError, RhiAdminServerErrorKind, RhiBoundCommonAdminServer, RhiCommonAdminRouter,
+    RhiCommonAdminServer, build_rhi_common_admin_router,
+};
 pub use cli_v1::{
     RhiBootstrapProfileV1, RhiCliInvocationV1, RhiCliOutputModeV1, RhiCliV1Error,
     RhiCliV1ErrorKind, RhiCommandV1, RhiConfigCommandV1, RhiIdentityCommandV1, RhiMetricsCommandV1,

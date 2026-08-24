@@ -1,0 +1,54 @@
+{
+  "schema": "radroots.rhi.admin-common.v1",
+  "contract_version": 1,
+  "service": "rhi",
+  "shared_transport": "radroots_service_host",
+  "final_inventory": {
+    "route_count": 22,
+    "model_count": 36,
+    "source": "operator_contract.v1.json"
+  },
+  "registered_routes": [
+    "radroots.rhi.status.get.v1",
+    "radroots.rhi.config.effective.get.v1",
+    "radroots.rhi.identity.status.get.v1",
+    "radroots.rhi.identity.public.get.v1",
+    "radroots.rhi.state.status.get.v1",
+    "radroots.rhi.state.backup.create.v1",
+    "radroots.rhi.metrics.snapshot.get.v1"
+  ],
+  "deferred_route_groups": [
+    "domain_queries_and_mutations_step_207",
+    "identity_and_sensitive_mutations_step_208"
+  ],
+  "authority": {
+    "raw_shared_router_public": false,
+    "raw_listener_public": false,
+    "raw_json_handler_public": false,
+    "filesystem_socket_path_caller_selected": false,
+    "runtime_context_required": true,
+    "normalized_transport_limits_required": true,
+    "system_entropy_owned_by_server": true,
+    "mutation_success_after_authoritative_commit": true,
+    "relay_delivery_required_for_success": false
+  },
+  "wire": {
+    "http_version": "1.1",
+    "transport": "unix_domain_socket",
+    "unknown_fields": "reject",
+    "duplicate_fields": "reject",
+    "null": "forbidden",
+    "canonical_response_json": true,
+    "response_body_max_utf8_bytes": 1048576
+  },
+  "effects": {
+    "server_construction_reads_clock": false,
+    "server_construction_reads_entropy": false,
+    "router_construction_performs_io": false,
+    "bind_spawns_task": false,
+    "serve_owns_process_or_signal_policy": false,
+    "tcp_admin": false,
+    "nix": false,
+    "oci": false
+  }
+}

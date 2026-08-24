@@ -4,6 +4,7 @@ const MANIFEST: &str = include_str!("../Cargo.toml");
 const README: &str = include_str!("../README");
 const AGENTS: &str = include_str!("../AGENTS.md");
 const ROOT: &str = include_str!("../src/lib.rs");
+const ADMIN: &str = include_str!("../src/admin_v1.rs");
 const ADAPTERS: &str = include_str!("../src/adapters/mod.rs");
 const NOSTR_ADAPTERS: &str = include_str!("../src/adapters/nostr/mod.rs");
 const FEATURES: &str = include_str!("../src/features/mod.rs");
@@ -70,6 +71,7 @@ const TRADE_SOURCE_INGEST_CONTRACT: &str =
 const PUBLIC_API: &str = include_str!("../contracts/api_baselines/rhi.txt");
 const SOURCES: &[&str] = &[
     include_str!("../src/adapters/nostr/event.rs"),
+    include_str!("../src/admin_v1.rs"),
     include_str!("../src/cli_v1.rs"),
     include_str!("../src/config_v1.rs"),
     include_str!("../src/features/trade_agreement_attestation.rs"),
@@ -136,7 +138,7 @@ fn shared_runtime_contracts_are_curated_without_exposing_implementation_authorit
         "SystemMonotonicClock",
         "SystemWallClock",
         "TaskSupervisor",
-        "CancellationToken",
+        "pub use radroots_service_host::CancellationToken",
     ] {
         assert!(
             !ROOT.contains(forbidden),
@@ -151,6 +153,7 @@ fn shared_runtime_contracts_are_curated_without_exposing_implementation_authorit
 fn state_catalog_module_is_private_and_root_api_is_curated() {
     for module in [
         "adapters",
+        "admin_v1",
         "cli_v1",
         "config_v1",
         "features",
@@ -227,6 +230,13 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "build_rhi_signed_presence_documents",
         "validate_rhi_signed_presence_documents",
         "RHI_PRESENCE_PUBLICATION_CONTRACT_VERSION",
+        "RhiAdminRoute",
+        "RhiAdminRequestDocument",
+        "RhiAdminResponseDocument",
+        "RhiAdminHandler",
+        "RhiCommonAdminServer",
+        "RhiBoundCommonAdminServer",
+        "build_rhi_common_admin_router",
         "RhiPublicationErrorKind",
         "RhiPublicationMode",
         "RhiPublicationRetryPolicy",
@@ -349,6 +359,37 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
     assert!(!PUBLIC_API.contains("rhi::publication_execution::"));
     assert!(!PUBLIC_API.contains("rhi::publication_submission::"));
     assert!(!PUBLIC_API.contains("rhi::presence_publication::"));
+    assert!(!PUBLIC_API.contains("rhi::admin_v1::"));
+}
+
+#[test]
+fn common_admin_boundary_hides_shared_transport_authority() {
+    for required in [
+        "pub struct RhiCommonAdminRouter",
+        "pub struct RhiCommonAdminServer",
+        "pub struct RhiBoundCommonAdminServer",
+        "pub trait RhiAdminHandler",
+        "pub const COMMON: [Self; 7]",
+    ] {
+        assert!(
+            ADMIN.contains(required),
+            "missing common admin boundary `{required}`"
+        );
+    }
+    for forbidden in [
+        "pub fn into_inner",
+        "pub fn router",
+        "pub fn listener",
+        "pub use radroots_service_host::AdminRouter",
+        "pub use radroots_service_host::AdminServer",
+        "pub use serde_json::Value",
+    ] {
+        assert!(!ROOT.contains(forbidden), "public root leaks `{forbidden}`");
+        assert!(
+            !PUBLIC_API.contains(forbidden),
+            "API baseline leaks `{forbidden}`"
+        );
+    }
 }
 
 #[test]
@@ -961,7 +1002,7 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .lines()
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
-    assert_eq!(public_error_count, 31);
+    assert_eq!(public_error_count, 35);
 }
 
 #[test]
@@ -1446,6 +1487,11 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "[`runtime_foundation.v1.json`](contracts/services_hardening/runtime_foundation.v1.json)",
         "at most 1,024 consecutive generations",
         "never stores raw TOML, paths, relay URLs, credential",
+        "## Common Unix-admin boundary",
+        "seven common RHI routes",
+        "Domain and sensitive routes remain deliberately",
+        "22-route/36-model inventory",
+        "[`admin_common.v1.json`](contracts/services_hardening/admin_common.v1.json)",
     ] {
         assert!(README.contains(required), "README is missing {required}");
     }
