@@ -134,10 +134,33 @@ tokens and integer UTC milliseconds; expired leases can be reclaimed, while
 an expired final attempt becomes exhausted. Failed attempts persist their next
 eligible time using caller-injected full jitter bounded by the job's governed
 exponential backoff. No ambient clock or entropy is read, and no source or
-network work occurs inside a database transaction. Per-source attempt
-inventory and source execution remain with the next ordered checkpoint. The
-exact machine contract is
+network work occurs inside a database transaction. The exact machine contract
+is
 [`reconciliation_jobs.v1.json`](contracts/services_hardening/reconciliation_jobs.v1.json).
+
+## Bounded reconciliation source attempts
+
+`RhiReconciliationAttemptPlan` derives one canonical source-request inventory
+from an unexpired claimed job lease and the exact normalized evidence policy.
+The attempt, selector, and each source request have domain-separated SHA-256
+identities. Every request binds the source ID, required/optional authority,
+trade selector, absolute deadline, lookback, and configured result limits.
+The claimed job's retained lease, retry, and attempt policy must also equal the
+exact normalized configuration; queue capacity remains admission authority for
+new jobs rather than per-attempt identity. The attempt deadline and every
+source deadline are capped by the retained lease expiry; no implicit clock or
+deadline is consulted.
+
+`RhiReconciliationSourceResult` records one stable completion code, explicit
+start and finish times, and bounded accepted-event count and bytes. Exact EOSE
+completion must occur before the source deadline, timeout begins at the
+deadline, unsupported sources cannot report accepted events, and no outcome
+can be omitted, duplicated, reordered, or appended beyond the configured
+source inventory. Planning and result validation are pure and perform no
+SQLite, source, relay, network, filesystem, task, clock, or entropy operation.
+Cursor derivation, source execution, and durable completion commit remain with
+their later ordered checkpoints. The exact machine contract is
+[`reconciliation_attempts.v1.json`](contracts/services_hardening/reconciliation_attempts.v1.json).
 
 ## Existing-state runtime foundation
 

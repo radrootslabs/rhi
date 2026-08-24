@@ -6,10 +6,13 @@ use std::{error::Error, fs, os::unix::fs::PermissionsExt, path::Path};
 use radroots_service_sqlite::{MigrationAppliedAtUnixSeconds, MigrationBuildIdentity};
 use radroots_storage::event::SourceGeneration;
 use rhi::{
-    RadrootsHostEnvironment, RadrootsPathResolver, RadrootsPlatform, RhiReconciliationJobErrorKind,
-    RhiReconciliationJobPolicy, RhiReconciliationJobState, RhiReconciliationLeaseOwner,
-    RhiReconciliationRetryDelayMilliseconds, RhiReconciliationUnixMilliseconds, RhiRuntimeContext,
-    RhiStateMetadata, TradeId, initialize_rhi_state, open_rhi_state_inspection,
+    RadrootsHostEnvironment, RadrootsPathResolver, RadrootsPlatform,
+    RhiReconciliationAttemptErrorKind, RhiReconciliationAttemptPlan,
+    RhiReconciliationAttemptResults, RhiReconciliationJobErrorKind, RhiReconciliationJobPolicy,
+    RhiReconciliationJobState, RhiReconciliationLeaseOwner,
+    RhiReconciliationRetryDelayMilliseconds, RhiReconciliationSourceResult,
+    RhiReconciliationUnixMilliseconds, RhiRuntimeContext, RhiStateMetadata,
+    RhiTradeSourceCompletion, TradeId, initialize_rhi_state, open_rhi_state_inspection,
     open_rhi_state_read_write, parse_rhi_cli_v1_from, parse_rhi_config_v1,
     resolve_rhi_runtime_context,
 };
@@ -39,9 +42,16 @@ fn runtime(root: &Path, instance: &str) -> RhiRuntimeContext {
 fn metadata(runtime: &RhiRuntimeContext) -> RhiStateMetadata {
     let config = parse_rhi_config_v1(EXAMPLE.as_bytes(), rhi::RhiConfigProfile::RepoLocal)
         .expect("configuration");
+    metadata_from_config(runtime, &config)
+}
+
+fn metadata_from_config(
+    runtime: &RhiRuntimeContext,
+    config: &rhi::RhiConfigDocumentV1,
+) -> RhiStateMetadata {
     RhiStateMetadata::new(
         runtime,
-        &config,
+        config,
         SourceGeneration::new([0x5a; 32]).expect("generation"),
         1_725_000_000_000,
     )
@@ -141,6 +151,10 @@ fn policy(
         maximum_backoff_ms,
     )
     .expect("policy")
+}
+
+fn configured_policy(configuration: &rhi::RhiConfigDocumentV1) -> RhiReconciliationJobPolicy {
+    RhiReconciliationJobPolicy::from_configuration(configuration).expect("configured job policy")
 }
 
 fn now(value: u64) -> RhiReconciliationUnixMilliseconds {
@@ -441,6 +455,489 @@ async fn concurrent_claims_have_one_winner_and_read_only_state_cannot_mutate() {
         .expect_err("read-only mutation");
     assert_eq!(error.kind(), RhiReconciliationJobErrorKind::InvalidMode);
     inspection.close().await.expect("inspection close");
+}
+
+#[tokio::test]
+async fn attempt_plan_binds_the_exact_claim_policy_sources_and_frozen_identities() {
+    let root = tempfile::tempdir().expect("root");
+    let runtime = runtime(root.path(), "attempt-plan");
+    let configuration = parse_rhi_config_v1(EXAMPLE.as_bytes(), rhi::RhiConfigProfile::RepoLocal)
+        .expect("configuration");
+    let metadata = metadata_from_config(&runtime, &configuration);
+    initialize(&runtime, &metadata).await;
+    let trade = TradeId::from_bytes([0x11; 16]);
+    write_dirty(
+        &runtime,
+        trade,
+        1,
+        *metadata.evidence_policy_digest().as_bytes(),
+        1_000,
+    )
+    .await;
+    let host = open_writer(&runtime, &metadata).await;
+    let jobs = host.repositories().reconciliation_jobs();
+    jobs.schedule_trade(trade, configured_policy(&configuration), now(1_000))
+        .await
+        .expect("schedule");
+    let lease = jobs
+        .claim_next(owner(0x71), now(1_000))
+        .await
+        .expect("claim")
+        .expect("job");
+
+    let plan = RhiReconciliationAttemptPlan::from_claim(lease, &configuration, now(1_000))
+        .expect("attempt plan");
+    assert_eq!(plan.job_id(), lease.job().id());
+    assert_eq!(plan.input_generation(), 1);
+    assert_eq!(
+        plan.evidence_policy_digest(),
+        metadata.evidence_policy_digest()
+    );
+    assert_eq!(plan.attempt_started_at(), now(1_000));
+    assert_eq!(plan.deadline(), now(31_000));
+    assert_eq!(
+        lower_hex(plan.job_id().as_bytes()),
+        "4e5ecfbee585698c6a67202b30487249291b446909b16a95fd8ae729c7d51e85"
+    );
+    assert_eq!(
+        lower_hex(plan.id().as_bytes()),
+        "89b61ce985d6f11ed963a0d96a05b80e8961a16749a122010d33e1aaee04fdeb"
+    );
+    let [request] = plan.requests() else {
+        panic!("exact source inventory")
+    };
+    assert_eq!(request.source_id(), "trade-primary");
+    assert_eq!(request.trade_id(), trade);
+    assert!(request.required());
+    assert_eq!(request.attempt_started_at(), now(1_000));
+    assert_eq!(request.deadline(), now(11_000));
+    assert_eq!(request.lookback_seconds(), 86_400);
+    assert_eq!(request.maximum_events(), 4_096);
+    assert_eq!(request.maximum_bytes(), 8_388_608);
+    assert_eq!(
+        lower_hex(request.selector_digest().as_bytes()),
+        "2c489c22515b4db784f1be9ab2c224b578c8d28e95d3921ade420b6aa78345bd"
+    );
+    assert_eq!(
+        lower_hex(request.id().as_bytes()),
+        "ef58f9e8a61f7964734cf0c2aabe0bdb2cbdcec529b16f40ae18ec224d0c896d"
+    );
+    host.close().await.expect("close");
+}
+
+#[tokio::test]
+async fn attempt_plan_rejects_policy_mismatch_and_expired_claim_time() {
+    let root = tempfile::tempdir().expect("root");
+    let runtime = runtime(root.path(), "attempt-policy");
+    let configuration = parse_rhi_config_v1(EXAMPLE.as_bytes(), rhi::RhiConfigProfile::RepoLocal)
+        .expect("configuration");
+    let metadata = metadata_from_config(&runtime, &configuration);
+    initialize(&runtime, &metadata).await;
+    let host = open_writer(&runtime, &metadata).await;
+    let jobs = host.repositories().reconciliation_jobs();
+    let governed_policy = configured_policy(&configuration);
+
+    let mismatch_trade = TradeId::from_bytes([0x61; 16]);
+    write_dirty(&runtime, mismatch_trade, 1, [0x62; 32], 1_000).await;
+    jobs.schedule_trade(mismatch_trade, governed_policy, now(1_000))
+        .await
+        .expect("schedule mismatch");
+    let mismatch = jobs
+        .claim_next(owner(0x63), now(1_000))
+        .await
+        .expect("claim mismatch")
+        .expect("job");
+    assert_eq!(
+        RhiReconciliationAttemptPlan::from_claim(mismatch, &configuration, now(1_000))
+            .expect_err("policy mismatch")
+            .kind(),
+        RhiReconciliationAttemptErrorKind::PolicyMismatch
+    );
+
+    let scheduling_mismatch_trade = TradeId::from_bytes([0x69; 16]);
+    write_dirty(
+        &runtime,
+        scheduling_mismatch_trade,
+        1,
+        *metadata.evidence_policy_digest().as_bytes(),
+        1_001,
+    )
+    .await;
+    jobs.schedule_trade(
+        scheduling_mismatch_trade,
+        policy(8, 30_000, 10_000, 3, 250, 30_000),
+        now(1_001),
+    )
+    .await
+    .expect("schedule with mismatched job policy");
+    let scheduling_mismatch = jobs
+        .claim_next(owner(0x6a), now(1_001))
+        .await
+        .expect("claim scheduling mismatch")
+        .expect("job");
+    assert_eq!(
+        RhiReconciliationAttemptPlan::from_claim(scheduling_mismatch, &configuration, now(1_001),)
+            .expect_err("job policy mismatch")
+            .kind(),
+        RhiReconciliationAttemptErrorKind::PolicyMismatch
+    );
+
+    let expired_trade = TradeId::from_bytes([0x64; 16]);
+    write_dirty(
+        &runtime,
+        expired_trade,
+        1,
+        *metadata.evidence_policy_digest().as_bytes(),
+        1_002,
+    )
+    .await;
+    jobs.schedule_trade(expired_trade, governed_policy, now(1_002))
+        .await
+        .expect("schedule expired");
+    let expired = jobs
+        .claim_next(owner(0x65), now(1_002))
+        .await
+        .expect("claim expired")
+        .expect("job");
+    assert_eq!(
+        RhiReconciliationAttemptPlan::from_claim(expired, &configuration, expired.lease_expires(),)
+            .expect_err("expired attempt start")
+            .kind(),
+        RhiReconciliationAttemptErrorKind::LeaseExpired
+    );
+    host.close().await.expect("close");
+}
+
+#[tokio::test]
+async fn reclaimed_attempt_changes_identity_and_caps_deadlines_to_each_lease() {
+    let short_lease = EXAMPLE
+        .replace("lease_ms = 30000", "lease_ms = 1000")
+        .replace("lease_renewal_ms = 10000", "lease_renewal_ms = 100");
+    let root = tempfile::tempdir().expect("root");
+    let runtime = runtime(root.path(), "attempt-reclaim");
+    let configuration =
+        parse_rhi_config_v1(short_lease.as_bytes(), rhi::RhiConfigProfile::RepoLocal)
+            .expect("short-lease configuration");
+    let metadata = metadata_from_config(&runtime, &configuration);
+    initialize(&runtime, &metadata).await;
+    let trade = TradeId::from_bytes([0x66; 16]);
+    write_dirty(
+        &runtime,
+        trade,
+        1,
+        *metadata.evidence_policy_digest().as_bytes(),
+        1_000,
+    )
+    .await;
+    let host = open_writer(&runtime, &metadata).await;
+    let jobs = host.repositories().reconciliation_jobs();
+    jobs.schedule_trade(trade, configured_policy(&configuration), now(1_000))
+        .await
+        .expect("schedule");
+    let first_lease = jobs
+        .claim_next(owner(0x67), now(1_000))
+        .await
+        .expect("first claim")
+        .expect("job");
+    let first = RhiReconciliationAttemptPlan::from_claim(first_lease, &configuration, now(1_000))
+        .expect("first plan");
+    assert_eq!(first.deadline(), now(2_000));
+    assert_eq!(first.requests()[0].deadline(), now(2_000));
+    let later_start =
+        RhiReconciliationAttemptPlan::from_claim(first_lease, &configuration, now(1_500))
+            .expect("same claim with a later explicit start");
+    assert_eq!(later_start.id(), first.id());
+    assert_eq!(later_start.requests()[0].deadline(), now(2_000));
+    assert_ne!(later_start.requests()[0].id(), first.requests()[0].id());
+
+    let second_lease = jobs
+        .claim_next(owner(0x68), now(2_000))
+        .await
+        .expect("reclaim")
+        .expect("job");
+    let second = RhiReconciliationAttemptPlan::from_claim(second_lease, &configuration, now(2_000))
+        .expect("second plan");
+    assert_eq!(second_lease.job().attempt_count(), 2);
+    assert_eq!(second.deadline(), now(3_000));
+    assert_eq!(second.requests()[0].deadline(), now(3_000));
+    assert_ne!(first.id(), second.id());
+    assert_ne!(first.requests()[0].id(), second.requests()[0].id());
+    assert_eq!(
+        first.requests()[0].selector_digest(),
+        second.requests()[0].selector_digest()
+    );
+    host.close().await.expect("close");
+}
+
+#[tokio::test]
+async fn source_results_enforce_deadline_outcome_and_exact_resource_bounds() {
+    let (root, runtime, metadata, configuration, host, plan) =
+        attempt_fixture("attempt-results").await;
+    let request = &plan.requests()[0];
+    let complete = RhiReconciliationSourceResult::new(
+        request,
+        RhiTradeSourceCompletion::Complete,
+        now(1_000),
+        now(10_999),
+        4_096,
+        8_388_608,
+    )
+    .expect("exact maximum result");
+    assert_eq!(complete.request_id(), request.id());
+    assert_eq!(complete.outcome().code(), "complete");
+    assert_eq!(complete.accepted_event_count(), 4_096);
+    assert_eq!(complete.accepted_event_bytes(), 8_388_608);
+    assert_eq!(complete.started_at(), now(1_000));
+    assert_eq!(complete.finished_at(), now(10_999));
+
+    let timeout = RhiReconciliationSourceResult::new(
+        request,
+        RhiTradeSourceCompletion::IncompleteTimeout,
+        now(1_000),
+        now(11_000),
+        0,
+        0,
+    )
+    .expect("deadline timeout");
+    assert_eq!(timeout.outcome().code(), "incomplete_timeout");
+    for outcome in [
+        RhiTradeSourceCompletion::IncompleteUnavailable,
+        RhiTradeSourceCompletion::IncompleteResourceLimit,
+        RhiTradeSourceCompletion::IncompleteUnknown,
+        RhiTradeSourceCompletion::Unsupported,
+    ] {
+        let result =
+            RhiReconciliationSourceResult::new(request, outcome, now(1_000), now(1_001), 0, 0)
+                .expect("safe incomplete outcome");
+        assert_eq!(result.outcome(), outcome);
+    }
+    for invalid in [
+        RhiReconciliationSourceResult::new(
+            request,
+            RhiTradeSourceCompletion::Complete,
+            now(1_000),
+            now(11_000),
+            0,
+            0,
+        ),
+        RhiReconciliationSourceResult::new(
+            request,
+            RhiTradeSourceCompletion::IncompleteTimeout,
+            now(1_000),
+            now(10_999),
+            0,
+            0,
+        ),
+        RhiReconciliationSourceResult::new(
+            request,
+            RhiTradeSourceCompletion::IncompleteTimeout,
+            now(11_000),
+            now(11_000),
+            0,
+            0,
+        ),
+        RhiReconciliationSourceResult::new(
+            request,
+            RhiTradeSourceCompletion::Complete,
+            now(1_000),
+            now(1_001),
+            4_097,
+            8_388_608,
+        ),
+        RhiReconciliationSourceResult::new(
+            request,
+            RhiTradeSourceCompletion::Complete,
+            now(1_000),
+            now(1_001),
+            4_096,
+            8_388_609,
+        ),
+        RhiReconciliationSourceResult::new(
+            request,
+            RhiTradeSourceCompletion::Complete,
+            now(1_000),
+            now(1_001),
+            1,
+            0,
+        ),
+        RhiReconciliationSourceResult::new(
+            request,
+            RhiTradeSourceCompletion::Unsupported,
+            now(1_000),
+            now(1_001),
+            1,
+            1,
+        ),
+    ] {
+        assert_eq!(
+            invalid.expect_err("invalid result").kind(),
+            RhiReconciliationAttemptErrorKind::InvalidInput
+        );
+    }
+
+    let exact = RhiReconciliationAttemptResults::new(&plan, [complete]).expect("inventory");
+    assert_eq!(exact.attempt_id(), plan.id());
+    assert_eq!(exact.results(), [complete]);
+    assert_eq!(
+        RhiReconciliationAttemptResults::new(&plan, [])
+            .expect_err("missing result")
+            .kind(),
+        RhiReconciliationAttemptErrorKind::ResultInventory
+    );
+    assert_eq!(
+        RhiReconciliationAttemptResults::new(&plan, std::iter::repeat(complete))
+            .expect_err("bounded infinite excess")
+            .kind(),
+        RhiReconciliationAttemptErrorKind::ResultInventory
+    );
+    host.close().await.expect("close");
+    drop((configuration, metadata, runtime, root));
+}
+
+#[tokio::test]
+async fn result_inventory_rejects_reordered_configured_sources() {
+    let multi_source = EXAMPLE
+        .replace(
+            "read = false\nwrite = true\nrequired = false",
+            "read = true\nwrite = true\nrequired = false",
+        )
+        .replace(
+            "[[evidence.sources]]\nsource_id = \"trade-primary\"",
+            "[[evidence.sources]]\nsource_id = \"a-secondary\"\nkind = \"nostr_relay\"\nrelay_id = \"relay-secondary\"\nrequired = false\nselector = \"trade_mutation_lineage_v1\"\ndeadline_ms = 5000\nlookback_seconds = 3600\noverlap_seconds = 60\n\n[[evidence.sources]]\nsource_id = \"trade-primary\"",
+        );
+    let root = tempfile::tempdir().expect("root");
+    let runtime = runtime(root.path(), "attempt-order");
+    let configuration =
+        parse_rhi_config_v1(multi_source.as_bytes(), rhi::RhiConfigProfile::RepoLocal)
+            .expect("multi-source configuration");
+    let metadata = metadata_from_config(&runtime, &configuration);
+    initialize(&runtime, &metadata).await;
+    let trade = TradeId::from_bytes([0x51; 16]);
+    write_dirty(
+        &runtime,
+        trade,
+        1,
+        *metadata.evidence_policy_digest().as_bytes(),
+        1_000,
+    )
+    .await;
+    let host = open_writer(&runtime, &metadata).await;
+    let jobs = host.repositories().reconciliation_jobs();
+    jobs.schedule_trade(trade, configured_policy(&configuration), now(1_000))
+        .await
+        .expect("schedule");
+    let lease = jobs
+        .claim_next(owner(0x52), now(1_000))
+        .await
+        .expect("claim")
+        .expect("job");
+    let plan =
+        RhiReconciliationAttemptPlan::from_claim(lease, &configuration, now(1_000)).expect("plan");
+    assert_eq!(
+        plan.requests()
+            .iter()
+            .map(|request| request.source_id())
+            .collect::<Vec<_>>(),
+        ["a-secondary", "trade-primary"]
+    );
+    let mut results = plan
+        .requests()
+        .iter()
+        .map(|request| {
+            RhiReconciliationSourceResult::new(
+                request,
+                RhiTradeSourceCompletion::Complete,
+                now(1_000),
+                now(1_001),
+                0,
+                0,
+            )
+            .expect("result")
+        })
+        .collect::<Vec<_>>();
+    assert!(RhiReconciliationAttemptResults::new(&plan, results.clone()).is_ok());
+    results.reverse();
+    assert_eq!(
+        RhiReconciliationAttemptResults::new(&plan, results)
+            .expect_err("reordered")
+            .kind(),
+        RhiReconciliationAttemptErrorKind::ResultInventory
+    );
+    host.close().await.expect("close");
+}
+
+#[tokio::test]
+async fn attempt_diagnostics_are_redacted_and_source_free() {
+    let (root, runtime, metadata, configuration, host, plan) =
+        attempt_fixture("attempt-debug").await;
+    let request = &plan.requests()[0];
+    let result = RhiReconciliationSourceResult::new(
+        request,
+        RhiTradeSourceCompletion::Complete,
+        now(1_000),
+        now(1_001),
+        1,
+        16,
+    )
+    .expect("result");
+    let inventory = RhiReconciliationAttemptResults::new(&plan, [result]).expect("inventory");
+    let rendered = format!("{plan:?} {request:?} {result:?} {inventory:?}");
+    for secret in [
+        &lower_hex(plan.id().as_bytes()),
+        &lower_hex(request.id().as_bytes()),
+        &lower_hex(request.selector_digest().as_bytes()),
+    ] {
+        assert!(!rendered.contains(secret));
+    }
+    let error = RhiReconciliationAttemptResults::new(&plan, []).expect_err("error");
+    assert!(Error::source(&error).is_none());
+    assert_eq!(
+        error.code(),
+        "reconciliation_attempt_result_inventory_invalid"
+    );
+    assert!(!format!("{error} {error:?}").contains("trade-primary"));
+    host.close().await.expect("close");
+    drop((configuration, metadata, runtime, root));
+}
+
+async fn attempt_fixture(
+    instance: &str,
+) -> (
+    tempfile::TempDir,
+    RhiRuntimeContext,
+    RhiStateMetadata,
+    rhi::RhiConfigDocumentV1,
+    rhi::RhiStateHost,
+    RhiReconciliationAttemptPlan,
+) {
+    let root = tempfile::tempdir().expect("root");
+    let runtime = runtime(root.path(), instance);
+    let configuration = parse_rhi_config_v1(EXAMPLE.as_bytes(), rhi::RhiConfigProfile::RepoLocal)
+        .expect("configuration");
+    let metadata = metadata_from_config(&runtime, &configuration);
+    initialize(&runtime, &metadata).await;
+    let trade = TradeId::from_bytes([0x41; 16]);
+    write_dirty(
+        &runtime,
+        trade,
+        1,
+        *metadata.evidence_policy_digest().as_bytes(),
+        1_000,
+    )
+    .await;
+    let host = open_writer(&runtime, &metadata).await;
+    let jobs = host.repositories().reconciliation_jobs();
+    jobs.schedule_trade(trade, configured_policy(&configuration), now(1_000))
+        .await
+        .expect("schedule");
+    let lease = jobs
+        .claim_next(owner(0x42), now(1_000))
+        .await
+        .expect("claim")
+        .expect("job");
+    let plan =
+        RhiReconciliationAttemptPlan::from_claim(lease, &configuration, now(1_000)).expect("plan");
+    (root, runtime, metadata, configuration, host, plan)
 }
 
 #[test]

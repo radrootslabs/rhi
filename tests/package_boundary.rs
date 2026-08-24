@@ -11,7 +11,10 @@ const RUNTIME_ADAPTERS: &str = include_str!("../src/runtime_adapters.rs");
 const RUNTIME_ADAPTER_CONTRACT: &str =
     include_str!("../contracts/services_hardening/runtime_adapters.v1.json");
 const RUNTIME_FOUNDATION: &str = include_str!("../src/runtime_foundation.rs");
+const RECONCILIATION_ATTEMPTS: &str = include_str!("../src/reconciliation_attempt.rs");
 const RECONCILIATION_JOBS: &str = include_str!("../src/reconciliation_job.rs");
+const RECONCILIATION_ATTEMPT_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/reconciliation_attempts.v1.json");
 const RUNTIME_FOUNDATION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/runtime_foundation.v1.json");
 const TRADE_INGEST_CONTRACT: &str =
@@ -28,6 +31,7 @@ const SOURCES: &[&str] = &[
     include_str!("../src/features/trade_agreement_attestation.rs"),
     include_str!("../src/identity_credential.rs"),
     include_str!("../src/identity_envelope.rs"),
+    include_str!("../src/reconciliation_attempt.rs"),
     include_str!("../src/reconciliation_job.rs"),
     include_str!("../src/runtime_context.rs"),
     include_str!("../src/runtime_adapters.rs"),
@@ -95,6 +99,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "features",
         "identity_credential",
         "identity_envelope",
+        "reconciliation_attempt",
         "reconciliation_job",
         "runtime_context",
         "runtime_adapters",
@@ -131,6 +136,10 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "validate_rhi_state_catalogs",
         "RhiStateCatalogError",
         "RhiRuntimeAdapters",
+        "RhiReconciliationAttemptPlan",
+        "RhiReconciliationSourceRequest",
+        "RhiReconciliationSourceResult",
+        "RhiReconciliationAttemptResults",
         "RhiReconciliationJobPolicy",
         "RhiReconciliationLease",
         "RhiTimeEntropyAdapters",
@@ -218,7 +227,56 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .lines()
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
-    assert_eq!(public_error_count, 17);
+    assert_eq!(public_error_count, 18);
+}
+
+#[test]
+fn reconciliation_attempts_are_exact_bounded_and_effect_free() {
+    let contract: serde_json::Value = serde_json::from_str(RECONCILIATION_ATTEMPT_CONTRACT)
+        .expect("reconciliation-attempt contract");
+    assert_eq!(contract["schema"], "radroots.rhi.reconciliation-attempts");
+    assert_eq!(contract["contract_version"], 1);
+    assert_eq!(contract["state_schema_version"], 5);
+    assert_eq!(contract["plan"]["source_count_maximum"], 16);
+    assert_eq!(contract["plan"]["result_event_maximum"], 4_096);
+    assert_eq!(
+        contract["plan"]["result_original_event_bytes_maximum"],
+        8_388_608
+    );
+    assert_eq!(
+        contract["result"]["inventory_ingestion_bound"],
+        "configured_source_count_plus_one"
+    );
+    assert_eq!(contract["effects"]["sqlite"], false);
+    assert_eq!(contract["effects"]["source_or_relay"], false);
+    for required in [
+        "state_metadata::evidence_policy_digest(normalized)",
+        ".take(plan.requests.len().saturating_add(1))",
+        "RhiTradeSourceCompletion::IncompleteTimeout",
+        "RhiReconciliationSourceSelectorDigest",
+    ] {
+        assert!(
+            RECONCILIATION_ATTEMPTS.contains(required),
+            "attempt boundary is missing {required}"
+        );
+    }
+    for forbidden in [
+        "sqlx::",
+        "std::fs",
+        "std::net",
+        "tokio::",
+        "SystemTime",
+        "thread_rng",
+        "OsRng",
+        "RhiTradeSourceCursor",
+    ] {
+        assert!(
+            !RECONCILIATION_ATTEMPTS.contains(forbidden),
+            "attempt boundary gained forbidden authority {forbidden}"
+        );
+    }
+    assert!(!ROOT.contains("pub mod reconciliation_attempt"));
+    assert!(!PUBLIC_API.contains("rhi::reconciliation_attempt::"));
 }
 
 #[test]
@@ -524,7 +582,13 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "[`trade_source_ingest.v1.json`](contracts/services_hardening/trade_source_ingest.v1.json)",
         "## Durable reconciliation jobs",
         "[`reconciliation_jobs.v1.json`](contracts/services_hardening/reconciliation_jobs.v1.json)",
+        "## Bounded reconciliation source attempts",
+        "[`reconciliation_attempts.v1.json`](contracts/services_hardening/reconciliation_attempts.v1.json)",
         "configured queue capacity is enforced beneath a fixed 65,536-job",
+        "from an unexpired claimed job lease",
+        "can be omitted, duplicated, reordered, or appended beyond",
+        "Planning and result validation are pure and perform no",
+        "SQLite, source, relay, network, filesystem, task, clock, or entropy operation",
         "No ambient clock or entropy is read",
         "Only exact-target EOSE before the deadline is complete",
         "4,096 distinct signed-event identities (event ID plus signature) and 8 MiB",

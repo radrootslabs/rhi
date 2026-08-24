@@ -116,6 +116,12 @@
 - Record each source result with exact selector digest, required/optional
   authority, stable request identity, deadline, lookback/cursor, completion
   evidence, accepted-event count, safe outcome code, and bounded timing.
+- Derive the bounded canonical per-source request inventory only from an
+  unexpired claimed reconciliation lease and the exact normalized evidence
+  policy. Attempt, selector, and request identities are domain-separated;
+  every deadline is absolute and capped by both configuration and lease
+  expiry; result ingestion consumes at most the configured source count plus
+  one before rejecting missing, duplicate, reordered, or excess evidence.
 - Query every configured source outside write transactions. A timeout,
   unsupported adapter, partial result, raw upstream error, or unknown
   completion never masquerades as success.

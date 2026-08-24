@@ -137,6 +137,14 @@ pub enum rhi::RhiPublicationCommandV1
 pub rhi::RhiPublicationCommandV1::Backlog
 pub rhi::RhiPublicationCommandV1::Retry
 pub rhi::RhiPublicationCommandV1::Targets
+pub enum rhi::RhiReconciliationAttemptErrorKind
+pub rhi::RhiReconciliationAttemptErrorKind::InvalidConfiguration
+pub rhi::RhiReconciliationAttemptErrorKind::InvalidInput
+pub rhi::RhiReconciliationAttemptErrorKind::LeaseExpired
+pub rhi::RhiReconciliationAttemptErrorKind::PolicyMismatch
+pub rhi::RhiReconciliationAttemptErrorKind::ResultInventory
+impl rhi::RhiReconciliationAttemptErrorKind
+pub const fn rhi::RhiReconciliationAttemptErrorKind::code(self) -> &'static str
 pub enum rhi::RhiReconciliationCommandV1
 pub rhi::RhiReconciliationCommandV1::Jobs
 pub rhi::RhiReconciliationCommandV1::Refresh
@@ -571,12 +579,45 @@ pub const fn rhi::RhiPublicationTargetRepository<'_>::descriptor(&self) -> rhi::
 pub const fn rhi::RhiPublicationTargetRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
 impl core::fmt::Debug for rhi::RhiPublicationTargetRepository<'_>
 pub fn rhi::RhiPublicationTargetRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationAttemptError
+impl rhi::RhiReconciliationAttemptError
+pub const fn rhi::RhiReconciliationAttemptError::code(self) -> &'static str
+pub const fn rhi::RhiReconciliationAttemptError::kind(self) -> rhi::RhiReconciliationAttemptErrorKind
+impl core::error::Error for rhi::RhiReconciliationAttemptError
+impl core::fmt::Debug for rhi::RhiReconciliationAttemptError
+pub fn rhi::RhiReconciliationAttemptError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiReconciliationAttemptError
+pub fn rhi::RhiReconciliationAttemptError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationAttemptId(_)
+impl rhi::RhiReconciliationAttemptId
+pub const fn rhi::RhiReconciliationAttemptId::as_bytes(&self) -> &[u8; 32]
+impl core::fmt::Debug for rhi::RhiReconciliationAttemptId
+pub fn rhi::RhiReconciliationAttemptId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationAttemptPlan
+impl rhi::RhiReconciliationAttemptPlan
+pub const fn rhi::RhiReconciliationAttemptPlan::attempt_started_at(&self) -> rhi::RhiReconciliationUnixMilliseconds
+pub const fn rhi::RhiReconciliationAttemptPlan::deadline(&self) -> rhi::RhiReconciliationUnixMilliseconds
+pub const fn rhi::RhiReconciliationAttemptPlan::evidence_policy_digest(&self) -> rhi::RhiEvidencePolicyDigest
+pub fn rhi::RhiReconciliationAttemptPlan::from_claim(rhi::RhiReconciliationLease, &rhi::RhiConfigDocumentV1, rhi::RhiReconciliationUnixMilliseconds) -> core::result::Result<Self, rhi::RhiReconciliationAttemptError>
+pub const fn rhi::RhiReconciliationAttemptPlan::id(&self) -> rhi::RhiReconciliationAttemptId
+pub const fn rhi::RhiReconciliationAttemptPlan::input_generation(&self) -> u64
+pub const fn rhi::RhiReconciliationAttemptPlan::job_id(&self) -> rhi::RhiReconciliationJobId
+pub fn rhi::RhiReconciliationAttemptPlan::requests(&self) -> &[rhi::RhiReconciliationSourceRequest]
+impl core::fmt::Debug for rhi::RhiReconciliationAttemptPlan
+pub fn rhi::RhiReconciliationAttemptPlan::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiReconciliationAttemptRepository<'host>
 impl rhi::RhiReconciliationAttemptRepository<'_>
 pub const fn rhi::RhiReconciliationAttemptRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
 pub const fn rhi::RhiReconciliationAttemptRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
 impl core::fmt::Debug for rhi::RhiReconciliationAttemptRepository<'_>
 pub fn rhi::RhiReconciliationAttemptRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationAttemptResults
+impl rhi::RhiReconciliationAttemptResults
+pub const fn rhi::RhiReconciliationAttemptResults::attempt_id(&self) -> rhi::RhiReconciliationAttemptId
+pub fn rhi::RhiReconciliationAttemptResults::new<I>(&rhi::RhiReconciliationAttemptPlan, I) -> core::result::Result<Self, rhi::RhiReconciliationAttemptError> where I: core::iter::traits::collect::IntoIterator<Item = rhi::RhiReconciliationSourceResult>
+pub fn rhi::RhiReconciliationAttemptResults::results(&self) -> &[rhi::RhiReconciliationSourceResult]
+impl core::fmt::Debug for rhi::RhiReconciliationAttemptResults
+pub fn rhi::RhiReconciliationAttemptResults::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiReconciliationJob
 impl rhi::RhiReconciliationJob
 pub const fn rhi::RhiReconciliationJob::attempt_count(self) -> u16
@@ -648,6 +689,41 @@ pub struct rhi::RhiReconciliationScheduleOutcome
 impl rhi::RhiReconciliationScheduleOutcome
 pub const fn rhi::RhiReconciliationScheduleOutcome::created(self) -> bool
 pub const fn rhi::RhiReconciliationScheduleOutcome::job(self) -> rhi::RhiReconciliationJob
+pub struct rhi::RhiReconciliationSourceRequest
+impl rhi::RhiReconciliationSourceRequest
+pub const fn rhi::RhiReconciliationSourceRequest::attempt_started_at(&self) -> rhi::RhiReconciliationUnixMilliseconds
+pub const fn rhi::RhiReconciliationSourceRequest::deadline(&self) -> rhi::RhiReconciliationUnixMilliseconds
+pub const fn rhi::RhiReconciliationSourceRequest::id(&self) -> rhi::RhiReconciliationSourceRequestId
+pub const fn rhi::RhiReconciliationSourceRequest::lookback_seconds(&self) -> u64
+pub const fn rhi::RhiReconciliationSourceRequest::maximum_bytes(&self) -> u64
+pub const fn rhi::RhiReconciliationSourceRequest::maximum_events(&self) -> u32
+pub const fn rhi::RhiReconciliationSourceRequest::required(&self) -> bool
+pub const fn rhi::RhiReconciliationSourceRequest::selector_digest(&self) -> rhi::RhiReconciliationSourceSelectorDigest
+pub fn rhi::RhiReconciliationSourceRequest::source_id(&self) -> &str
+pub const fn rhi::RhiReconciliationSourceRequest::trade_id(&self) -> radroots_event::id::TradeId
+impl core::fmt::Debug for rhi::RhiReconciliationSourceRequest
+pub fn rhi::RhiReconciliationSourceRequest::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationSourceRequestId(_)
+impl rhi::RhiReconciliationSourceRequestId
+pub const fn rhi::RhiReconciliationSourceRequestId::as_bytes(&self) -> &[u8; 32]
+impl core::fmt::Debug for rhi::RhiReconciliationSourceRequestId
+pub fn rhi::RhiReconciliationSourceRequestId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationSourceResult
+impl rhi::RhiReconciliationSourceResult
+pub const fn rhi::RhiReconciliationSourceResult::accepted_event_bytes(self) -> u64
+pub const fn rhi::RhiReconciliationSourceResult::accepted_event_count(self) -> u32
+pub const fn rhi::RhiReconciliationSourceResult::finished_at(self) -> rhi::RhiReconciliationUnixMilliseconds
+pub fn rhi::RhiReconciliationSourceResult::new(&rhi::RhiReconciliationSourceRequest, rhi::RhiTradeSourceCompletion, rhi::RhiReconciliationUnixMilliseconds, rhi::RhiReconciliationUnixMilliseconds, u32, u64) -> core::result::Result<Self, rhi::RhiReconciliationAttemptError>
+pub const fn rhi::RhiReconciliationSourceResult::outcome(self) -> rhi::RhiTradeSourceCompletion
+pub const fn rhi::RhiReconciliationSourceResult::request_id(self) -> rhi::RhiReconciliationSourceRequestId
+pub const fn rhi::RhiReconciliationSourceResult::started_at(self) -> rhi::RhiReconciliationUnixMilliseconds
+impl core::fmt::Debug for rhi::RhiReconciliationSourceResult
+pub fn rhi::RhiReconciliationSourceResult::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationSourceSelectorDigest(_)
+impl rhi::RhiReconciliationSourceSelectorDigest
+pub const fn rhi::RhiReconciliationSourceSelectorDigest::as_bytes(&self) -> &[u8; 32]
+impl core::fmt::Debug for rhi::RhiReconciliationSourceSelectorDigest
+pub fn rhi::RhiReconciliationSourceSelectorDigest::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiReconciliationUnixMilliseconds(_)
 impl rhi::RhiReconciliationUnixMilliseconds
 pub const fn rhi::RhiReconciliationUnixMilliseconds::get(self) -> u64
@@ -1029,6 +1105,8 @@ pub const rhi::RHI_ENCRYPTED_IDENTITY_ENVELOPE_CONTRACT_VERSION: u32
 pub const rhi::RHI_ENCRYPTED_IDENTITY_ENVELOPE_MAX_BYTES: usize
 pub const rhi::RHI_MIGRATION_CATALOG_SHA256: [u8; 32]
 pub const rhi::RHI_PROVIDER_CONTRACT_VERSION: u32
+pub const rhi::RHI_RECONCILIATION_ATTEMPT_CONTRACT_VERSION: u32
+pub const rhi::RHI_RECONCILIATION_ATTEMPT_MAX_SOURCES: usize
 pub const rhi::RHI_RECONCILIATION_JOB_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_JOB_MAX_ACTIVE: u32
 pub const rhi::RHI_RUNTIME_ADAPTER_CONTRACT_VERSION: u32

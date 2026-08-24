@@ -8,6 +8,7 @@ mod config_v1;
 mod features;
 mod identity_credential;
 mod identity_envelope;
+mod reconciliation_attempt;
 mod reconciliation_job;
 mod runtime_adapters;
 mod runtime_context;
@@ -66,6 +67,13 @@ pub use radroots_runtime_paths::{
 pub use radroots_service_host::{
     EntropyError, EntropySource, MonotonicClock, MonotonicClockError, MonotonicDeadline,
     MonotonicTime, UnixTimeSeconds, WallClock, WallClockError,
+};
+pub use reconciliation_attempt::{
+    RHI_RECONCILIATION_ATTEMPT_CONTRACT_VERSION, RHI_RECONCILIATION_ATTEMPT_MAX_SOURCES,
+    RhiReconciliationAttemptError, RhiReconciliationAttemptErrorKind, RhiReconciliationAttemptId,
+    RhiReconciliationAttemptPlan, RhiReconciliationAttemptResults, RhiReconciliationSourceRequest,
+    RhiReconciliationSourceRequestId, RhiReconciliationSourceResult,
+    RhiReconciliationSourceSelectorDigest,
 };
 pub use reconciliation_job::{
     RHI_RECONCILIATION_JOB_CONTRACT_VERSION, RHI_RECONCILIATION_JOB_MAX_ACTIVE,

@@ -1,0 +1,118 @@
+{
+  "schema": "radroots.rhi.reconciliation-attempts",
+  "schema_version": 1,
+  "contract_version": 1,
+  "state_schema_version": 5,
+  "configuration_authority": "contracts/services_hardening/evidence_policy.v1.json",
+  "attempt_identity": {
+    "algorithm": "sha256",
+    "domain": "radroots.rhi.reconciliation_attempt.v1\\0",
+    "preimage": ["job_id_32_bytes", "attempt_count_u16_be"]
+  },
+  "selector_identity": {
+    "algorithm": "sha256",
+    "domain": "radroots.rhi.reconciliation_selector.v1\\0",
+    "preimage": [
+      "selector_id_u64_length_framed_utf8",
+      "event_kind_count_u32_be",
+      "event_kinds_u32_be_in_canonical_order",
+      "exact_tag_name_byte_d",
+      "trade_id_16_bytes"
+    ],
+    "selector_id": "trade_mutation_lineage_v1",
+    "event_kinds": [3470, 3471, 3472, 3473, 3474],
+    "exact_tag": "#d",
+    "cursor_binding": "deferred_to_step_189"
+  },
+  "request_identity": {
+    "algorithm": "sha256",
+    "domain": "radroots.rhi.reconciliation_source_request.v1\\0",
+    "preimage": [
+      "attempt_id_32_bytes",
+      "source_id_u64_length_framed_utf8",
+      "required_u8",
+      "selector_digest_32_bytes",
+      "attempt_started_at_unix_ms_u64_be",
+      "absolute_deadline_unix_ms_u64_be",
+      "lookback_seconds_u64_be",
+      "maximum_events_u32_be",
+      "maximum_original_event_bytes_u64_be"
+    ]
+  },
+  "plan": {
+    "admission": "unexpired_claimed_job_lease_exact_normalized_evidence_policy_and_exact_normalized_lease_retry_attempt_policy",
+    "queue_capacity_authority": "job_admission_only_not_per_attempt_identity",
+    "source_order": "source_id_ascending_utf8",
+    "source_count_minimum": 1,
+    "source_count_maximum": 16,
+    "source_kind": "nostr_relay",
+    "attempt_deadline": "minimum_of_attempt_start_plus_configured_attempt_deadline_and_lease_expiry",
+    "source_deadline": "minimum_of_attempt_start_plus_configured_source_deadline_attempt_deadline_and_lease_expiry",
+    "result_event_maximum": 4096,
+    "result_original_event_bytes_maximum": 8388608
+  },
+  "source_request": [
+    "request_id",
+    "source_id",
+    "trade_id",
+    "required",
+    "selector_digest",
+    "attempt_started_at_unix_ms",
+    "absolute_deadline_unix_ms",
+    "lookback_seconds",
+    "maximum_events",
+    "maximum_original_event_bytes"
+  ],
+  "completion_codes": [
+    "complete",
+    "incomplete_timeout",
+    "incomplete_unavailable",
+    "incomplete_resource_limit",
+    "incomplete_unknown",
+    "unsupported"
+  ],
+  "result": {
+    "identity": "exact_request_id",
+    "timing": ["started_at_unix_ms", "finished_at_unix_ms"],
+    "complete": "finished_before_absolute_source_deadline",
+    "timeout": "finished_at_or_after_absolute_source_deadline",
+    "other_incomplete_or_unsupported": "finished_before_absolute_source_deadline",
+    "unsupported_accepted_inventory": "exactly_zero",
+    "accepted_inventory": ["accepted_event_count", "accepted_original_event_bytes"],
+    "inventory_order": "exact_canonical_request_order",
+    "inventory_ingestion_bound": "configured_source_count_plus_one"
+  },
+  "effects": {
+    "sqlite": false,
+    "source_or_relay": false,
+    "network": false,
+    "filesystem": false,
+    "task_spawn": false,
+    "ambient_clock": false,
+    "ambient_entropy": false
+  },
+  "diagnostics": "crate_owned_source_free_redacted",
+  "forbidden": [
+    "caller_selected_attempt_id",
+    "caller_selected_request_id",
+    "implicit_source",
+    "implicit_deadline",
+    "complete_at_or_after_deadline",
+    "timeout_before_deadline",
+    "missing_source_result",
+    "duplicate_source_result",
+    "reordered_source_result",
+    "unbounded_result_inventory",
+    "source_query_inside_transaction"
+  ],
+  "deferred": [
+    "cursor_and_overlap_derivation",
+    "source_execution",
+    "durable_source_result_commit",
+    "checkpoint_advance",
+    "manifest",
+    "reducer",
+    "attestation",
+    "publication"
+  ]
+}

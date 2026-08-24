@@ -462,6 +462,14 @@ pub struct RhiReconciliationJob {
 }
 
 impl RhiReconciliationJob {
+    pub(crate) const fn attempt_policy_matches(self, expected: RhiReconciliationJobPolicy) -> bool {
+        self.policy.lease_duration_ms == expected.lease_duration_ms
+            && self.policy.lease_renewal_ms == expected.lease_renewal_ms
+            && self.policy.max_attempts == expected.max_attempts
+            && self.policy.initial_backoff_ms == expected.initial_backoff_ms
+            && self.policy.maximum_backoff_ms == expected.maximum_backoff_ms
+    }
+
     #[must_use]
     pub const fn id(self) -> RhiReconciliationJobId {
         self.id
