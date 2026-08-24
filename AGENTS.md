@@ -125,6 +125,11 @@
 - Query every configured source outside write transactions. A timeout,
   unsupported adapter, partial result, raw upstream error, or unknown
   completion never masquerades as success.
+- Bind every resumed request to its exact prior authored-time/event-ID cursor,
+  subtract the configured overlap for an inclusive query start, canonicalize
+  distinct signed-event identities, retain the earliest injected provenance,
+  and reject conflicting mutation or signed-event identity reuse before the
+  Step 190 commit boundary.
 - Freeze the exact accepted mutation, signed-event, provenance, and per-source
   completion inventory in an immutable canonical manifest. Reducers consume a
   canonically ordered immutable set with explicit policy digest, reducer

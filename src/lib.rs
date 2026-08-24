@@ -10,6 +10,7 @@ mod identity_credential;
 mod identity_envelope;
 mod reconciliation_attempt;
 mod reconciliation_job;
+mod reconciliation_replay;
 mod runtime_adapters;
 mod runtime_context;
 mod runtime_foundation;
@@ -81,6 +82,12 @@ pub use reconciliation_job::{
     RhiReconciliationJobId, RhiReconciliationJobPolicy, RhiReconciliationJobState,
     RhiReconciliationLease, RhiReconciliationLeaseOwner, RhiReconciliationRetryDelayMilliseconds,
     RhiReconciliationScheduleOutcome, RhiReconciliationUnixMilliseconds,
+};
+pub use reconciliation_replay::{
+    RHI_RECONCILIATION_REPLAY_CONTRACT_VERSION, RhiReconciliationReplayError,
+    RhiReconciliationReplayErrorKind, RhiReconciliationSourceCursorEvidence,
+    RhiReconciliationSourceReplay, RhiReconciliationSourceReplayId,
+    RhiReconciliationSourceReplayPlan,
 };
 pub use runtime_adapters::{
     CanonicalRhiCredentialAccess, CanonicalRhiIdentityAccess, RHI_RUNTIME_ADAPTER_CONTRACT_VERSION,

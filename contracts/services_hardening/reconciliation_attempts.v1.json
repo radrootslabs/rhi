@@ -22,7 +22,7 @@
     "selector_id": "trade_mutation_lineage_v1",
     "event_kinds": [3470, 3471, 3472, 3473, 3474],
     "exact_tag": "#d",
-    "cursor_binding": "deferred_to_step_189"
+    "cursor_binding": "contracts/services_hardening/reconciliation_replay.v1.json"
   },
   "request_identity": {
     "algorithm": "sha256",
@@ -106,7 +106,6 @@
     "source_query_inside_transaction"
   ],
   "deferred": [
-    "cursor_and_overlap_derivation",
     "source_execution",
     "durable_source_result_commit",
     "checkpoint_advance",

@@ -10,15 +10,19 @@ use rhi::{
     RhiReconciliationAttemptErrorKind, RhiReconciliationAttemptPlan,
     RhiReconciliationAttemptResults, RhiReconciliationJobErrorKind, RhiReconciliationJobPolicy,
     RhiReconciliationJobState, RhiReconciliationLeaseOwner,
-    RhiReconciliationRetryDelayMilliseconds, RhiReconciliationSourceResult,
-    RhiReconciliationUnixMilliseconds, RhiRuntimeContext, RhiStateMetadata,
-    RhiTradeSourceCompletion, TradeId, initialize_rhi_state, open_rhi_state_inspection,
+    RhiReconciliationRetryDelayMilliseconds, RhiReconciliationSourceReplayPlan,
+    RhiReconciliationSourceResult, RhiReconciliationUnixMilliseconds, RhiRuntimeContext,
+    RhiStateMetadata, RhiTradeMutationAdmissionLimits, RhiTradeMutationAuthoredTimePolicy,
+    RhiTradeMutationObservedAtUnixSeconds, RhiTradeSourceCompletion, TradeId,
+    admit_rhi_trade_mutation_event, initialize_rhi_state, open_rhi_state_inspection,
     open_rhi_state_read_write, parse_rhi_cli_v1_from, parse_rhi_config_v1,
     resolve_rhi_runtime_context,
 };
 use sqlx::{Connection, SqliteConnection, sqlite::SqliteConnectOptions};
 
 const EXAMPLE: &str = include_str!("../contracts/services_hardening/config.v1.example.toml");
+const TRADE_VECTOR: &str =
+    include_str!("../contracts/conformance/vectors/trade_ingest_proposal.v1.json");
 
 fn runtime(root: &Path, instance: &str) -> RhiRuntimeContext {
     let invocation = parse_rhi_cli_v1_from([
@@ -522,6 +526,15 @@ async fn attempt_plan_binds_the_exact_claim_policy_sources_and_frozen_identities
         lower_hex(request.id().as_bytes()),
         "ef58f9e8a61f7964734cf0c2aabe0bdb2cbdcec529b16f40ae18ec224d0c896d"
     );
+    let replay =
+        RhiReconciliationSourceReplayPlan::from_request(&plan, request, &configuration, None)
+            .expect("replay plan");
+    assert_eq!(replay.overlap_seconds(), 300);
+    assert_eq!(replay.since_unix_seconds(), 0);
+    assert_eq!(
+        lower_hex(replay.id().as_bytes()),
+        "2490a2e9a6e85051e92f6c2fc2ff7e98a1367afd6c26f8625eb421cd2ab30c68"
+    );
     host.close().await.expect("close");
 }
 
@@ -900,6 +913,68 @@ async fn attempt_diagnostics_are_redacted_and_source_free() {
     drop((configuration, metadata, runtime, root));
 }
 
+#[tokio::test]
+async fn replay_plan_binds_overlap_deduplicates_and_retains_first_provenance() {
+    let started_ms = 1_784_347_200_000;
+    let (root, runtime, metadata, configuration, host, plan) =
+        replay_fixture("replay-plan", EXAMPLE, started_ms).await;
+    let request = &plan.requests()[0];
+    let cursor_plan =
+        RhiReconciliationSourceReplayPlan::from_request(&plan, request, &configuration, None)
+            .expect("initial cursor plan");
+    assert_eq!(cursor_plan.overlap_seconds(), 300);
+    assert_eq!(cursor_plan.since_unix_seconds(), 1_784_260_800);
+    assert!(cursor_plan.prior_cursor().is_none());
+
+    let wire = replay_wire();
+    let replay = cursor_plan
+        .finish(
+            request,
+            RhiTradeSourceCompletion::Complete,
+            now(started_ms),
+            now(started_ms + 2_000),
+            [
+                admitted_replay(&configuration, &wire, 1_784_347_201),
+                admitted_replay(&configuration, &wire, 1_784_347_200),
+            ],
+        )
+        .expect("canonical replay");
+    assert_eq!(replay.accepted_event_count(), 1);
+    assert_eq!(
+        replay.accepted_original_event_bytes(),
+        u64::try_from(wire.len()).expect("wire bytes")
+    );
+    assert_eq!(replay.duplicate_observation_count(), 1);
+    assert_eq!(
+        replay.first_observed_at().expect("first provenance").get(),
+        1_784_347_200
+    );
+    assert_eq!(replay.result().accepted_event_count(), 1);
+    assert_eq!(
+        replay.result().accepted_event_bytes(),
+        u64::try_from(wire.len()).expect("wire bytes")
+    );
+    let cursor = replay.eligible_cursor().expect("eligible cursor");
+    assert_eq!(cursor.created_at_unix_seconds(), 1_784_347_200);
+
+    let incomplete =
+        RhiReconciliationSourceReplayPlan::from_request(&plan, request, &configuration, None)
+            .expect("incomplete plan")
+            .finish(
+                request,
+                RhiTradeSourceCompletion::IncompleteUnavailable,
+                now(started_ms),
+                now(started_ms + 1_000),
+                [admitted_replay(&configuration, &wire, 1_784_347_200)],
+            )
+            .expect("incomplete replay");
+    assert!(incomplete.cursor_candidate().is_some());
+    assert!(incomplete.eligible_cursor().is_none());
+    assert!(!format!("{replay:?} {incomplete:?}").contains("trade-primary"));
+    host.close().await.expect("close");
+    drop((configuration, metadata, runtime, root));
+}
+
 async fn attempt_fixture(
     instance: &str,
 ) -> (
@@ -938,6 +1013,70 @@ async fn attempt_fixture(
     let plan =
         RhiReconciliationAttemptPlan::from_claim(lease, &configuration, now(1_000)).expect("plan");
     (root, runtime, metadata, configuration, host, plan)
+}
+
+async fn replay_fixture(
+    instance: &str,
+    source: &str,
+    started_ms: u64,
+) -> (
+    tempfile::TempDir,
+    RhiRuntimeContext,
+    RhiStateMetadata,
+    rhi::RhiConfigDocumentV1,
+    rhi::RhiStateHost,
+    RhiReconciliationAttemptPlan,
+) {
+    let root = tempfile::tempdir().expect("root");
+    let runtime = runtime(root.path(), instance);
+    let configuration = parse_rhi_config_v1(source.as_bytes(), rhi::RhiConfigProfile::RepoLocal)
+        .expect("configuration");
+    let metadata = metadata_from_config(&runtime, &configuration);
+    initialize(&runtime, &metadata).await;
+    let trade = TradeId::from_bytes([0x11; 16]);
+    write_dirty(
+        &runtime,
+        trade,
+        1,
+        *metadata.evidence_policy_digest().as_bytes(),
+        started_ms / 1_000,
+    )
+    .await;
+    let host = open_writer(&runtime, &metadata).await;
+    let jobs = host.repositories().reconciliation_jobs();
+    jobs.schedule_trade(trade, configured_policy(&configuration), now(started_ms))
+        .await
+        .expect("schedule");
+    let lease = jobs
+        .claim_next(owner(0x72), now(started_ms))
+        .await
+        .expect("claim")
+        .expect("job");
+    let plan = RhiReconciliationAttemptPlan::from_claim(lease, &configuration, now(started_ms))
+        .expect("plan");
+    (root, runtime, metadata, configuration, host, plan)
+}
+
+fn replay_wire() -> Vec<u8> {
+    serde_json::from_str::<serde_json::Value>(TRADE_VECTOR).expect("trade vector")["raw_json"]
+        .as_str()
+        .expect("raw event")
+        .as_bytes()
+        .to_vec()
+}
+
+fn admitted_replay(
+    configuration: &rhi::RhiConfigDocumentV1,
+    wire: &[u8],
+    observed_at: u64,
+) -> rhi::RhiAdmittedTradeMutationEvent {
+    admit_rhi_trade_mutation_event(
+        RhiTradeMutationAdmissionLimits::from_config(configuration).expect("admission limits"),
+        wire,
+        RhiTradeMutationObservedAtUnixSeconds::new(observed_at).expect("observed time"),
+        RhiTradeMutationAuthoredTimePolicy::new(0).expect("authored-time policy"),
+    )
+    .expect("admitted event")
 }
 
 #[test]

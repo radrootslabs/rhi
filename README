@@ -162,6 +162,32 @@ Cursor derivation, source execution, and durable completion commit remain with
 their later ordered checkpoints. The exact machine contract is
 [`reconciliation_attempts.v1.json`](contracts/services_hardening/reconciliation_attempts.v1.json).
 
+## Overlap-safe reconciliation replay
+
+`RhiReconciliationSourceReplayPlan` binds one exact source request to optional
+sealed prior-cursor evidence, configured overlap, and an inclusive query start
+under a domain-separated identity. The evidence is sealed to the source,
+trade, evidence-policy digest, and selector digest, so callers cannot forge or
+relabel progress. Step 189 provides no evidence-minting path: Step 190 alone
+may construct it after the replay and cursor commit atomically. Initial
+queries use the configured lookback; resumed queries subtract the configured
+overlap from the prior authored-time
+cursor so equal-timestamp events remain discoverable. A cursor becomes
+eligible only after exact `complete` source evidence, but remains an in-memory
+candidate that this pure model cannot promote to resumption authority.
+
+The replay inventory consumes at most the request event limit plus one and
+bounds all original event bytes before deduplication. It accepts only the
+request's trade, orders admitted signed events canonically, collapses exact
+event replay, retains the earliest injected source observation, and rejects
+conflicting mutation or signed-event identity reuse. Result counts and bytes
+are derived from the distinct canonical inventory rather than caller claims.
+It performs no SQLite, source, relay, network, filesystem, task, clock, or
+entropy operation. Durable scope revalidation, result/completion persistence,
+and checkpoint advancement remain Step 190 authority. The exact machine
+contract is
+[`reconciliation_replay.v1.json`](contracts/services_hardening/reconciliation_replay.v1.json).
+
 ## Existing-state runtime foundation
 
 `open_rhi_runtime_foundation` opens only an already initialized database from

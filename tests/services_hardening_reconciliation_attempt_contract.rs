@@ -38,7 +38,7 @@ fn machine_contract_freezes_the_complete_step_188_boundary() {
     assert_eq!(contract["selector_identity"]["exact_tag"], "#d");
     assert_eq!(
         contract["selector_identity"]["cursor_binding"],
-        "deferred_to_step_189"
+        "contracts/services_hardening/reconciliation_replay.v1.json"
     );
     assert_eq!(
         contract["plan"]["source_count_maximum"],
@@ -78,7 +78,6 @@ fn machine_contract_freezes_the_complete_step_188_boundary() {
     assert_eq!(
         contract["deferred"],
         json!([
-            "cursor_and_overlap_derivation",
             "source_execution",
             "durable_source_result_commit",
             "checkpoint_advance",

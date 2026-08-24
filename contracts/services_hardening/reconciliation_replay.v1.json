@@ -1,0 +1,98 @@
+{
+  "schema": "radroots.rhi.reconciliation-replay",
+  "schema_version": 1,
+  "contract_version": 1,
+  "state_schema_version": 5,
+  "configuration_authority": "contracts/services_hardening/evidence_policy.v1.json",
+  "request_authority": "contracts/services_hardening/reconciliation_attempts.v1.json",
+  "replay_identity": {
+    "algorithm": "sha256",
+    "domain": "radroots.rhi.reconciliation_source_replay.v1\\0",
+    "preimage": [
+      "request_id_32_bytes",
+      "prior_cursor_present_u8",
+      "prior_cursor_created_at_unix_seconds_u64_be_when_present",
+      "prior_cursor_verified_event_id_32_bytes_when_present",
+      "overlap_seconds_u64_be",
+      "inclusive_since_unix_seconds_u64_be"
+    ],
+    "exact_vector": {
+      "request_id_hex": "ef58f9e8a61f7964734cf0c2aabe0bdb2cbdcec529b16f40ae18ec224d0c896d",
+      "prior_cursor": null,
+      "overlap_seconds": 300,
+      "inclusive_since_unix_seconds": 0,
+      "replay_id_hex": "2490a2e9a6e85051e92f6c2fc2ff7e98a1367afd6c26f8625eb421cd2ab30c68"
+    }
+  },
+  "cursor": {
+    "tuple": ["event_authored_unix_seconds", "verified_event_id"],
+    "input": "sealed_step_190_committed_cursor_evidence",
+    "scope": ["source_id", "trade_id", "evidence_policy_digest", "selector_digest"],
+    "scope_mismatch": "reject_before_resume",
+    "ordering": "lexicographic_ascending",
+    "initial_since": "max_zero_floor_attempt_start_unix_ms_to_seconds_minus_lookback_seconds",
+    "resume_since": "max_zero_prior_cursor_authored_seconds_minus_configured_overlap_seconds",
+    "equal_timestamp_safe": true,
+    "candidate": "greatest_canonical_admitted_cursor",
+    "eligible_only_for": "complete_and_strictly_after_prior_cursor",
+    "scope_revalidation_before_commit": "step_190"
+  },
+  "inventory": {
+    "input_ingestion_bound": "request_maximum_events_plus_one",
+    "input_original_bytes_bound": "request_maximum_original_event_bytes_before_deduplication",
+    "trade_scope": "exact_request_trade_id",
+    "canonical_order": [
+      "event_authored_unix_seconds_ascending",
+      "verified_event_id_bytes_ascending",
+      "verified_signature_bytes_ascending",
+      "source_observed_unix_seconds_ascending",
+      "original_event_byte_length_ascending"
+    ],
+    "signed_event_identity": ["verified_event_id", "verified_signature"],
+    "exact_replay": "one_canonical_fact",
+    "observation_deduplication": "one_fact_per_signed_event_identity",
+    "first_provenance": "earliest_injected_observation_time_retained",
+    "mutation_identity_reuse": "exact_canonical_mutation_required",
+    "signed_event_identity_reuse": "exact_canonical_signed_event_required",
+    "accepted_count_and_bytes": "derived_from_canonical_distinct_inventory"
+  },
+  "timing": {
+    "observation": "injected_whole_unix_second_interval_intersects_source_result_start_and_finish",
+    "event_authored_time": "distinct_untrusted_previously_admitted_input"
+  },
+  "effects": {
+    "sqlite": false,
+    "source_or_relay": false,
+    "network": false,
+    "filesystem": false,
+    "task_spawn": false,
+    "ambient_clock": false,
+    "ambient_entropy": false
+  },
+  "diagnostics": "crate_owned_source_free_redacted",
+  "forbidden": [
+    "unscoped_trade",
+    "cursor_only_global_progress",
+    "caller_forged_or_relabelled_cursor_scope",
+    "in_memory_candidate_used_as_committed_cursor",
+    "exclusive_since_cursor",
+    "arrival_order_authority",
+    "duplicate_authoritative_observation",
+    "later_provenance_overwrite",
+    "conflicting_mutation_identity_reuse",
+    "conflicting_signed_event_identity_reuse",
+    "unbounded_event_iterator",
+    "unbounded_original_event_bytes",
+    "checkpoint_advance_before_complete_commit"
+  ],
+  "deferred": [
+    "source_execution",
+    "durable_source_result_commit",
+    "durable_scope_revalidation",
+    "checkpoint_advance",
+    "manifest",
+    "reducer",
+    "attestation",
+    "publication"
+  ]
+}

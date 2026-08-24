@@ -13,8 +13,11 @@ const RUNTIME_ADAPTER_CONTRACT: &str =
 const RUNTIME_FOUNDATION: &str = include_str!("../src/runtime_foundation.rs");
 const RECONCILIATION_ATTEMPTS: &str = include_str!("../src/reconciliation_attempt.rs");
 const RECONCILIATION_JOBS: &str = include_str!("../src/reconciliation_job.rs");
+const RECONCILIATION_REPLAY: &str = include_str!("../src/reconciliation_replay.rs");
 const RECONCILIATION_ATTEMPT_CONTRACT: &str =
     include_str!("../contracts/services_hardening/reconciliation_attempts.v1.json");
+const RECONCILIATION_REPLAY_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/reconciliation_replay.v1.json");
 const RUNTIME_FOUNDATION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/runtime_foundation.v1.json");
 const TRADE_INGEST_CONTRACT: &str =
@@ -33,6 +36,7 @@ const SOURCES: &[&str] = &[
     include_str!("../src/identity_envelope.rs"),
     include_str!("../src/reconciliation_attempt.rs"),
     include_str!("../src/reconciliation_job.rs"),
+    include_str!("../src/reconciliation_replay.rs"),
     include_str!("../src/runtime_context.rs"),
     include_str!("../src/runtime_adapters.rs"),
     include_str!("../src/runtime_foundation.rs"),
@@ -101,6 +105,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "identity_envelope",
         "reconciliation_attempt",
         "reconciliation_job",
+        "reconciliation_replay",
         "runtime_context",
         "runtime_adapters",
         "runtime_foundation",
@@ -140,6 +145,8 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "RhiReconciliationSourceRequest",
         "RhiReconciliationSourceResult",
         "RhiReconciliationAttemptResults",
+        "RhiReconciliationSourceReplayPlan",
+        "RhiReconciliationSourceReplay",
         "RhiReconciliationJobPolicy",
         "RhiReconciliationLease",
         "RhiTimeEntropyAdapters",
@@ -227,7 +234,7 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .lines()
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
-    assert_eq!(public_error_count, 18);
+    assert_eq!(public_error_count, 19);
 }
 
 #[test]
@@ -277,6 +284,63 @@ fn reconciliation_attempts_are_exact_bounded_and_effect_free() {
     }
     assert!(!ROOT.contains("pub mod reconciliation_attempt"));
     assert!(!PUBLIC_API.contains("rhi::reconciliation_attempt::"));
+}
+
+#[test]
+fn reconciliation_replay_is_overlap_safe_bounded_and_effect_free() {
+    let contract: serde_json::Value = serde_json::from_str(RECONCILIATION_REPLAY_CONTRACT)
+        .expect("reconciliation-replay contract");
+    assert_eq!(contract["schema"], "radroots.rhi.reconciliation-replay");
+    assert_eq!(contract["contract_version"], 1);
+    assert_eq!(contract["state_schema_version"], 5);
+    assert_eq!(contract["cursor"]["equal_timestamp_safe"], true);
+    assert_eq!(
+        contract["cursor"]["input"],
+        "sealed_step_190_committed_cursor_evidence"
+    );
+    assert_eq!(
+        contract["cursor"]["eligible_only_for"],
+        "complete_and_strictly_after_prior_cursor"
+    );
+    assert_eq!(
+        contract["inventory"]["input_ingestion_bound"],
+        "request_maximum_events_plus_one"
+    );
+    assert_eq!(
+        contract["inventory"]["first_provenance"],
+        "earliest_injected_observation_time_retained"
+    );
+    assert_eq!(contract["effects"]["sqlite"], false);
+    assert_eq!(contract["effects"]["source_or_relay"], false);
+    for required in [
+        ".take(maximum_events.saturating_add(1))",
+        "saturating_sub(overlap_seconds)",
+        "RhiReconciliationReplayErrorKind::MutationConflict",
+        "RhiReconciliationReplayErrorKind::SignedEventConflict",
+        "RhiReconciliationSourceCursorEvidence",
+        "cursor_scope_matches(",
+    ] {
+        assert!(
+            RECONCILIATION_REPLAY.contains(required),
+            "replay boundary is missing {required}"
+        );
+    }
+    for forbidden in [
+        "sqlx::",
+        "std::fs",
+        "std::net",
+        "tokio::",
+        "SystemTime",
+        "thread_rng",
+        "OsRng",
+    ] {
+        assert!(
+            !RECONCILIATION_REPLAY.contains(forbidden),
+            "replay boundary gained forbidden authority {forbidden}"
+        );
+    }
+    assert!(!ROOT.contains("pub mod reconciliation_replay"));
+    assert!(!PUBLIC_API.contains("rhi::reconciliation_replay::"));
 }
 
 #[test]
@@ -584,6 +648,8 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "[`reconciliation_jobs.v1.json`](contracts/services_hardening/reconciliation_jobs.v1.json)",
         "## Bounded reconciliation source attempts",
         "[`reconciliation_attempts.v1.json`](contracts/services_hardening/reconciliation_attempts.v1.json)",
+        "## Overlap-safe reconciliation replay",
+        "[`reconciliation_replay.v1.json`](contracts/services_hardening/reconciliation_replay.v1.json)",
         "configured queue capacity is enforced beneath a fixed 65,536-job",
         "from an unexpired claimed job lease",
         "can be omitted, duplicated, reordered, or appended beyond",

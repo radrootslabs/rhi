@@ -121,6 +121,16 @@ pub struct RhiTradeSourceCursor {
 }
 
 impl RhiTradeSourceCursor {
+    pub(crate) const fn from_verified_parts(
+        created_at_unix_seconds: u64,
+        event_id: [u8; 32],
+    ) -> Self {
+        Self {
+            created_at_unix_seconds,
+            event_id,
+        }
+    }
+
     /// Returns the inclusive event-authored UTC second.
     #[must_use]
     pub const fn created_at_unix_seconds(self) -> u64 {
