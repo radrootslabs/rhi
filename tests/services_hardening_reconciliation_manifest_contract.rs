@@ -82,6 +82,18 @@ fn machine_contract_freezes_the_complete_step_191_boundary() {
         contract["private_reducer_material"]["outcome_owner"],
         "reconciliation_outcome.v1.json"
     );
+    assert_eq!(
+        contract["private_finalization_identity"]["attempt_id"],
+        "exact_step_190_committed_attempt_id"
+    );
+    assert_eq!(
+        contract["private_finalization_identity"]["job_id"],
+        "exact_step_190_claimed_job_id"
+    );
+    assert_eq!(
+        contract["private_finalization_identity"]["canonical_manifest_wire_changed"],
+        false
+    );
     assert!(
         !contract["deferred"]
             .as_array()
@@ -120,6 +132,8 @@ fn manifest_boundary_is_sealed_canonical_redacted_and_effect_free() {
         "i64::try_from(observed_at.get())",
         "pub const fn shared_manifest_contract_id(&self)",
         "pub const fn shared_manifest_contract_version(&self)",
+        "attempt_id: plan.id()",
+        "job_id: plan.job_id()",
     ] {
         assert!(
             SOURCE.contains(required),

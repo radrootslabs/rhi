@@ -86,6 +86,13 @@
     "reducer_owner": "reconciliation_reducer.v1.json",
     "outcome_owner": "reconciliation_outcome.v1.json"
   },
+  "private_finalization_identity": {
+    "attempt_id": "exact_step_190_committed_attempt_id",
+    "job_id": "exact_step_190_claimed_job_id",
+    "canonical_manifest_wire_changed": false,
+    "public_access": false,
+    "owner": "reconciliation_finalization.v1.json"
+  },
   "effects": {
     "sqlite": false,
     "filesystem": false,

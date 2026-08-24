@@ -16,7 +16,8 @@ use radroots_trade::evidence::{
 use sha2::{Digest, Sha256};
 
 use crate::{
-    RhiReconciliationAttemptPlan, RhiReconciliationSourceCommitOutcome, RhiTradeSourceCompletion,
+    RhiReconciliationAttemptId, RhiReconciliationAttemptPlan, RhiReconciliationJobId,
+    RhiReconciliationSourceCommitOutcome, RhiTradeSourceCompletion,
     reconciliation_commit::committed_inventory_digest,
     reconciliation_replay::{
         RhiReconciliationReplayCommitFact, RhiReconciliationReplayCommitParts,
@@ -113,6 +114,8 @@ impl Error for RhiReconciliationManifestError {}
 /// ```
 pub struct RhiReconciliationManifest {
     inner: RadrootsTradeEvidenceManifestV1,
+    attempt_id: RhiReconciliationAttemptId,
+    job_id: RhiReconciliationJobId,
     reducer_mutations: Box<[RhiReducerMutationMaterial]>,
 }
 
@@ -181,6 +184,14 @@ impl RhiReconciliationManifest {
         &self.inner
     }
 
+    pub(crate) const fn attempt_id(&self) -> RhiReconciliationAttemptId {
+        self.attempt_id
+    }
+
+    pub(crate) const fn job_id(&self) -> RhiReconciliationJobId {
+        self.job_id
+    }
+
     pub(crate) fn reducer_mutations(&self) -> &[RhiReducerMutationMaterial] {
         &self.reducer_mutations
     }
@@ -212,6 +223,8 @@ impl RhiReconciliationSourceCommitOutcome {
 }
 
 pub(crate) struct RhiCommittedManifestMaterial {
+    attempt_id: RhiReconciliationAttemptId,
+    job_id: RhiReconciliationJobId,
     trade_id: TradeId,
     generation: NonZeroU64,
     policy_digest: RadrootsTradeEvidencePolicyDigestV1,
@@ -298,6 +311,8 @@ pub(crate) fn committed_manifest_material(
     }
 
     Ok(RhiCommittedManifestMaterial {
+        attempt_id: plan.id(),
+        job_id: plan.job_id(),
         trade_id,
         generation,
         policy_digest,
@@ -341,6 +356,8 @@ fn freeze_manifest(
     .map_err(|_| error(RhiReconciliationManifestErrorKind::InvalidCommittedInventory))?;
     Ok(RhiReconciliationManifest {
         inner,
+        attempt_id: material.attempt_id,
+        job_id: material.job_id,
         reducer_mutations: material.reducer_mutations,
     })
 }

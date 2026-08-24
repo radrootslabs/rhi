@@ -13,6 +13,7 @@ const RUNTIME_ADAPTER_CONTRACT: &str =
 const RUNTIME_FOUNDATION: &str = include_str!("../src/runtime_foundation.rs");
 const RECONCILIATION_ATTEMPTS: &str = include_str!("../src/reconciliation_attempt.rs");
 const RECONCILIATION_COMMIT: &str = include_str!("../src/reconciliation_commit.rs");
+const RECONCILIATION_FINALIZATION: &str = include_str!("../src/reconciliation_finalization.rs");
 const RECONCILIATION_MANIFEST: &str = include_str!("../src/reconciliation_manifest.rs");
 const RECONCILIATION_REDUCER: &str = include_str!("../src/reconciliation_reducer.rs");
 const RECONCILIATION_JOBS: &str = include_str!("../src/reconciliation_job.rs");
@@ -23,6 +24,8 @@ const RECONCILIATION_REPLAY_CONTRACT: &str =
     include_str!("../contracts/services_hardening/reconciliation_replay.v1.json");
 const RECONCILIATION_COMMIT_CONTRACT: &str =
     include_str!("../contracts/services_hardening/reconciliation_commit.v1.json");
+const RECONCILIATION_FINALIZATION_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/reconciliation_finalization.v1.json");
 const RECONCILIATION_MANIFEST_CONTRACT: &str =
     include_str!("../contracts/services_hardening/reconciliation_manifest.v1.json");
 const RECONCILIATION_REDUCER_CONTRACT: &str =
@@ -47,6 +50,7 @@ const SOURCES: &[&str] = &[
     include_str!("../src/identity_envelope.rs"),
     include_str!("../src/reconciliation_attempt.rs"),
     include_str!("../src/reconciliation_commit.rs"),
+    include_str!("../src/reconciliation_finalization.rs"),
     include_str!("../src/reconciliation_job.rs"),
     include_str!("../src/reconciliation_manifest.rs"),
     include_str!("../src/reconciliation_reducer.rs"),
@@ -119,6 +123,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "identity_envelope",
         "reconciliation_attempt",
         "reconciliation_commit",
+        "reconciliation_finalization",
         "reconciliation_job",
         "reconciliation_manifest",
         "reconciliation_reducer",
@@ -164,6 +169,9 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "RhiReconciliationAttemptResults",
         "RhiReconciliationSourceCommitOutcome",
         "RhiReconciliationCommitErrorKind",
+        "RhiReconciliationFinalizationFence",
+        "RhiReconciliationFinalizationErrorKind",
+        "RHI_RECONCILIATION_FINALIZATION_CONTRACT_VERSION",
         "RhiReconciliationManifest",
         "RhiReconciliationManifestErrorKind",
         "RhiReconciliationScopePrerequisites",
@@ -258,6 +266,50 @@ fn reconciliation_commit_is_atomic_bounded_and_sealed() {
     }
     assert!(!ROOT.contains("pub mod reconciliation_commit"));
     assert!(!PUBLIC_API.contains("rhi::reconciliation_commit::"));
+}
+
+#[test]
+fn reconciliation_finalization_is_attempt_bound_nonmutating_and_revalidated() {
+    let contract: serde_json::Value = serde_json::from_str(RECONCILIATION_FINALIZATION_CONTRACT)
+        .expect("reconciliation-finalization contract");
+    assert_eq!(
+        contract["schema"],
+        "radroots.rhi.reconciliation-finalization"
+    );
+    assert_eq!(contract["contract_version"], 1);
+    assert_eq!(contract["effects"]["sqlite_read"], true);
+    assert_eq!(contract["effects"]["sqlite_write"], false);
+    assert_eq!(
+        contract["durable_validation"]["preflight_is_commit_authority"],
+        false
+    );
+    for required in [
+        "pub async fn prepare_finalization(",
+        "validate_finalization_fence(",
+        "validate_exact_lease(transaction, lease)",
+        "read_dirty(transaction, identity.trade_id)",
+        "MATCH_COMMITTED_ATTEMPT_SQL",
+        "attempt_id(job.id(), job.attempt_count())",
+    ] {
+        assert!(
+            RECONCILIATION_FINALIZATION.contains(required),
+            "reconciliation finalization is missing {required}"
+        );
+    }
+    for forbidden in [
+        "INSERT ",
+        "UPDATE ",
+        "DELETE ",
+        "tokio::spawn",
+        "SystemTime",
+    ] {
+        assert!(
+            !RECONCILIATION_FINALIZATION.contains(forbidden),
+            "reconciliation finalization gained forbidden authority {forbidden}"
+        );
+    }
+    assert!(!ROOT.contains("pub mod reconciliation_finalization"));
+    assert!(!PUBLIC_API.contains("rhi::reconciliation_finalization::"));
 }
 
 #[test]
@@ -402,7 +454,7 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .lines()
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
-    assert_eq!(public_error_count, 22);
+    assert_eq!(public_error_count, 23);
 }
 
 #[test]
@@ -826,6 +878,9 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "[`reconciliation_reducer.v1.json`](contracts/services_hardening/reconciliation_reducer.v1.json)",
         "binds the promoted shared `radroots.trade.reducer.v1`",
         "[`reconciliation_outcome.v1.json`](contracts/services_hardening/reconciliation_outcome.v1.json)",
+        "## Generation-fenced finalization preflight",
+        "[`reconciliation_finalization.v1.json`](contracts/services_hardening/reconciliation_finalization.v1.json)",
+        "Step 199 must rerun the same validator inside the final",
         "Coverage is exactly `Missing`, `Partial`, `ScopeSatisfied`, or `Unsupported`",
         "Missing, partial, unsupported,",
         "The Step 192 integration-wave qualification proves that concurrent exact",

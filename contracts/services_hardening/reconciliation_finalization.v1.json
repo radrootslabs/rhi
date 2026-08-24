@@ -1,0 +1,86 @@
+{
+  "schema": "radroots.rhi.reconciliation-finalization",
+  "schema_version": 1,
+  "contract_version": 1,
+  "purpose": "read_only_preflight_for_the_later_generation_fenced_atomic_finalization",
+  "input": {
+    "evaluation_authority": "sealed_step_194_evaluation_only",
+    "lease_authority": "exact_live_claimed_reconciliation_lease",
+    "time_authority": "caller_injected_integer_utc_milliseconds",
+    "ownership": "evaluation_consumed_and_retained_inside_fence"
+  },
+  "private_identity_chain": {
+    "manifest_retains": [
+      "step_190_attempt_id",
+      "step_190_job_id"
+    ],
+    "canonical_manifest_wire_changed": false,
+    "required_equalities": [
+      "manifest_job_id_equals_lease_job_id",
+      "manifest_attempt_id_equals_domain_separated_current_lease_attempt_id",
+      "manifest_trade_equals_lease_job_trade",
+      "manifest_generation_equals_lease_job_input_generation",
+      "manifest_policy_digest_equals_lease_job_policy_digest"
+    ],
+    "projection_digest": "required_available_before_fence_creation",
+    "public_identity_access": false
+  },
+  "preflight_order": [
+    "writable_host",
+    "sealed_identity_chain",
+    "unexpired_input_lease",
+    "exact_current_lease",
+    "exact_current_dirty_generation_and_policy_digest",
+    "exact_committed_attempt_row"
+  ],
+  "durable_validation": {
+    "transaction": "one_bounded_read_only_service_sqlite_transaction",
+    "attempt_table": "evidence_reconciliations",
+    "attempt_match_cardinality": 1,
+    "mutation": false,
+    "step_199_requirement": "rerun_same_validator_inside_atomic_finalization_transaction_before_any_write",
+    "preflight_is_commit_authority": false,
+    "state_may_change_after_preflight": true
+  },
+  "result": {
+    "type": "RhiReconciliationFinalizationFence",
+    "sealed": true,
+    "clone": false,
+    "serialize": false,
+    "caller_forgeable": false,
+    "retains_evaluation": true,
+    "debug": "coverage_and_outcome_only",
+    "errors": "crate_owned_source_free_redacted"
+  },
+  "effects": {
+    "sqlite_read": true,
+    "sqlite_write": false,
+    "filesystem": false,
+    "source_or_relay": false,
+    "network": false,
+    "task_spawn": false,
+    "ambient_clock": false,
+    "ambient_entropy": false,
+    "report_or_attestation": false,
+    "publication": false,
+    "job_finalization": false
+  },
+  "forbidden": [
+    "old_attempt_relabelled_with_new_lease",
+    "stale_generation_fence",
+    "policy_digest_substitution",
+    "projection_digest_absence_as_finalizable",
+    "preflight_used_as_durable_commit_proof",
+    "report_or_outbox_write",
+    "checkpoint_advance",
+    "job_state_transition"
+  ],
+  "deferred": [
+    "canonical_report_statement_supersession_and_signed_attestation",
+    "manifest_projection_report_and_signed_event_schema",
+    "atomic_finalization_transaction",
+    "publication",
+    "job_finalization",
+    "integration_wave_qualification"
+  ]
+}

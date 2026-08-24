@@ -631,7 +631,10 @@ fn absolute_deadline(
         .map_err(|_| error(RhiReconciliationAttemptErrorKind::InvalidInput))
 }
 
-fn attempt_id(job_id: RhiReconciliationJobId, attempt_count: u16) -> RhiReconciliationAttemptId {
+pub(crate) fn attempt_id(
+    job_id: RhiReconciliationJobId,
+    attempt_count: u16,
+) -> RhiReconciliationAttemptId {
     let mut hasher = Sha256::new();
     hasher.update(ATTEMPT_ID_DOMAIN);
     hasher.update(job_id.as_bytes());

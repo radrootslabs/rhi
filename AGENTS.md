@@ -163,6 +163,10 @@
 - Fence final work by dirty generation and policy digest. A stale worker cannot
   overwrite newer evidence, and CAS loss leaves no partial report, outbox,
   source completion, checkpoint, or job finalization.
+- Carry the exact committed attempt and job identities privately through the
+  sealed manifest, projection, and evaluation chain. A finalization preflight
+  is not commit authority: rerun its exact lease, generation, policy, and
+  attempt validator inside the Step 199 atomic transaction before any write.
 
 ## 6. Report, attestation, and publication invariants
 

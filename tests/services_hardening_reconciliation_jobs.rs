@@ -9,8 +9,9 @@ use rhi::{
     RadrootsHostEnvironment, RadrootsPathResolver, RadrootsPlatform,
     RhiReconciliationAttemptErrorKind, RhiReconciliationAttemptPlan,
     RhiReconciliationAttemptResults, RhiReconciliationCommitErrorKind,
-    RhiReconciliationJobErrorKind, RhiReconciliationJobPolicy, RhiReconciliationJobState,
-    RhiReconciliationLease, RhiReconciliationLeaseOwner, RhiReconciliationRetryDelayMilliseconds,
+    RhiReconciliationFinalizationErrorKind, RhiReconciliationJobErrorKind,
+    RhiReconciliationJobPolicy, RhiReconciliationJobState, RhiReconciliationLease,
+    RhiReconciliationLeaseOwner, RhiReconciliationRetryDelayMilliseconds,
     RhiReconciliationScopePrerequisites, RhiReconciliationSourceReplayPlan,
     RhiReconciliationSourceResult, RhiReconciliationUnixMilliseconds, RhiRuntimeContext,
     RhiStateMetadata, RhiTradeMutationAdmissionLimits, RhiTradeMutationAuthoredTimePolicy,
@@ -1412,6 +1413,176 @@ async fn incomplete_results_never_advance_and_stale_leases_fail_closed() {
     drop((configuration, metadata, runtime, root));
 }
 
+#[tokio::test]
+async fn finalization_preflight_is_exact_nonmutating_and_redacted() {
+    let (root, runtime, metadata, configuration, host, lease, evaluation) =
+        finalization_fixture("finalization-exact").await;
+    let before = finalization_snapshot(&runtime).await;
+    let fence = host
+        .repositories()
+        .reconciliation_attempts()
+        .prepare_finalization(lease, evaluation, now(1_784_347_206_000))
+        .await
+        .expect("finalization preflight");
+    assert_eq!(fence.contract_version(), 1);
+    assert_eq!(
+        fence
+            .evaluation()
+            .projection()
+            .manifest()
+            .trade_generation(),
+        2
+    );
+    assert!(fence.evaluation().projection().digest().is_some());
+    let rendered = format!("{fence:?}");
+    assert!(!rendered.contains("11111111"));
+    assert!(!rendered.contains("reconciliation_attempt"));
+    assert_eq!(finalization_snapshot(&runtime).await, before);
+    host.close().await.expect("close");
+    drop((fence, configuration, metadata, runtime, root));
+}
+
+#[tokio::test]
+async fn finalization_rejects_stale_generation_policy_and_expired_or_lost_leases() {
+    let (root, runtime, metadata, configuration, host, lease, evaluation) =
+        finalization_fixture("finalization-generation").await;
+    write_dirty(
+        &runtime,
+        lease.job().trade_id(),
+        3,
+        *lease.job().evidence_policy_digest().as_bytes(),
+        1_784_347_207,
+    )
+    .await;
+    let error = host
+        .repositories()
+        .reconciliation_attempts()
+        .prepare_finalization(lease, evaluation, now(1_784_347_207_000))
+        .await
+        .expect_err("stale generation");
+    assert_eq!(
+        error.kind(),
+        RhiReconciliationFinalizationErrorKind::GenerationConflict
+    );
+    assert!(Error::source(&error).is_none());
+    assert!(!format!("{error} {error:?}").contains("11111111"));
+    host.close().await.expect("close");
+    drop((configuration, metadata, runtime, root));
+
+    let (root, runtime, metadata, configuration, host, lease, evaluation) =
+        finalization_fixture("finalization-policy").await;
+    write_dirty(
+        &runtime,
+        lease.job().trade_id(),
+        3,
+        [0xa5; 32],
+        1_784_347_207,
+    )
+    .await;
+    let error = host
+        .repositories()
+        .reconciliation_attempts()
+        .prepare_finalization(lease, evaluation, now(1_784_347_207_000))
+        .await
+        .expect_err("stale policy");
+    assert_eq!(
+        error.kind(),
+        RhiReconciliationFinalizationErrorKind::GenerationConflict
+    );
+    host.close().await.expect("close");
+    drop((configuration, metadata, runtime, root));
+
+    let (root, runtime, metadata, configuration, host, lease, evaluation) =
+        finalization_fixture("finalization-expired").await;
+    let error = host
+        .repositories()
+        .reconciliation_attempts()
+        .prepare_finalization(lease, evaluation, lease.lease_expires())
+        .await
+        .expect_err("expired lease");
+    assert_eq!(
+        error.kind(),
+        RhiReconciliationFinalizationErrorKind::LeaseLost
+    );
+    host.close().await.expect("close");
+    drop((configuration, metadata, runtime, root));
+
+    let (root, runtime, metadata, configuration, host, lease, evaluation) =
+        finalization_fixture("finalization-lost").await;
+    host.repositories()
+        .reconciliation_jobs()
+        .record_failure(
+            lease,
+            now(1_784_347_206_000),
+            RhiReconciliationRetryDelayMilliseconds::new(1).expect("delay"),
+        )
+        .await
+        .expect("release lease");
+    let error = host
+        .repositories()
+        .reconciliation_attempts()
+        .prepare_finalization(lease, evaluation, now(1_784_347_206_001))
+        .await
+        .expect_err("lost lease");
+    assert_eq!(
+        error.kind(),
+        RhiReconciliationFinalizationErrorKind::LeaseLost
+    );
+    host.close().await.expect("close");
+    drop((configuration, metadata, runtime, root));
+}
+
+#[tokio::test]
+async fn finalization_rejects_cross_attempt_relabelling_and_read_only_hosts() {
+    let (root, runtime, metadata, configuration, host, lease, evaluation) =
+        finalization_fixture("finalization-attempt").await;
+    let jobs = host.repositories().reconciliation_jobs();
+    jobs.record_failure(
+        lease,
+        now(1_784_347_206_000),
+        RhiReconciliationRetryDelayMilliseconds::new(1).expect("delay"),
+    )
+    .await
+    .expect("retry schedule");
+    let next_lease = jobs
+        .claim_next(owner(0x93), now(1_784_347_206_001))
+        .await
+        .expect("next claim")
+        .expect("reclaimed job");
+    assert_eq!(next_lease.job().attempt_count(), 2);
+    let error = host
+        .repositories()
+        .reconciliation_attempts()
+        .prepare_finalization(next_lease, evaluation, now(1_784_347_206_002))
+        .await
+        .expect_err("old evaluation cannot be relabelled");
+    assert_eq!(
+        error.kind(),
+        RhiReconciliationFinalizationErrorKind::InvalidInput
+    );
+    host.close().await.expect("close");
+    drop((configuration, metadata, runtime, root));
+
+    let (root, runtime, metadata, configuration, host, lease, evaluation) =
+        finalization_fixture("finalization-inspection").await;
+    host.close().await.expect("close writer");
+    let inspection = open_rhi_state_inspection(&runtime, &metadata)
+        .await
+        .expect("inspection");
+    let error = inspection
+        .repositories()
+        .reconciliation_attempts()
+        .prepare_finalization(lease, evaluation, now(1_784_347_206_000))
+        .await
+        .expect_err("inspection cannot prepare finalization");
+    assert_eq!(
+        error.kind(),
+        RhiReconciliationFinalizationErrorKind::InvalidMode
+    );
+    inspection.close().await.expect("inspection close");
+    drop((configuration, metadata, runtime, root));
+}
+
 async fn fixture_connection(runtime: &RhiRuntimeContext) -> SqliteConnection {
     let options = SqliteConnectOptions::new()
         .filename(runtime.artifacts().state_database())
@@ -1420,6 +1591,134 @@ async fn fixture_connection(runtime: &RhiRuntimeContext) -> SqliteConnection {
     SqliteConnection::connect_with(&options)
         .await
         .expect("offline fixture connection")
+}
+
+async fn finalization_snapshot(
+    runtime: &RhiRuntimeContext,
+) -> (i64, i64, i64, i64, i64, i64, i64, i64) {
+    let mut connection = fixture_connection(runtime).await;
+    let row: (i64, i64, i64, i64, i64, i64, i64, i64) = sqlx::query_as(
+        r#"SELECT
+            (SELECT COUNT(*) FROM reconciliation_jobs),
+            (SELECT COUNT(*) FROM reconciliation_jobs WHERE state = 'leased'),
+            (SELECT SUM(revision) FROM reconciliation_jobs),
+            (SELECT COUNT(*) FROM evidence_reconciliations),
+            (SELECT COUNT(*) FROM evidence_reconciliation_sources),
+            (SELECT COUNT(*) FROM relay_checkpoints),
+            (SELECT generation FROM trade_dirty_generations LIMIT 1),
+            (SELECT COUNT(*) FROM sqlite_schema WHERE name IN (
+                'evidence_manifests', 'trade_projections', 'attestation_reports',
+                'signed_attestation_events', 'publication_outbox'
+            ))"#,
+    )
+    .fetch_one(&mut connection)
+    .await
+    .expect("finalization snapshot");
+    connection.close().await.expect("snapshot close");
+    row
+}
+
+async fn finalization_fixture(
+    instance: &str,
+) -> (
+    tempfile::TempDir,
+    RhiRuntimeContext,
+    RhiStateMetadata,
+    rhi::RhiConfigDocumentV1,
+    rhi::RhiStateHost,
+    RhiReconciliationLease,
+    rhi::RhiReconciliationEvaluation,
+) {
+    let started_ms = 1_784_347_200_000;
+    let (root, runtime, metadata, configuration, host, first_lease, first_plan) =
+        replay_fixture(instance, EXAMPLE, started_ms).await;
+    let wire = replay_wire();
+    let first_request = &first_plan.requests()[0];
+    let first_replay = RhiReconciliationSourceReplayPlan::from_request(
+        &first_plan,
+        first_request,
+        &configuration,
+        None,
+    )
+    .expect("first replay plan")
+    .finish(
+        first_request,
+        RhiTradeSourceCompletion::Complete,
+        now(started_ms),
+        now(started_ms + 2_000),
+        [admitted_replay(&configuration, &wire, 1_784_347_200)],
+    )
+    .expect("first replay");
+    let first = host
+        .repositories()
+        .reconciliation_attempts()
+        .commit_source_replays(first_lease, first_plan, [first_replay])
+        .await
+        .expect("first commit");
+    assert!(first.dirty_generation_advanced());
+    let cursor = first.committed_cursors()[0].clone();
+    drop(first);
+
+    let jobs = host.repositories().reconciliation_jobs();
+    let scheduled = jobs
+        .schedule_trade(
+            first_lease.job().trade_id(),
+            configured_policy(&configuration),
+            now(started_ms + 3_000),
+        )
+        .await
+        .expect("schedule final generation");
+    assert_eq!(scheduled.job().input_generation(), 2);
+    let lease = jobs
+        .claim_next(owner(0x92), now(started_ms + 3_000))
+        .await
+        .expect("claim final generation")
+        .expect("final job");
+    let plan =
+        RhiReconciliationAttemptPlan::from_claim(lease, &configuration, now(started_ms + 3_000))
+            .expect("final plan");
+    let request = &plan.requests()[0];
+    let replay = RhiReconciliationSourceReplayPlan::from_request(
+        &plan,
+        request,
+        &configuration,
+        Some(cursor),
+    )
+    .expect("final replay plan")
+    .finish(
+        request,
+        RhiTradeSourceCompletion::Complete,
+        now(started_ms + 3_000),
+        now(started_ms + 5_000),
+        [admitted_replay(&configuration, &wire, 1_784_347_203)],
+    )
+    .expect("final replay");
+    let committed = host
+        .repositories()
+        .reconciliation_attempts()
+        .commit_source_replays(lease, plan, [replay])
+        .await
+        .expect("final commit");
+    assert!(!committed.dirty_generation_advanced());
+    let manifest = committed
+        .into_evidence_manifest(
+            UnixTimeSeconds::new(1_784_347_206),
+            RhiReconciliationScopePrerequisites::Satisfied,
+        )
+        .expect("final manifest");
+    assert_eq!(manifest.trade_generation(), 2);
+    let projection = reduce_rhi_reconciliation_manifest(manifest).expect("final projection");
+    let claim = *projection.root_mutation_id().expect("root claim");
+    let evaluation = rhi::evaluate_rhi_reconciliation_claim(projection, claim);
+    (
+        root,
+        runtime,
+        metadata,
+        configuration,
+        host,
+        lease,
+        evaluation,
+    )
 }
 
 async fn attempt_fixture(

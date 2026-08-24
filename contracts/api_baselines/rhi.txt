@@ -159,6 +159,17 @@ pub rhi::RhiReconciliationCommitErrorKind::LeaseLost
 pub rhi::RhiReconciliationCommitErrorKind::Storage
 impl rhi::RhiReconciliationCommitErrorKind
 pub const fn rhi::RhiReconciliationCommitErrorKind::code(self) -> &'static str
+pub enum rhi::RhiReconciliationFinalizationErrorKind
+pub rhi::RhiReconciliationFinalizationErrorKind::AttemptUnavailable
+pub rhi::RhiReconciliationFinalizationErrorKind::CommitOutcomeUnknown
+pub rhi::RhiReconciliationFinalizationErrorKind::GenerationConflict
+pub rhi::RhiReconciliationFinalizationErrorKind::InvalidInput
+pub rhi::RhiReconciliationFinalizationErrorKind::InvalidMode
+pub rhi::RhiReconciliationFinalizationErrorKind::LeaseLost
+pub rhi::RhiReconciliationFinalizationErrorKind::ProjectionUnavailable
+pub rhi::RhiReconciliationFinalizationErrorKind::Storage
+impl rhi::RhiReconciliationFinalizationErrorKind
+pub const fn rhi::RhiReconciliationFinalizationErrorKind::code(self) -> &'static str
 pub enum rhi::RhiReconciliationJobErrorKind
 pub rhi::RhiReconciliationJobErrorKind::CommitOutcomeUnknown
 pub rhi::RhiReconciliationJobErrorKind::DirtyGenerationConflict
@@ -656,6 +667,8 @@ pub async fn rhi::RhiReconciliationAttemptRepository<'_>::commit_source_replays<
 impl rhi::RhiReconciliationAttemptRepository<'_>
 pub const fn rhi::RhiReconciliationAttemptRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
 pub const fn rhi::RhiReconciliationAttemptRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
+impl rhi::RhiReconciliationAttemptRepository<'_>
+pub async fn rhi::RhiReconciliationAttemptRepository<'_>::prepare_finalization(&self, rhi::RhiReconciliationLease, rhi::RhiReconciliationEvaluation, rhi::RhiReconciliationUnixMilliseconds) -> core::result::Result<rhi::RhiReconciliationFinalizationFence, rhi::RhiReconciliationFinalizationError>
 impl core::fmt::Debug for rhi::RhiReconciliationAttemptRepository<'_>
 pub fn rhi::RhiReconciliationAttemptRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiReconciliationAttemptResults
@@ -684,6 +697,21 @@ pub const fn rhi::RhiReconciliationEvaluation::projection(&self) -> &rhi::RhiRec
 pub const fn rhi::RhiReconciliationEvaluation::reason_codes(&self) -> &[rhi::RhiReconciliationReasonCode]
 impl core::fmt::Debug for rhi::RhiReconciliationEvaluation
 pub fn rhi::RhiReconciliationEvaluation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationFinalizationError
+impl rhi::RhiReconciliationFinalizationError
+pub const fn rhi::RhiReconciliationFinalizationError::code(self) -> &'static str
+pub const fn rhi::RhiReconciliationFinalizationError::kind(self) -> rhi::RhiReconciliationFinalizationErrorKind
+impl core::error::Error for rhi::RhiReconciliationFinalizationError
+impl core::fmt::Debug for rhi::RhiReconciliationFinalizationError
+pub fn rhi::RhiReconciliationFinalizationError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiReconciliationFinalizationError
+pub fn rhi::RhiReconciliationFinalizationError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationFinalizationFence
+impl rhi::RhiReconciliationFinalizationFence
+pub const fn rhi::RhiReconciliationFinalizationFence::contract_version(&self) -> u32
+pub const fn rhi::RhiReconciliationFinalizationFence::evaluation(&self) -> &rhi::RhiReconciliationEvaluation
+impl core::fmt::Debug for rhi::RhiReconciliationFinalizationFence
+pub fn rhi::RhiReconciliationFinalizationFence::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiReconciliationJob
 impl rhi::RhiReconciliationJob
 pub const fn rhi::RhiReconciliationJob::attempt_count(self) -> u16
@@ -1272,6 +1300,7 @@ pub const rhi::RHI_PROVIDER_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_ATTEMPT_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_ATTEMPT_MAX_SOURCES: usize
 pub const rhi::RHI_RECONCILIATION_COMMIT_CONTRACT_VERSION: u32
+pub const rhi::RHI_RECONCILIATION_FINALIZATION_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_JOB_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_JOB_MAX_ACTIVE: u32
 pub const rhi::RHI_RECONCILIATION_MANIFEST_CONTRACT_VERSION: u32

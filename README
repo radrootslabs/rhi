@@ -276,6 +276,25 @@ cancelled agreement claim is decisively invalid. Every evaluation retains its
 projection and exposes exactly one closed stable primary reason code without
 adding I/O or ambient authority.
 
+## Generation-fenced finalization preflight
+
+`RhiReconciliationAttemptRepository::prepare_finalization` consumes one sealed
+evaluation plus the exact live claimed lease. The manifest privately retains
+its Step 190 attempt and job identities without changing canonical manifest
+bytes or its digest, so an older attempt cannot be relabelled with a reclaimed
+worker's distinct attempt authority. One bounded read-only SQLite transaction
+checks the unexpired exact lease, current dirty generation, evidence-policy
+digest, and immutable committed-attempt row before returning a sealed
+`RhiReconciliationFinalizationFence`.
+
+The fence is a preflight capability, not durable commit proof: state may change
+after it is returned. Step 199 must rerun the same validator inside the final
+atomic transaction before its first write. This checkpoint writes no manifest,
+projection, report, signed event, outbox, checkpoint, or job state and performs
+no source, relay, network, filesystem, task, clock, or entropy operation. The
+exact machine contract is
+[`reconciliation_finalization.v1.json`](contracts/services_hardening/reconciliation_finalization.v1.json).
+
 ## Existing-state runtime foundation
 
 `open_rhi_runtime_foundation` opens only an already initialized database from

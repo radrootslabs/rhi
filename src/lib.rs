@@ -10,6 +10,7 @@ mod identity_credential;
 mod identity_envelope;
 mod reconciliation_attempt;
 mod reconciliation_commit;
+mod reconciliation_finalization;
 mod reconciliation_job;
 mod reconciliation_manifest;
 mod reconciliation_reducer;
@@ -82,6 +83,10 @@ pub use reconciliation_attempt::{
 pub use reconciliation_commit::{
     RHI_RECONCILIATION_COMMIT_CONTRACT_VERSION, RhiReconciliationCommitError,
     RhiReconciliationCommitErrorKind, RhiReconciliationSourceCommitOutcome,
+};
+pub use reconciliation_finalization::{
+    RHI_RECONCILIATION_FINALIZATION_CONTRACT_VERSION, RhiReconciliationFinalizationError,
+    RhiReconciliationFinalizationErrorKind, RhiReconciliationFinalizationFence,
 };
 pub use reconciliation_job::{
     RHI_RECONCILIATION_JOB_CONTRACT_VERSION, RHI_RECONCILIATION_JOB_MAX_ACTIVE,
