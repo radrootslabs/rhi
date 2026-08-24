@@ -44,6 +44,7 @@ use rhi::{
 };
 use sha2::{Digest, Sha256};
 use sqlx::{Connection, SqliteConnection, sqlite::SqliteConnectOptions};
+use tokio::sync::Notify;
 
 const EXAMPLE: &str = include_str!("../contracts/services_hardening/config.v1.example.toml");
 const TRADE_VECTOR: &str =
@@ -1667,6 +1668,28 @@ impl RhiExactPublicationSink for PendingExactPublicationSink {
     }
 }
 
+struct CoordinatedExactPublicationSink {
+    expected: Arc<Vec<u8>>,
+    calls: Arc<AtomicUsize>,
+    started: Arc<Notify>,
+    release: Arc<Notify>,
+}
+
+impl RhiExactPublicationSink for CoordinatedExactPublicationSink {
+    fn submit_exact<'a>(
+        &'a self,
+        attempt: &'a RhiPreparedPublicationAttempt,
+    ) -> BoxFuture<'a, RhiPublicationAttemptOutcome> {
+        Box::pin(async move {
+            assert_eq!(attempt.exact_signed_event_bytes(), self.expected.as_slice());
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.started.notify_one();
+            self.release.notified().await;
+            RhiPublicationAttemptOutcome::Accepted
+        })
+    }
+}
+
 fn publication_now(value: u64) -> RhiPublicationUnixMilliseconds {
     RhiPublicationUnixMilliseconds::new(value).expect("publication time")
 }
@@ -2209,6 +2232,180 @@ WHERE outbox.outbox_id = ?"#,
         publication,
         signed,
         lease,
+        configuration,
+        metadata,
+        runtime,
+        root,
+    ));
+}
+
+#[tokio::test]
+async fn concurrent_publication_execution_has_one_remote_submitter() {
+    let (
+        root,
+        runtime,
+        metadata,
+        configuration,
+        host,
+        lease,
+        signed,
+        publication,
+        manifest,
+        _trade,
+    ) = signed_finalization_fixture("publication-execution-concurrency", false).await;
+    let repositories = host.repositories();
+    repositories
+        .reconciliation_attempts()
+        .commit_finalization(&signed, &publication, now(1_784_347_208_000))
+        .await
+        .expect("finalization");
+    let calls = Arc::new(AtomicUsize::new(0));
+    let started = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    let sink = CoordinatedExactPublicationSink {
+        expected: Arc::new(signed.signed_event_bytes().to_vec()),
+        calls: Arc::clone(&calls),
+        started: Arc::clone(&started),
+        release: Arc::clone(&release),
+    };
+    let first_adapters = publication_adapters(1_784_347_208);
+    let second_adapters = publication_adapters(1_784_347_208);
+    let first_outbox = repositories.publication_outbox();
+    let first = first_outbox.execute_next_publication(
+        publication_owner(0xb1),
+        &first_adapters,
+        &sink,
+        &publication,
+    );
+    let second = async {
+        started.notified().await;
+        let result = repositories
+            .publication_outbox()
+            .execute_next_publication(
+                publication_owner(0xb2),
+                &second_adapters,
+                &sink,
+                &publication,
+            )
+            .await;
+        release.notify_one();
+        result
+    };
+    let (first, second) = tokio::join!(first, second);
+    let first = first
+        .expect("first executor")
+        .expect("first executor claimed due publication");
+    assert_eq!(first.outcome(), RhiPublicationAttemptOutcome::Accepted);
+    assert!(second.expect("second executor").is_none());
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    host.close().await.expect("host close");
+    drop((
+        manifest,
+        publication,
+        signed,
+        lease,
+        configuration,
+        metadata,
+        runtime,
+        root,
+    ));
+}
+
+#[tokio::test]
+async fn publication_queue_capacity_is_checked_before_finalization_mutation() {
+    let expected_public_key =
+        Keys::new(SecretKey::from_slice(&attestation_secret()).expect("identity secret"))
+            .public_key()
+            .to_hex();
+    let (root, runtime, metadata, configuration, host, lease, evaluation) =
+        finalization_fixture_with_source("publication-queue-capacity", |runtime| {
+            attestation_configuration(runtime, &expected_public_key).replacen(
+                "publication = 4096",
+                "publication = 1",
+                1,
+            )
+        })
+        .await;
+    let identity = provision_attestation_identity(&runtime, &configuration, &metadata);
+    let fence = host
+        .repositories()
+        .reconciliation_attempts()
+        .prepare_finalization(lease, evaluation, now(1_784_347_206_000))
+        .await
+        .expect("finalization fence");
+    let signed = build_rhi_signed_evidence_attestation(
+        fence,
+        &identity,
+        UnixTimeSeconds::new(1_784_347_207),
+        &FixedAttestationEntropy(0xb3),
+        None,
+    )
+    .expect("signed attestation");
+    let publication =
+        RhiPublicationAuthority::from_config(&configuration).expect("publication authority");
+    assert_eq!(publication.queue_capacity(), 1);
+
+    let options = SqliteConnectOptions::new()
+        .filename(runtime.artifacts().state_database())
+        .create_if_missing(false)
+        .foreign_keys(false);
+    let mut connection = SqliteConnection::connect_with(&options)
+        .await
+        .expect("offline queue fixture connection");
+    sqlx::query(
+        r#"INSERT INTO publication_outbox (
+            outbox_id, event_id, event_sha256, publication_authority_sha256,
+            target_set_sha256, target_count, required_target_count,
+            max_attempts, initial_backoff_ms, maximum_backoff_ms,
+            attempt_deadline_ms, state, revision, next_attempt_unix_ms,
+            lease_owner, lease_expires_unix_ms, created_at_unix_ms,
+            updated_at_unix_ms
+        ) VALUES (?, ?, ?, ?, ?, 1, 1, 3, 100, 1000, 5000,
+            'pending', 1, 1, NULL, NULL, 1, 1)"#,
+    )
+    .bind([0xc1_u8; 32].as_slice())
+    .bind([0xc2_u8; 32].as_slice())
+    .bind([0xc3_u8; 32].as_slice())
+    .bind([0xc4_u8; 32].as_slice())
+    .bind([0xc5_u8; 32].as_slice())
+    .execute(&mut connection)
+    .await
+    .expect("bounded active outbox fixture");
+    connection.close().await.expect("queue fixture close");
+
+    let error = host
+        .repositories()
+        .reconciliation_attempts()
+        .commit_finalization(&signed, &publication, now(1_784_347_208_000))
+        .await
+        .expect_err("full publication queue");
+    assert_eq!(
+        error.kind(),
+        RhiReconciliationFinalizationCommitErrorKind::PublicationQueueFull
+    );
+    assert!(Error::source(&error).is_none());
+    let mut connection = fixture_connection(&runtime).await;
+    let counts: (i64, i64, i64, i64, i64, String) = sqlx::query_as(
+        r#"SELECT
+            (SELECT COUNT(*) FROM evidence_manifests),
+            (SELECT COUNT(*) FROM trade_projections),
+            (SELECT COUNT(*) FROM attestation_reports),
+            (SELECT COUNT(*) FROM signed_attestation_events),
+            (SELECT COUNT(*) FROM publication_outbox),
+            (SELECT state FROM reconciliation_jobs WHERE job_id = ?)"#,
+    )
+    .bind(lease.job().id().as_bytes().as_slice())
+    .fetch_one(&mut connection)
+    .await
+    .expect("no finalization mutation");
+    assert_eq!(counts, (0, 0, 0, 0, 1, "leased".into()));
+    connection.close().await.expect("verification close");
+    host.close().await.expect("host close");
+    drop((
+        signed,
+        identity,
+        publication,
         configuration,
         metadata,
         runtime,

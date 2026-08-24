@@ -18,6 +18,8 @@ const PUBLICATION_ATTEMPT_CONTRACT: &str =
 const PUBLICATION_EXECUTION: &str = include_str!("../src/publication_execution.rs");
 const PUBLICATION_EXECUTION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/publication_execution.v1.json");
+const PUBLICATION_WAVE_QUALIFICATION_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/publication_wave_qualification.v1.json");
 const PUBLICATION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/publication_outbox.v1.json");
 const PUBLICATION_SUBMISSION: &str = include_str!("../src/publication_submission.rs");
@@ -499,6 +501,15 @@ fn publication_execution_is_sqlx_owned_exact_byte_and_fail_closed() {
     }
     assert!(!ROOT.contains("pub mod publication_execution"));
     assert!(!PUBLIC_API.contains("rhi::publication_execution::"));
+    let qualification: serde_json::Value =
+        serde_json::from_str(PUBLICATION_WAVE_QUALIFICATION_CONTRACT)
+            .expect("publication-wave qualification contract");
+    assert_eq!(qualification["step"], 203);
+    assert_eq!(qualification["state_schema_version"], 8);
+    assert_eq!(
+        qualification["invariants"]["production_failpoint_surface"],
+        false
+    );
 }
 
 #[test]
@@ -1227,6 +1238,7 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "[`publication_attempt_evidence.v1.json`](contracts/services_hardening/publication_attempt_evidence.v1.json)",
         "## Durable exact-byte publication execution",
         "[`publication_execution.v1.json`](contracts/services_hardening/publication_execution.v1.json)",
+        "[`publication_wave_qualification.v1.json`](contracts/services_hardening/publication_wave_qualification.v1.json)",
         "The event body and exact kind-3441 structural tags",
         "without rebuilding, reserializing, or",
         "Coverage is exactly `Missing`, `Partial`, `ScopeSatisfied`, or `Unsupported`",

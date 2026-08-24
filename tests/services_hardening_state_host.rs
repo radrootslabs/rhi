@@ -75,6 +75,100 @@ fn migration_evidence() -> (MigrationAppliedAtUnixSeconds, MigrationBuildIdentit
     (applied_at, build)
 }
 
+async fn offline_connection(runtime: &rhi::RhiRuntimeContext) -> SqliteConnection {
+    let options = SqliteConnectOptions::new()
+        .filename(runtime.artifacts().state_database())
+        .create_if_missing(false)
+        .foreign_keys(false);
+    SqliteConnection::connect_with(&options)
+        .await
+        .expect("offline fixture connection")
+}
+
+async fn downgrade_fixture_to_schema_v7(runtime: &rhi::RhiRuntimeContext) {
+    let mut connection = offline_connection(runtime).await;
+    let metadata_guard: String = sqlx::query_scalar(
+        "SELECT sql FROM sqlite_schema WHERE type = 'trigger' AND name = 'radroots_service_metadata_guard_update'",
+    )
+    .fetch_one(&mut connection)
+    .await
+    .expect("metadata guard SQL");
+    let migration_no_update: String = sqlx::query_scalar(
+        "SELECT sql FROM sqlite_schema WHERE type = 'trigger' AND name = 'schema_migrations_no_update'",
+    )
+    .fetch_one(&mut connection)
+    .await
+    .expect("migration update guard SQL");
+    let migration_no_delete: String = sqlx::query_scalar(
+        "SELECT sql FROM sqlite_schema WHERE type = 'trigger' AND name = 'schema_migrations_no_delete'",
+    )
+    .fetch_one(&mut connection)
+    .await
+    .expect("migration delete guard SQL");
+    for statement in [
+        "DROP TRIGGER reconciliation_jobs_shape_guard_insert",
+        "DROP TRIGGER reconciliation_jobs_shape_guard_update",
+        "DROP TRIGGER radroots_service_metadata_guard_update",
+        "DROP TRIGGER schema_migrations_no_update",
+        "DROP TRIGGER schema_migrations_no_delete",
+        "UPDATE radroots_service_metadata SET state_schema_version = 7 WHERE singleton = 1",
+        "DELETE FROM schema_migrations WHERE version = 8",
+    ] {
+        sqlx::query(statement)
+            .execute(&mut connection)
+            .await
+            .expect("downgrade exact v8 fixture state");
+    }
+    for statement in [metadata_guard, migration_no_update, migration_no_delete] {
+        sqlx::query(sqlx::AssertSqlSafe(statement.as_str()))
+            .execute(&mut connection)
+            .await
+            .expect("restore shared immutable guard");
+    }
+    connection.close().await.expect("downgrade fixture close");
+}
+
+async fn insert_historical_reconciliation_job(
+    runtime: &rhi::RhiRuntimeContext,
+    state: &str,
+    next_attempt_unix_ms: Option<i64>,
+    lease_owner: Option<Vec<u8>>,
+    lease_expires_unix_ms: Option<i64>,
+) {
+    let mut connection = offline_connection(runtime).await;
+    let trade_id = [0x51_u8; 16];
+    sqlx::query(
+        "INSERT INTO trade_dirty_generations (trade_id, generation, evidence_policy_sha256, updated_at_unix_s) VALUES (?, 1, ?, 1)",
+    )
+    .bind(trade_id.as_slice())
+    .bind([0x52_u8; 32].as_slice())
+    .execute(&mut connection)
+    .await
+    .expect("historical dirty generation");
+    sqlx::query(
+        r#"INSERT INTO reconciliation_jobs (
+            job_id, trade_id, input_generation, evidence_policy_sha256,
+            state, revision, attempt_count, failure_count, max_attempts,
+            lease_duration_ms, lease_renewal_ms, initial_backoff_ms,
+            maximum_backoff_ms, next_attempt_unix_ms, lease_owner,
+            lease_expires_unix_ms, created_at_unix_ms, updated_at_unix_ms
+        ) VALUES (?, ?, 1, ?, ?, 1, ?, 0, 3, 30000, 10000, 100,
+            1000, ?, ?, ?, 1, 1)"#,
+    )
+    .bind([0x53_u8; 32].as_slice())
+    .bind(trade_id.as_slice())
+    .bind([0x52_u8; 32].as_slice())
+    .bind(state)
+    .bind(i64::from(state == "leased"))
+    .bind(next_attempt_unix_ms)
+    .bind(lease_owner)
+    .bind(lease_expires_unix_ms)
+    .execute(&mut connection)
+    .await
+    .expect("historical nullable reconciliation row admitted by schema v7");
+    connection.close().await.expect("historical fixture close");
+}
+
 #[tokio::test]
 async fn initialize_is_create_new_and_both_existing_open_modes_close_explicitly() {
     let directory = tempfile::tempdir().expect("temporary root");
@@ -302,6 +396,125 @@ async fn publication_schema_rejects_null_state_holes_and_accepted_target_mutatio
     );
 
     connection.close().await.expect("fixture connection close");
+}
+
+#[tokio::test]
+async fn schema_v8_scans_historical_nullable_job_state_and_installs_permanent_guards() {
+    for (instance, state, next_attempt, owner, expiry) in [
+        ("missing-ready-time", "ready", None, None, None),
+        ("missing-lease-owner", "leased", None, None, Some(30_001)),
+        (
+            "missing-lease-expiry",
+            "leased",
+            None,
+            Some(vec![0x61; 16]),
+            None,
+        ),
+    ] {
+        let directory = tempfile::tempdir().expect("temporary root");
+        let runtime = runtime(directory.path(), instance);
+        prepare_state_directory(&runtime);
+        let metadata = metadata(&runtime);
+        let (applied_at, build) = migration_evidence();
+        initialize_rhi_state(&runtime, &metadata, applied_at, &build)
+            .await
+            .expect("schema-v8 initialization");
+        downgrade_fixture_to_schema_v7(&runtime).await;
+        insert_historical_reconciliation_job(&runtime, state, next_attempt, owner, expiry).await;
+
+        let error = open_rhi_state_read_write(&runtime, &metadata, applied_at, &build)
+            .await
+            .expect_err("invalid historical row must block migration");
+        assert_eq!(error.kind(), RhiStateHostErrorKind::ReadWriteOpen);
+        let mut connection = offline_connection(&runtime).await;
+        let durable: (i64, i64, i64, i64) = sqlx::query_as(
+            r#"SELECT
+                (SELECT state_schema_version FROM radroots_service_metadata WHERE singleton = 1),
+                (SELECT COUNT(*) FROM schema_migrations WHERE version = 8),
+                (SELECT COUNT(*) FROM sqlite_schema WHERE type = 'trigger'
+                    AND name IN ('reconciliation_jobs_shape_guard_insert',
+                                 'reconciliation_jobs_shape_guard_update')),
+                (SELECT COUNT(*) FROM reconciliation_jobs)"#,
+        )
+        .fetch_one(&mut connection)
+        .await
+        .expect("failed migration state");
+        assert_eq!(durable, (7, 0, 0, 1));
+        connection.close().await.expect("failed fixture close");
+    }
+
+    let directory = tempfile::tempdir().expect("temporary root");
+    let runtime = runtime(directory.path(), "valid-schema-v7");
+    prepare_state_directory(&runtime);
+    let metadata = metadata(&runtime);
+    let (applied_at, build) = migration_evidence();
+    initialize_rhi_state(&runtime, &metadata, applied_at, &build)
+        .await
+        .expect("schema-v8 initialization");
+    downgrade_fixture_to_schema_v7(&runtime).await;
+    insert_historical_reconciliation_job(
+        &runtime,
+        "leased",
+        None,
+        Some(vec![0x62; 16]),
+        Some(30_001),
+    )
+    .await;
+    let writer = open_rhi_state_read_write(&runtime, &metadata, applied_at, &build)
+        .await
+        .expect("valid schema-v7 prefix migrates");
+    writer.close().await.expect("migrated writer close");
+
+    let mut connection = offline_connection(&runtime).await;
+    let migrated: (i64, i64, i64, i64) = sqlx::query_as(
+        r#"SELECT
+            (SELECT state_schema_version FROM radroots_service_metadata WHERE singleton = 1),
+            (SELECT COUNT(*) FROM schema_migrations WHERE version = 8),
+            (SELECT COUNT(*) FROM sqlite_schema WHERE type = 'trigger'
+                AND name IN ('reconciliation_jobs_shape_guard_insert',
+                             'reconciliation_jobs_shape_guard_update')),
+            (SELECT COUNT(*) FROM sqlite_schema
+                WHERE name = 'reconciliation_jobs_shape_scan_v1')"#,
+    )
+    .fetch_one(&mut connection)
+    .await
+    .expect("migrated schema state");
+    assert_eq!(migrated, (8, 1, 2, 0));
+
+    let invalid_insert = sqlx::query(
+        r#"INSERT INTO reconciliation_jobs (
+            job_id, trade_id, input_generation, evidence_policy_sha256,
+            state, revision, attempt_count, failure_count, max_attempts,
+            lease_duration_ms, lease_renewal_ms, initial_backoff_ms,
+            maximum_backoff_ms, next_attempt_unix_ms, lease_owner,
+            lease_expires_unix_ms, created_at_unix_ms, updated_at_unix_ms
+        ) VALUES (?, ?, 1, ?, 'ready', 1, 0, 0, 3, 30000, 10000,
+            100, 1000, NULL, NULL, NULL, 1, 1)"#,
+    )
+    .bind([0x63_u8; 32].as_slice())
+    .bind([0x64_u8; 16].as_slice())
+    .bind([0x65_u8; 32].as_slice())
+    .execute(&mut connection)
+    .await;
+    assert!(
+        invalid_insert.is_err(),
+        "insert guard rejects a ready NULL hole"
+    );
+
+    let invalid_update = sqlx::query(
+        r#"UPDATE reconciliation_jobs
+        SET revision = revision + 1, updated_at_unix_ms = updated_at_unix_ms + 1,
+            lease_owner = NULL
+        WHERE job_id = ?"#,
+    )
+    .bind([0x53_u8; 32].as_slice())
+    .execute(&mut connection)
+    .await;
+    assert!(
+        invalid_update.is_err(),
+        "update guard rejects a leased NULL hole"
+    );
+    connection.close().await.expect("guard fixture close");
 }
 
 #[tokio::test]

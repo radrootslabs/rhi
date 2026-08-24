@@ -422,6 +422,14 @@ and an unknown local commit must be reconciled by exact attempt identity. The
 exact machine contract is
 [`publication_execution.v1.json`](contracts/services_hardening/publication_execution.v1.json).
 
+Step 203 closes this wave with executable crash/reopen, shared transactional
+failpoint, concurrent-claim, queue-bound, and redaction qualification. Schema
+v8 first scans every historical reconciliation job and fails closed without
+repair when a `ready` schedule or `leased` owner/expiry is missing. Only after
+that scan succeeds does the same governed migration install permanent INSERT
+and UPDATE state-shape guards. The exact qualification inventory and bounds are
+[`publication_wave_qualification.v1.json`](contracts/services_hardening/publication_wave_qualification.v1.json).
+
 ## Existing-state runtime foundation
 
 `open_rhi_runtime_foundation` opens only an already initialized database from

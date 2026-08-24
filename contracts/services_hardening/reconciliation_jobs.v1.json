@@ -42,6 +42,16 @@
     "jobs_are_not_deleted": true,
     "restart_recovers_persisted_schedule_and_lease_expiry": true
   },
+  "state_shape_guard": {
+    "introduced_schema_version": 8,
+    "historical_scan": "forward_only_fail_closed",
+    "invalid_rows_repaired_or_deleted": false,
+    "insert_trigger": "reconciliation_jobs_shape_guard_insert",
+    "update_trigger": "reconciliation_jobs_shape_guard_update",
+    "ready_requires_nonnull_next_attempt": true,
+    "leased_requires_nonnull_owner_and_expiry": true,
+    "terminal_requires_null_schedule_and_lease": true
+  },
   "injected_authority": ["wall_time_unix_ms", "lease_owner", "retry_jitter_ms"],
   "forbidden": [
     "ambient_clock",

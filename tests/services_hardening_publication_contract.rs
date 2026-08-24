@@ -4,8 +4,7 @@ use std::error::Error;
 
 use rhi::{
     RHI_PUBLICATION_CONTRACT_VERSION, RHI_PUBLICATION_MAX_ATTEMPTS, RHI_PUBLICATION_MAX_TARGETS,
-    RHI_STATE_SCHEMA_VERSION, RhiConfigProfile, RhiPublicationAuthority, RhiPublicationMode,
-    parse_rhi_config_v1,
+    RhiConfigProfile, RhiPublicationAuthority, RhiPublicationMode, parse_rhi_config_v1,
 };
 use serde_json::json;
 
@@ -25,7 +24,10 @@ fn machine_contract_freezes_step_198_authority_and_schema() {
         contract["contract_version"],
         RHI_PUBLICATION_CONTRACT_VERSION
     );
-    assert_eq!(contract["state_schema_version"], RHI_STATE_SCHEMA_VERSION);
+    // This Step198 contract records the schema version that introduced the
+    // outbox. Later forward-only migrations are governed by their own
+    // contracts and must not silently rewrite this historical evidence.
+    assert_eq!(contract["state_schema_version"], 7);
     assert_eq!(
         contract["publication_modes"],
         json!(["required", "disabled"])

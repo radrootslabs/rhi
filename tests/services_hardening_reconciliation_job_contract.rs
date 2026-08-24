@@ -43,6 +43,19 @@ fn machine_contract_freezes_the_complete_step_187_boundary() {
         contract["injected_authority"],
         json!(["wall_time_unix_ms", "lease_owner", "retry_jitter_ms"])
     );
+    assert_eq!(
+        contract["state_shape_guard"],
+        json!({
+            "introduced_schema_version": 8,
+            "historical_scan": "forward_only_fail_closed",
+            "invalid_rows_repaired_or_deleted": false,
+            "insert_trigger": "reconciliation_jobs_shape_guard_insert",
+            "update_trigger": "reconciliation_jobs_shape_guard_update",
+            "ready_requires_nonnull_next_attempt": true,
+            "leased_requires_nonnull_owner_and_expiry": true,
+            "terminal_requires_null_schedule_and_lease": true
+        })
+    );
     for forbidden in [
         "ambient_clock",
         "ambient_entropy",

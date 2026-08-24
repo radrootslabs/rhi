@@ -1,0 +1,68 @@
+{
+  "schema": "radroots.rhi.publication-wave-qualification",
+  "schema_version": 1,
+  "contract_version": 1,
+  "step": 203,
+  "service": "rhi",
+  "state_schema_version": 8,
+  "component_corpus": [
+    "exact_byte_publication_persists_submitted_before_io_and_commits_accepted",
+    "cancelled_submitted_attempt_recovers_unknown_and_retries_exact_bytes_after_reopen",
+    "publication_outcome_commit_is_idempotent_and_inspection_is_nonmutating",
+    "publication_execution_binds_live_authority_without_mutating_on_mismatch_or_disable",
+    "terminal_required_rejection_blocks_the_outbox_without_retry_schedule",
+    "concurrent_publication_execution_has_one_remote_submitter",
+    "publication_queue_capacity_is_checked_before_finalization_mutation",
+    "schema_v8_scans_historical_nullable_job_state_and_installs_permanent_guards"
+  ],
+  "source_locked_shared_sqlite_corpus": [
+    "every_initialization_durability_edge_fails_once_and_rolls_back",
+    "transaction_durability_edges_preserve_exact_commit_semantics",
+    "backup_durability_edges_fail_once_clean_exact_stage_and_recover",
+    "close_durability_edges_are_once_only_retryable_or_terminal",
+    "every_marker_and_restore_durability_edge_is_wired_once",
+    "sigkill_restore_boundaries_recover_exact_topologies_and_preserve_permissions"
+  ],
+  "historical_reconciliation_job_guard": {
+    "migration_target_version": 8,
+    "scan": "forward_only_fail_closed_before_guard_installation",
+    "repair_or_delete_invalid_rows": false,
+    "permanent_guards": [
+      "reconciliation_jobs_shape_guard_insert",
+      "reconciliation_jobs_shape_guard_update"
+    ],
+    "required_ready_fields": ["next_attempt_unix_ms"],
+    "required_leased_fields": ["lease_owner", "lease_expires_unix_ms"],
+    "terminal_nullable_fields": [
+      "next_attempt_unix_ms",
+      "lease_owner",
+      "lease_expires_unix_ms"
+    ]
+  },
+  "resource_bounds": {
+    "maximum_publication_queue": 65536,
+    "maximum_targets_per_outbox": 32,
+    "maximum_attempts_per_target": 100,
+    "maximum_signed_event_bytes": 32768
+  },
+  "invariants": {
+    "exact_committed_bytes_only": true,
+    "remote_io_outside_sql_transaction": true,
+    "submitted_before_remote_io": true,
+    "single_cas_winner": true,
+    "unknown_outcome_recovered_before_retry": true,
+    "invalid_historical_state_fails_without_repair": true,
+    "production_failpoint_surface": false,
+    "ambient_network": false,
+    "unbounded_resource": false
+  },
+  "deferred": [
+    "rcld_promotion",
+    "parent_pin_alignment",
+    "nix",
+    "oci",
+    "signing",
+    "publication",
+    "deployment"
+  ]
+}
