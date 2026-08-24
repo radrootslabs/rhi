@@ -1,0 +1,56 @@
+{
+  "schema": "radroots.rhi.trade-evidence-persistence.v1",
+  "contract_version": 1,
+  "input": {
+    "event": "sealed_signature_verified_trade_mutation_event",
+    "observation": "sealed_configured_nostr_relay_source_observation",
+    "observation_time": "injected_positive_unix_seconds",
+    "event_authored_time": "distinct_untrusted_policy_admitted_unix_seconds"
+  },
+  "transaction": "one_governed_sqlx_transaction",
+  "facts": {
+    "canonical_mutation": {
+      "table": "trade_mutations",
+      "identity": "content_derived_mutation_id",
+      "content": "exact_canonical_mutation_json",
+      "event_authored_time_column": "absent_event_fact_only",
+      "conflicting_identity_reuse": "reject"
+    },
+    "signed_event": {
+      "table": "nostr_events",
+      "identity": ["verified_event_id", "verified_event_signature"],
+      "content": "canonical_nip01_signed_event_json",
+      "multiple_signatures_for_one_event_id": "retained_separately",
+      "mutation_relationship": "many_signed_events_to_one_mutation"
+    },
+    "source_observation": {
+      "table": "relay_observations",
+      "identity": ["source_id", "selector", "policy_digest", "event_id", "event_signature", "observed_at_unix_s"],
+      "source_id": "exact_validated_configuration_member",
+      "selector": "trade_mutation_lineage_v1",
+      "policy_digest": "exact_normalized_evidence_policy_sha256"
+    }
+  },
+  "immutability": {
+    "updates": "reject",
+    "deletes": "reject",
+    "exact_replay": "idempotent",
+    "arrival_order": "non_authoritative"
+  },
+  "effects": {
+    "filesystem": false,
+    "network": false,
+    "clock_read": false,
+    "checkpoint": false,
+    "dirty_generation": false
+  },
+  "errors": "crate_owned_source_free_redacted",
+  "deferred": [
+    "nostr_relay_source_adapter",
+    "source_completion",
+    "checkpoint_advance",
+    "dirty_generation",
+    "reconciliation",
+    "publication"
+  ]
+}

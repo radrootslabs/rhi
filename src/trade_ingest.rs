@@ -296,6 +296,7 @@ pub struct RhiAdmittedTradeMutationEvent {
     event: EventEnvelope,
     mutation: TradeMutationEnvelopeV1,
     mutation_id: MutationId,
+    observed_at: RhiTradeMutationObservedAtUnixSeconds,
 }
 
 impl RhiAdmittedTradeMutationEvent {
@@ -329,10 +330,38 @@ impl RhiAdmittedTradeMutationEvent {
         self.event.created_at_u64()
     }
 
+    /// Returns the injected UTC second used to admit this source observation.
+    #[must_use]
+    pub const fn observed_at_unix_seconds(&self) -> RhiTradeMutationObservedAtUnixSeconds {
+        self.observed_at
+    }
+
     /// Returns the canonical typed mutation bound to the signed event.
     #[must_use]
     pub const fn mutation(&self) -> &TradeMutationEnvelopeV1 {
         &self.mutation
+    }
+
+    pub(crate) fn event_signature_bytes(&self) -> [u8; 64] {
+        *self.event.sig().as_bytes()
+    }
+
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        Box<[u8]>,
+        EventEnvelope,
+        TradeMutationEnvelopeV1,
+        MutationId,
+        RhiTradeMutationObservedAtUnixSeconds,
+    ) {
+        (
+            self.original,
+            self.event,
+            self.mutation,
+            self.mutation_id,
+            self.observed_at,
+        )
     }
 }
 
@@ -410,6 +439,7 @@ pub fn admit_rhi_trade_mutation_event(
         event,
         mutation,
         mutation_id,
+        observed_at,
     })
 }
 

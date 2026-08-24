@@ -271,6 +271,16 @@ pub enum rhi::RhiTradeCommandV1
 pub rhi::RhiTradeCommandV1::Projection
 pub rhi::RhiTradeCommandV1::ReportCurrent
 pub rhi::RhiTradeCommandV1::Reports
+pub enum rhi::RhiTradeEvidencePersistenceErrorKind
+pub rhi::RhiTradeEvidencePersistenceErrorKind::CommitOutcomeUnknown
+pub rhi::RhiTradeEvidencePersistenceErrorKind::Encoding
+pub rhi::RhiTradeEvidencePersistenceErrorKind::InvalidMode
+pub rhi::RhiTradeEvidencePersistenceErrorKind::InvalidObservation
+pub rhi::RhiTradeEvidencePersistenceErrorKind::MutationConflict
+pub rhi::RhiTradeEvidencePersistenceErrorKind::SignedEventConflict
+pub rhi::RhiTradeEvidencePersistenceErrorKind::Storage
+impl rhi::RhiTradeEvidencePersistenceErrorKind
+pub const fn rhi::RhiTradeEvidencePersistenceErrorKind::code(self) -> &'static str
 pub enum rhi::RhiTradeMutationAdmissionErrorKind
 pub rhi::RhiTradeMutationAdmissionErrorKind::AuthoredTimeRejected
 pub rhi::RhiTradeMutationAdmissionErrorKind::DuplicateEventField
@@ -341,6 +351,7 @@ pub fn rhi::RhiAdmittedTradeMutationEvent::event_id(&self) -> &radroots_event::i
 pub fn rhi::RhiAdmittedTradeMutationEvent::event_kind(&self) -> u32
 pub const fn rhi::RhiAdmittedTradeMutationEvent::mutation(&self) -> &radroots_event::trade::TradeMutationEnvelopeV1
 pub const fn rhi::RhiAdmittedTradeMutationEvent::mutation_id(&self) -> &radroots_event::id::MutationId
+pub const fn rhi::RhiAdmittedTradeMutationEvent::observed_at_unix_seconds(&self) -> rhi::RhiTradeMutationObservedAtUnixSeconds
 pub fn rhi::RhiAdmittedTradeMutationEvent::original_bytes(&self) -> &[u8]
 impl core::fmt::Debug for rhi::RhiAdmittedTradeMutationEvent
 pub fn rhi::RhiAdmittedTradeMutationEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -702,6 +713,8 @@ pub const fn rhi::RhiStatePolicyVersions::provider(self) -> u32
 pub const fn rhi::RhiStatePolicyVersions::state(self) -> u32
 pub const fn rhi::RhiStatePolicyVersions::status(self) -> u32
 pub struct rhi::RhiStateRepositories<'host>
+impl rhi::RhiStateRepositories<'_>
+pub async fn rhi::RhiStateRepositories<'_>::persist_trade_evidence(&self, rhi::RhiAdmittedTradeMutationEvent, rhi::RhiTradeSourceObservation) -> core::result::Result<rhi::RhiTradeEvidencePersistenceOutcome, rhi::RhiTradeEvidencePersistenceError>
 impl<'host> rhi::RhiStateRepositories<'host>
 pub const fn rhi::RhiStateRepositories<'host>::desired_presence(&self) -> rhi::RhiDesiredPresenceRepository<'host>
 pub const fn rhi::RhiStateRepositories<'host>::dirty_trades(&self) -> rhi::RhiDirtyTradeRepository<'host>
@@ -747,6 +760,22 @@ pub fn rhi::RhiTimeEntropyAdapters::sample_full_jitter(&self, rhi::RhiJitterBoun
 pub fn rhi::RhiTimeEntropyAdapters::system() -> Self
 impl core::fmt::Debug for rhi::RhiTimeEntropyAdapters
 pub fn rhi::RhiTimeEntropyAdapters::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiTradeEvidencePersistenceError
+impl rhi::RhiTradeEvidencePersistenceError
+pub const fn rhi::RhiTradeEvidencePersistenceError::code(self) -> &'static str
+pub const fn rhi::RhiTradeEvidencePersistenceError::kind(self) -> rhi::RhiTradeEvidencePersistenceErrorKind
+impl core::error::Error for rhi::RhiTradeEvidencePersistenceError
+impl core::fmt::Debug for rhi::RhiTradeEvidencePersistenceError
+pub fn rhi::RhiTradeEvidencePersistenceError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiTradeEvidencePersistenceError
+pub fn rhi::RhiTradeEvidencePersistenceError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiTradeEvidencePersistenceOutcome
+impl rhi::RhiTradeEvidencePersistenceOutcome
+pub const fn rhi::RhiTradeEvidencePersistenceOutcome::mutation_inserted(self) -> bool
+pub const fn rhi::RhiTradeEvidencePersistenceOutcome::observation_inserted(self) -> bool
+pub const fn rhi::RhiTradeEvidencePersistenceOutcome::signed_event_inserted(self) -> bool
+impl core::fmt::Debug for rhi::RhiTradeEvidencePersistenceOutcome
+pub fn rhi::RhiTradeEvidencePersistenceOutcome::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiTradeMutationAdmissionError
 impl rhi::RhiTradeMutationAdmissionError
 pub const fn rhi::RhiTradeMutationAdmissionError::kind(self) -> rhi::RhiTradeMutationAdmissionErrorKind
@@ -774,6 +803,11 @@ pub struct rhi::RhiTradeMutationObservedAtUnixSeconds(_)
 impl rhi::RhiTradeMutationObservedAtUnixSeconds
 pub const fn rhi::RhiTradeMutationObservedAtUnixSeconds::get(self) -> u64
 pub fn rhi::RhiTradeMutationObservedAtUnixSeconds::new(u64) -> core::result::Result<Self, rhi::RhiTradeMutationAdmissionError>
+pub struct rhi::RhiTradeSourceObservation
+impl rhi::RhiTradeSourceObservation
+pub fn rhi::RhiTradeSourceObservation::from_config(&rhi::RhiConfigDocumentV1, &str, &rhi::RhiAdmittedTradeMutationEvent) -> core::result::Result<Self, rhi::RhiTradeEvidencePersistenceError>
+impl core::fmt::Debug for rhi::RhiTradeSourceObservation
+pub fn rhi::RhiTradeSourceObservation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiTransportAdapters
 impl rhi::RhiTransportAdapters
 pub fn rhi::RhiTransportAdapters::new(alloc::sync::Arc<dyn radroots_transport::source::EventSource>, alloc::sync::Arc<dyn radroots_transport::source::EventSubscriber>, alloc::sync::Arc<dyn radroots_transport::sink::EventSink>) -> Self
@@ -864,12 +898,16 @@ pub const rhi::RHI_STATE_SCHEMA_VERSION_1_SHA256: [u8; 32]
 pub const rhi::RHI_STATE_SCHEMA_VERSION_2_MIGRATION_SHA256: [u8; 32]
 pub const rhi::RHI_STATE_SCHEMA_VERSION_2_OBJECT_COUNT: u32
 pub const rhi::RHI_STATE_SCHEMA_VERSION_2_SHA256: [u8; 32]
+pub const rhi::RHI_STATE_SCHEMA_VERSION_3_MIGRATION_SHA256: [u8; 32]
+pub const rhi::RHI_STATE_SCHEMA_VERSION_3_OBJECT_COUNT: u32
+pub const rhi::RHI_STATE_SCHEMA_VERSION_3_SHA256: [u8; 32]
 pub const rhi::RHI_STATUS_CONTRACT_VERSION: u32
 pub const rhi::RHI_TRADE_EVENT_EXTRA_FIELD_MAX_COUNT: usize
 pub const rhi::RHI_TRADE_EVENT_EXTRA_JSON_MAX_BYTES: usize
 pub const rhi::RHI_TRADE_EVENT_ID_MAX_BYTES: usize
 pub const rhi::RHI_TRADE_EVENT_PUBLIC_KEY_MAX_BYTES: usize
 pub const rhi::RHI_TRADE_EVENT_SIGNATURE_MAX_BYTES: usize
+pub const rhi::RHI_TRADE_EVIDENCE_PERSISTENCE_CONTRACT_VERSION: u32
 pub const rhi::RHI_TRADE_INGEST_CONTRACT_VERSION: u32
 pub const rhi::RHI_WRAPPING_CREDENTIAL_ARTIFACT_BYTES: usize
 pub const rhi::RHI_WRAPPING_CREDENTIAL_CONTRACT_VERSION: u32

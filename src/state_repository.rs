@@ -286,6 +286,10 @@ impl<'host> RhiStateRepositories<'host> {
         Self { host }
     }
 
+    pub(crate) const fn host(&self) -> &'host RhiStateHost {
+        self.host
+    }
+
     /// Returns typed source-result access.
     #[must_use]
     pub const fn sources(&self) -> RhiSourceRepository<'host> {

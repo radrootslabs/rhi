@@ -12,7 +12,7 @@ use radroots_service_sqlite::{
 pub const RHI_STATE_BASE_SCHEMA_VERSION: u32 = 1;
 
 /// The newest governed RHI state schema understood by this binary.
-pub const RHI_STATE_SCHEMA_VERSION: u32 = 2;
+pub const RHI_STATE_SCHEMA_VERSION: u32 = 3;
 
 /// The shared metadata and migration-ledger objects present at schema v1.
 pub const RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT: u32 = 6;
@@ -20,10 +20,13 @@ pub const RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT: u32 = 6;
 /// The shared objects plus the bounded append-only RHI configuration history.
 pub const RHI_STATE_SCHEMA_VERSION_2_OBJECT_COUNT: u32 = 10;
 
+/// The shared objects, configuration history, and immutable trade evidence.
+pub const RHI_STATE_SCHEMA_VERSION_3_OBJECT_COUNT: u32 = 22;
+
 /// SHA-256 identity of the ordered migration catalog rooted at schema v1.
 pub const RHI_MIGRATION_CATALOG_SHA256: [u8; 32] = [
-    0xb6, 0x40, 0xa9, 0x09, 0x5d, 0x53, 0x18, 0xdb, 0xfd, 0x0a, 0xfb, 0xfb, 0xe6, 0xe0, 0x52, 0x81,
-    0x11, 0x3a, 0x9c, 0xef, 0x45, 0x64, 0x80, 0x5c, 0x02, 0x1c, 0x36, 0x8c, 0x3c, 0x52, 0xfc, 0x08,
+    0x14, 0x04, 0x60, 0x48, 0xb4, 0x68, 0x83, 0x6f, 0x26, 0x02, 0xec, 0x51, 0xe5, 0x38, 0xf2, 0xa9,
+    0x8b, 0x71, 0xc9, 0x45, 0xf8, 0x3d, 0x93, 0x3d, 0xcc, 0xb8, 0x60, 0x3b, 0x84, 0xf8, 0x65, 0xf0,
 ];
 
 /// SHA-256 identity of the exact schema-v1 object snapshot.
@@ -44,10 +47,22 @@ pub const RHI_STATE_SCHEMA_VERSION_2_SHA256: [u8; 32] = [
     0x8e, 0x08, 0x8b, 0x8c, 0x26, 0xd1, 0x5b, 0xa4, 0x51, 0x33, 0xca, 0x5e, 0x9b, 0x73, 0x15, 0xa9,
 ];
 
+/// SHA-256 identity of the schema-v3 trade-evidence migration.
+pub const RHI_STATE_SCHEMA_VERSION_3_MIGRATION_SHA256: [u8; 32] = [
+    0x07, 0xb0, 0x98, 0xc3, 0x93, 0x14, 0x0a, 0xfe, 0xc2, 0x22, 0xfc, 0xe7, 0x6e, 0xc6, 0x68, 0x69,
+    0x8d, 0x50, 0xf1, 0xd2, 0x37, 0x85, 0x85, 0x68, 0x73, 0xe3, 0x04, 0x45, 0xaf, 0x1a, 0x01, 0x3f,
+];
+
+/// SHA-256 identity of the exact schema-v3 object snapshot.
+pub const RHI_STATE_SCHEMA_VERSION_3_SHA256: [u8; 32] = [
+    0xfd, 0x96, 0x22, 0x64, 0x05, 0xab, 0x68, 0x65, 0x5a, 0xee, 0x00, 0xf6, 0x83, 0xf6, 0x02, 0x3c,
+    0x7a, 0xab, 0x2d, 0xbd, 0x23, 0xfe, 0xad, 0xac, 0x16, 0x53, 0x33, 0x49, 0x0d, 0x6f, 0x0a, 0xd5,
+];
+
 /// SHA-256 identity of the schema catalog bound to the migration catalog.
 pub const RHI_STATE_SCHEMA_CATALOG_SHA256: [u8; 32] = [
-    0x1b, 0x7f, 0x73, 0x59, 0xb6, 0x2e, 0xd7, 0xdc, 0xd4, 0x76, 0x28, 0x9e, 0x46, 0x69, 0x3d, 0x9b,
-    0x3d, 0x13, 0x69, 0xdc, 0xaf, 0x7d, 0x59, 0x52, 0xf0, 0x32, 0x9a, 0x5c, 0x86, 0xf8, 0xb8, 0x5f,
+    0x13, 0x25, 0xa4, 0x1b, 0x90, 0xab, 0xfc, 0x7d, 0x52, 0x3b, 0xbf, 0xe8, 0x35, 0x00, 0xa1, 0xb1,
+    0xa7, 0x3e, 0x49, 0x2c, 0xc9, 0x30, 0xd6, 0xea, 0xd6, 0xc7, 0x1e, 0x29, 0xd5, 0x44, 0x74, 0x36,
 ];
 
 macro_rules! rhi_config_bindings_table_sql {
@@ -138,6 +153,204 @@ const CREATE_RHI_CONFIG_BINDINGS_MIGRATION_SQL: &str = concat!(
     ";",
 );
 
+macro_rules! trade_mutations_table_sql {
+    () => {
+        r#"CREATE TABLE trade_mutations (
+    mutation_id BLOB NOT NULL PRIMARY KEY CHECK (length(mutation_id) = 32),
+    trade_id BLOB NOT NULL CHECK (length(trade_id) = 16),
+    contract_id TEXT NOT NULL CHECK (contract_id IN (
+        'radroots.trade.proposal.v1',
+        'radroots.trade.decision.v1',
+        'radroots.trade.revision_proposal.v1',
+        'radroots.trade.revision_decision.v1',
+        'radroots.trade.cancellation.v1'
+    )),
+    schema_version INTEGER NOT NULL CHECK (schema_version = 1),
+    event_kind INTEGER NOT NULL CHECK (event_kind IN (3470, 3471, 3472, 3473, 3474)),
+    author_pubkey BLOB NOT NULL CHECK (length(author_pubkey) = 32),
+    canonical_content BLOB NOT NULL
+        CHECK (length(canonical_content) BETWEEN 1 AND 131072)
+) STRICT"#
+    };
+}
+
+macro_rules! trade_mutations_by_trade_sql {
+    () => {
+        r#"CREATE INDEX trade_mutations_by_trade
+ON trade_mutations (trade_id, mutation_id)"#
+    };
+}
+
+macro_rules! nostr_events_table_sql {
+    () => {
+        r#"CREATE TABLE nostr_events (
+    event_id BLOB NOT NULL CHECK (length(event_id) = 32),
+    event_signature BLOB NOT NULL CHECK (length(event_signature) = 64),
+    mutation_id BLOB NOT NULL CHECK (length(mutation_id) = 32)
+        REFERENCES trade_mutations (mutation_id),
+    author_pubkey BLOB NOT NULL CHECK (length(author_pubkey) = 32),
+    event_kind INTEGER NOT NULL CHECK (event_kind IN (3470, 3471, 3472, 3473, 3474)),
+    authored_at_unix_s INTEGER NOT NULL
+        CHECK (authored_at_unix_s BETWEEN 0 AND 9223372036854775807),
+    canonical_event_json BLOB NOT NULL
+        CHECK (length(canonical_event_json) BETWEEN 1 AND 524288),
+    PRIMARY KEY (event_id, event_signature)
+) STRICT"#
+    };
+}
+
+macro_rules! nostr_events_by_mutation_sql {
+    () => {
+        r#"CREATE INDEX nostr_events_by_mutation
+ON nostr_events (mutation_id, authored_at_unix_s, event_id)"#
+    };
+}
+
+macro_rules! relay_observations_table_sql {
+    () => {
+        r#"CREATE TABLE relay_observations (
+    source_id TEXT NOT NULL
+        CHECK (length(CAST(source_id AS BLOB)) BETWEEN 1 AND 64)
+        CHECK (source_id NOT GLOB '*[^a-z0-9_-]*')
+        CHECK (substr(source_id, 1, 1) GLOB '[a-z]'),
+    selector_id TEXT NOT NULL CHECK (selector_id = 'trade_mutation_lineage_v1'),
+    evidence_policy_sha256 BLOB NOT NULL CHECK (length(evidence_policy_sha256) = 32),
+    event_id BLOB NOT NULL CHECK (length(event_id) = 32),
+    event_signature BLOB NOT NULL CHECK (length(event_signature) = 64),
+    observed_at_unix_s INTEGER NOT NULL
+        CHECK (observed_at_unix_s BETWEEN 1 AND 9223372036854775807),
+    FOREIGN KEY (event_id, event_signature)
+        REFERENCES nostr_events (event_id, event_signature),
+    PRIMARY KEY (
+        source_id, selector_id, evidence_policy_sha256, event_id, event_signature,
+        observed_at_unix_s
+    )
+) STRICT"#
+    };
+}
+
+macro_rules! relay_observations_by_event_sql {
+    () => {
+        r#"CREATE INDEX relay_observations_by_event
+ON relay_observations (event_id, event_signature, observed_at_unix_s, source_id)"#
+    };
+}
+
+macro_rules! immutable_no_update_sql {
+    ($trigger:literal, $table:literal, $message:literal) => {
+        concat!(
+            "CREATE TRIGGER ",
+            $trigger,
+            "\nBEFORE UPDATE ON ",
+            $table,
+            "\nBEGIN\n    SELECT RAISE(ABORT, '",
+            $message,
+            "');\nEND"
+        )
+    };
+}
+
+macro_rules! immutable_no_delete_sql {
+    ($trigger:literal, $table:literal, $message:literal) => {
+        concat!(
+            "CREATE TRIGGER ",
+            $trigger,
+            "\nBEFORE DELETE ON ",
+            $table,
+            "\nBEGIN\n    SELECT RAISE(ABORT, '",
+            $message,
+            "');\nEND"
+        )
+    };
+}
+
+pub(crate) const CREATE_TRADE_MUTATIONS_TABLE_SQL: &str = trade_mutations_table_sql!();
+const CREATE_TRADE_MUTATIONS_BY_TRADE_SQL: &str = trade_mutations_by_trade_sql!();
+pub(crate) const CREATE_NOSTR_EVENTS_TABLE_SQL: &str = nostr_events_table_sql!();
+const CREATE_NOSTR_EVENTS_BY_MUTATION_SQL: &str = nostr_events_by_mutation_sql!();
+pub(crate) const CREATE_RELAY_OBSERVATIONS_TABLE_SQL: &str = relay_observations_table_sql!();
+const CREATE_RELAY_OBSERVATIONS_BY_EVENT_SQL: &str = relay_observations_by_event_sql!();
+const CREATE_TRADE_MUTATIONS_NO_UPDATE_SQL: &str = immutable_no_update_sql!(
+    "trade_mutations_no_update",
+    "trade_mutations",
+    "trade mutation evidence is immutable"
+);
+const CREATE_TRADE_MUTATIONS_NO_DELETE_SQL: &str = immutable_no_delete_sql!(
+    "trade_mutations_no_delete",
+    "trade_mutations",
+    "trade mutation evidence is retained"
+);
+const CREATE_NOSTR_EVENTS_NO_UPDATE_SQL: &str = immutable_no_update_sql!(
+    "nostr_events_no_update",
+    "nostr_events",
+    "signed event evidence is immutable"
+);
+const CREATE_NOSTR_EVENTS_NO_DELETE_SQL: &str = immutable_no_delete_sql!(
+    "nostr_events_no_delete",
+    "nostr_events",
+    "signed event evidence is retained"
+);
+const CREATE_RELAY_OBSERVATIONS_NO_UPDATE_SQL: &str = immutable_no_update_sql!(
+    "relay_observations_no_update",
+    "relay_observations",
+    "source observation evidence is immutable"
+);
+const CREATE_RELAY_OBSERVATIONS_NO_DELETE_SQL: &str = immutable_no_delete_sql!(
+    "relay_observations_no_delete",
+    "relay_observations",
+    "source observation evidence is retained"
+);
+const CREATE_TRADE_EVIDENCE_MIGRATION_SQL: &str = concat!(
+    trade_mutations_table_sql!(),
+    ";\n",
+    trade_mutations_by_trade_sql!(),
+    ";\n",
+    nostr_events_table_sql!(),
+    ";\n",
+    nostr_events_by_mutation_sql!(),
+    ";\n",
+    relay_observations_table_sql!(),
+    ";\n",
+    relay_observations_by_event_sql!(),
+    ";\n",
+    immutable_no_update_sql!(
+        "trade_mutations_no_update",
+        "trade_mutations",
+        "trade mutation evidence is immutable"
+    ),
+    ";\n",
+    immutable_no_delete_sql!(
+        "trade_mutations_no_delete",
+        "trade_mutations",
+        "trade mutation evidence is retained"
+    ),
+    ";\n",
+    immutable_no_update_sql!(
+        "nostr_events_no_update",
+        "nostr_events",
+        "signed event evidence is immutable"
+    ),
+    ";\n",
+    immutable_no_delete_sql!(
+        "nostr_events_no_delete",
+        "nostr_events",
+        "signed event evidence is retained"
+    ),
+    ";\n",
+    immutable_no_update_sql!(
+        "relay_observations_no_update",
+        "relay_observations",
+        "source observation evidence is immutable"
+    ),
+    ";\n",
+    immutable_no_delete_sql!(
+        "relay_observations_no_delete",
+        "relay_observations",
+        "source observation evidence is retained"
+    ),
+    ";",
+);
+
 const RHI_CONFIG_BINDINGS_TABLE_SHA256: [u8; 32] = [
     0x4d, 0x6e, 0x8f, 0xff, 0xda, 0x43, 0xe6, 0xf5, 0x3e, 0x23, 0x77, 0xd2, 0x77, 0xa4, 0x52, 0x9e,
     0x63, 0x3e, 0xaf, 0xb6, 0xea, 0xa2, 0xad, 0xd7, 0x56, 0xde, 0x0d, 0xc9, 0x24, 0xc5, 0x77, 0xeb,
@@ -153,6 +366,54 @@ const RHI_CONFIG_BINDINGS_NO_UPDATE_SHA256: [u8; 32] = [
 const RHI_CONFIG_BINDINGS_NO_DELETE_SHA256: [u8; 32] = [
     0x5d, 0x26, 0x82, 0xe9, 0xf2, 0xdc, 0x84, 0x97, 0x61, 0xd1, 0xd7, 0x10, 0xdc, 0xda, 0x75, 0xea,
     0x40, 0x6d, 0x10, 0x95, 0xae, 0x1b, 0xc0, 0xad, 0xdf, 0x70, 0x64, 0xec, 0x8b, 0xed, 0x0b, 0x90,
+];
+const TRADE_MUTATIONS_TABLE_SHA256: [u8; 32] = [
+    0x86, 0x4f, 0x45, 0xc0, 0x87, 0xe3, 0x87, 0x71, 0x53, 0xb8, 0x6a, 0xa1, 0x88, 0x6c, 0x73, 0x3e,
+    0x56, 0x9f, 0x1b, 0x8b, 0xad, 0x8e, 0x9c, 0xbf, 0xab, 0xc4, 0x84, 0x7d, 0x33, 0x33, 0xea, 0xb5,
+];
+const TRADE_MUTATIONS_BY_TRADE_SHA256: [u8; 32] = [
+    0xcf, 0xd1, 0x79, 0x90, 0xf6, 0x0a, 0x18, 0x94, 0x0a, 0xf9, 0xe6, 0xa8, 0x93, 0xda, 0x9e, 0x9a,
+    0xc7, 0x5d, 0x2f, 0x69, 0x28, 0xd9, 0xb6, 0x7c, 0x25, 0x06, 0x64, 0x8d, 0x94, 0x9f, 0x97, 0x2e,
+];
+const NOSTR_EVENTS_TABLE_SHA256: [u8; 32] = [
+    0xcd, 0x08, 0xad, 0x41, 0xb4, 0xd7, 0x88, 0xde, 0xc1, 0x23, 0xc9, 0x83, 0x27, 0x17, 0xb8, 0xab,
+    0x26, 0x0d, 0x58, 0x5c, 0x71, 0x56, 0x68, 0x6c, 0xaa, 0xf0, 0x5f, 0x07, 0xba, 0xfc, 0x72, 0x12,
+];
+const NOSTR_EVENTS_BY_MUTATION_SHA256: [u8; 32] = [
+    0x57, 0xd2, 0x8a, 0x14, 0xed, 0x74, 0x84, 0xef, 0xa4, 0x1f, 0x78, 0xe8, 0xbf, 0x6e, 0x85, 0x49,
+    0xfa, 0x50, 0x76, 0x65, 0xc7, 0x95, 0x32, 0x34, 0xe0, 0xc5, 0xb4, 0xcb, 0x03, 0xb7, 0xa4, 0x18,
+];
+const RELAY_OBSERVATIONS_TABLE_SHA256: [u8; 32] = [
+    0xb0, 0x4d, 0x44, 0x0b, 0xe0, 0x1b, 0x93, 0x2e, 0xea, 0x53, 0x0b, 0x6a, 0x2e, 0xb2, 0x13, 0xe5,
+    0x19, 0xab, 0xbf, 0xc2, 0xd2, 0xff, 0xa3, 0xb8, 0x86, 0x98, 0xb1, 0xc7, 0x28, 0x17, 0x86, 0xfc,
+];
+const RELAY_OBSERVATIONS_BY_EVENT_SHA256: [u8; 32] = [
+    0xdd, 0x69, 0x9f, 0x49, 0x98, 0x67, 0x0f, 0x78, 0xb4, 0x62, 0xcb, 0x1c, 0xd5, 0x17, 0x2a, 0xdb,
+    0x8d, 0xa1, 0x68, 0x7c, 0x51, 0x74, 0xb3, 0x34, 0x43, 0xf1, 0xc6, 0x6f, 0x41, 0x03, 0xf7, 0x82,
+];
+const TRADE_MUTATIONS_NO_UPDATE_SHA256: [u8; 32] = [
+    0xd7, 0xeb, 0x61, 0x74, 0x43, 0x6a, 0xe3, 0x46, 0xf8, 0x29, 0x31, 0x37, 0x33, 0x93, 0xc0, 0xe9,
+    0x0c, 0xe7, 0xf3, 0x06, 0xd6, 0xad, 0xc9, 0xe7, 0xc1, 0xe0, 0x19, 0x3e, 0xa2, 0x46, 0x7d, 0xbe,
+];
+const TRADE_MUTATIONS_NO_DELETE_SHA256: [u8; 32] = [
+    0xde, 0x61, 0x5b, 0xe4, 0x8f, 0xac, 0xc6, 0xd9, 0xae, 0xb1, 0x11, 0xe7, 0xbb, 0xd3, 0xc7, 0x31,
+    0x17, 0x6e, 0xc6, 0xe4, 0x82, 0x61, 0x77, 0xba, 0x1c, 0xb7, 0x49, 0x44, 0x02, 0xb1, 0xba, 0xc4,
+];
+const NOSTR_EVENTS_NO_UPDATE_SHA256: [u8; 32] = [
+    0x3e, 0x6e, 0xec, 0x38, 0x89, 0xd7, 0xfd, 0x25, 0xde, 0x26, 0xe2, 0x03, 0x6e, 0xa5, 0xa5, 0x2a,
+    0xd5, 0xa0, 0xeb, 0xd6, 0x04, 0x62, 0x61, 0x08, 0xaa, 0x80, 0x72, 0x56, 0xe9, 0xb6, 0x0a, 0x89,
+];
+const NOSTR_EVENTS_NO_DELETE_SHA256: [u8; 32] = [
+    0x17, 0x6b, 0x15, 0x16, 0xce, 0xe2, 0xf1, 0xfc, 0x62, 0xa7, 0x40, 0x90, 0x01, 0x79, 0x51, 0xae,
+    0x15, 0x2c, 0xbe, 0x79, 0x53, 0xd0, 0x7c, 0x86, 0xa0, 0xae, 0xca, 0xd3, 0x19, 0x1e, 0xf5, 0xf6,
+];
+const RELAY_OBSERVATIONS_NO_UPDATE_SHA256: [u8; 32] = [
+    0x6d, 0x20, 0xb3, 0xf0, 0xef, 0x1a, 0x26, 0x55, 0xff, 0xd7, 0x46, 0x5c, 0xce, 0xfa, 0x4c, 0x64,
+    0x25, 0x26, 0x64, 0xe2, 0x1b, 0xdc, 0xd8, 0x59, 0xdc, 0xb2, 0xde, 0x15, 0xf0, 0x55, 0xf6, 0xaa,
+];
+const RELAY_OBSERVATIONS_NO_DELETE_SHA256: [u8; 32] = [
+    0xe9, 0xaa, 0x66, 0xff, 0x29, 0xa0, 0x62, 0xc9, 0xf9, 0x97, 0x27, 0x0f, 0x59, 0xad, 0x63, 0x65,
+    0xdc, 0x4d, 0x88, 0xc6, 0x59, 0x4b, 0xe5, 0xe5, 0xfe, 0x44, 0xf4, 0x44, 0x6d, 0x00, 0xb7, 0xe0,
 ];
 
 /// Stable classes for invalid embedded RHI catalog definitions.
@@ -233,10 +494,17 @@ pub fn rhi_migration_catalog() -> Result<MigrationCatalog, RhiStateCatalogError>
         MigrationChecksum::from_bytes(RHI_STATE_SCHEMA_VERSION_2_MIGRATION_SHA256),
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::MigrationCatalog))?;
-    let catalog = MigrationCatalog::new([configuration])
+    let trade_evidence = MigrationDescriptor::sql(
+        3,
+        "create_immutable_trade_evidence",
+        CREATE_TRADE_EVIDENCE_MIGRATION_SQL,
+        MigrationChecksum::from_bytes(RHI_STATE_SCHEMA_VERSION_3_MIGRATION_SHA256),
+    )
+    .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::MigrationCatalog))?;
+    let catalog = MigrationCatalog::new([configuration, trade_evidence])
         .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::MigrationCatalog))?;
     if catalog.current_version() != RHI_STATE_SCHEMA_VERSION
-        || catalog.descriptors().len() != 1
+        || catalog.descriptors().len() != 2
         || catalog.digest().as_bytes() != &RHI_MIGRATION_CATALOG_SHA256
     {
         return Err(RhiStateCatalogError::new(
@@ -256,12 +524,18 @@ pub fn rhi_schema_catalog() -> Result<SchemaCatalog, RhiStateCatalogError> {
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
     let version_two = SchemaVersionCatalog::new(
-        RHI_STATE_SCHEMA_VERSION,
+        2,
         rhi_config_binding_objects()?,
         SchemaDigest::from_bytes(RHI_STATE_SCHEMA_VERSION_2_SHA256),
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
-    let catalog = SchemaCatalog::new(&migrations, [version_one, version_two])
+    let version_three = SchemaVersionCatalog::new(
+        RHI_STATE_SCHEMA_VERSION,
+        rhi_schema_version_three_objects()?,
+        SchemaDigest::from_bytes(RHI_STATE_SCHEMA_VERSION_3_SHA256),
+    )
+    .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
+    let catalog = SchemaCatalog::new(&migrations, [version_one, version_two, version_three])
         .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
     validate_rhi_state_catalogs(&migrations, &catalog)?;
     Ok(catalog)
@@ -274,16 +548,19 @@ pub fn validate_rhi_state_catalogs(
 ) -> Result<(), RhiStateCatalogError> {
     let versions = schema.versions();
     let valid = migrations.current_version() == RHI_STATE_SCHEMA_VERSION
-        && migrations.descriptors().len() == 1
+        && migrations.descriptors().len() == 2
         && migrations.digest().as_bytes() == &RHI_MIGRATION_CATALOG_SHA256
         && schema.migration_catalog_digest() == migrations.digest()
-        && versions.len() == 2
+        && versions.len() == 3
         && versions[0].version() == RHI_STATE_BASE_SCHEMA_VERSION
         && versions[0].object_count() == RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT
         && versions[0].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_1_SHA256
-        && versions[1].version() == RHI_STATE_SCHEMA_VERSION
+        && versions[1].version() == 2
         && versions[1].object_count() == RHI_STATE_SCHEMA_VERSION_2_OBJECT_COUNT
         && versions[1].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_2_SHA256
+        && versions[2].version() == RHI_STATE_SCHEMA_VERSION
+        && versions[2].object_count() == RHI_STATE_SCHEMA_VERSION_3_OBJECT_COUNT
+        && versions[2].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_3_SHA256
         && schema.digest().as_bytes() == &RHI_STATE_SCHEMA_CATALOG_SHA256;
     if valid {
         Ok(())
@@ -328,5 +605,110 @@ fn rhi_config_binding_objects() -> Result<[SchemaObject; 4], RhiStateCatalogErro
             SchemaDigest::from_bytes(RHI_CONFIG_BINDINGS_NO_DELETE_SHA256),
         )
         .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?,
+    ])
+}
+
+fn rhi_schema_version_three_objects() -> Result<Vec<SchemaObject>, RhiStateCatalogError> {
+    let mut objects = rhi_config_binding_objects()?.to_vec();
+    objects.extend(rhi_trade_evidence_objects()?);
+    Ok(objects)
+}
+
+fn rhi_trade_evidence_objects() -> Result<[SchemaObject; 12], RhiStateCatalogError> {
+    let object = |kind, name, table_name, sql, digest| {
+        SchemaObject::new(
+            kind,
+            name,
+            table_name,
+            sql,
+            SchemaDigest::from_bytes(digest),
+        )
+        .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))
+    };
+    Ok([
+        object(
+            SchemaObjectKind::Table,
+            "trade_mutations",
+            "trade_mutations",
+            CREATE_TRADE_MUTATIONS_TABLE_SQL,
+            TRADE_MUTATIONS_TABLE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Index,
+            "trade_mutations_by_trade",
+            "trade_mutations",
+            CREATE_TRADE_MUTATIONS_BY_TRADE_SQL,
+            TRADE_MUTATIONS_BY_TRADE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Table,
+            "nostr_events",
+            "nostr_events",
+            CREATE_NOSTR_EVENTS_TABLE_SQL,
+            NOSTR_EVENTS_TABLE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Index,
+            "nostr_events_by_mutation",
+            "nostr_events",
+            CREATE_NOSTR_EVENTS_BY_MUTATION_SQL,
+            NOSTR_EVENTS_BY_MUTATION_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Table,
+            "relay_observations",
+            "relay_observations",
+            CREATE_RELAY_OBSERVATIONS_TABLE_SQL,
+            RELAY_OBSERVATIONS_TABLE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Index,
+            "relay_observations_by_event",
+            "relay_observations",
+            CREATE_RELAY_OBSERVATIONS_BY_EVENT_SQL,
+            RELAY_OBSERVATIONS_BY_EVENT_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "trade_mutations_no_update",
+            "trade_mutations",
+            CREATE_TRADE_MUTATIONS_NO_UPDATE_SQL,
+            TRADE_MUTATIONS_NO_UPDATE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "trade_mutations_no_delete",
+            "trade_mutations",
+            CREATE_TRADE_MUTATIONS_NO_DELETE_SQL,
+            TRADE_MUTATIONS_NO_DELETE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "nostr_events_no_update",
+            "nostr_events",
+            CREATE_NOSTR_EVENTS_NO_UPDATE_SQL,
+            NOSTR_EVENTS_NO_UPDATE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "nostr_events_no_delete",
+            "nostr_events",
+            CREATE_NOSTR_EVENTS_NO_DELETE_SQL,
+            NOSTR_EVENTS_NO_DELETE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "relay_observations_no_update",
+            "relay_observations",
+            CREATE_RELAY_OBSERVATIONS_NO_UPDATE_SQL,
+            RELAY_OBSERVATIONS_NO_UPDATE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "relay_observations_no_delete",
+            "relay_observations",
+            CREATE_RELAY_OBSERVATIONS_NO_DELETE_SQL,
+            RELAY_OBSERVATIONS_NO_DELETE_SHA256,
+        )?,
     ])
 }

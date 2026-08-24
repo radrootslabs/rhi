@@ -86,7 +86,8 @@
 - Route accepted trade mutations only through the sealed
   `admit_rhi_trade_mutation_event` boundary. Its wire limits come from the
   validated configuration, its future-time tolerance is explicit with no
-  default, and it must remain pure until Step 184 owns persistence.
+  default, and it remains pure; persistence belongs only to the separate typed
+  repository transaction introduced by Step 184.
 - Persist canonical mutation, every distinct signed event carrying it, and
   every accepted source observation as separate typed facts. Two events for one
   mutation never overwrite one another, and arrival order never selects truth.
@@ -203,14 +204,20 @@
   typed RHI repositories; live clients mutate only through the Unix admin
   boundary and offline state operations must prove that no daemon writer exists.
 - Create-new state begins at the shared schema-v1 baseline and applies the
-  governed RHI schema-v2 configuration-binding migration. Retain at most 1,024
-  consecutive immutable configuration generations containing only normalized
+  governed RHI schema-v2 configuration-binding migration and schema-v3
+  immutable trade-evidence migration. Retain at most 1,024 consecutive
+  immutable configuration generations containing only normalized
   config/evidence-policy digests, public identity, exact contract versions,
-  injected apply time, and bounded build identity. Never persist raw TOML,
-  paths, URLs, credential references, or protected identity material. Ordinary
-  startup must use intent-open, discover source generation under retained
-  authority, and match the latest durable binding; configuration apply is an
-  exclusive offline operation.
+  injected apply time, and bounded build identity. Persist each canonical
+  mutation, independently signed Nostr event, and accepted configured-source
+  observation as distinct immutable facts in one SQLx transaction. Exact replay
+  is idempotent, conflicts fail closed, observation time remains distinct from
+  authored time, and this persistence step must not advance reconciliation
+  checkpoints or dirty generation. Never persist raw TOML, paths, URLs,
+  credential references, or protected identity material. Ordinary startup must
+  use intent-open, discover source generation under retained authority, and
+  match the latest durable binding; configuration apply is an exclusive offline
+  operation.
 - Never hold a database transaction while waiting for a source, relay, DNS,
   identity provider, clock, entropy, signing, reduction, or backoff.
 - Never prune active jobs/outboxes, migration history, current identity/policy

@@ -52,5 +52,6 @@
   },
   "errors": "crate_owned_source_free_redacted",
   "effects": { "filesystem": false, "sqlite": false, "clock_read": false, "network": false, "checkpoint": false, "dirty_generation": false },
-  "deferred": ["mutation_event_and_provenance_persistence", "idempotency_and_conflict_resolution", "source_adapter_and_completion", "checkpoint_and_dirty_generation", "reconciliation", "publication"]
+  "persistence_contract": "contracts/services_hardening/trade_evidence_persistence.v1.json",
+  "deferred": ["source_adapter_and_completion", "checkpoint_and_dirty_generation", "reconciliation", "publication"]
 }

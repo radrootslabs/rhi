@@ -11,8 +11,9 @@ use rhi::{
     RHI_STATE_SCHEMA_VERSION, RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT,
     RHI_STATE_SCHEMA_VERSION_1_SHA256, RHI_STATE_SCHEMA_VERSION_2_MIGRATION_SHA256,
     RHI_STATE_SCHEMA_VERSION_2_OBJECT_COUNT, RHI_STATE_SCHEMA_VERSION_2_SHA256,
-    RhiStateCatalogErrorKind, rhi_migration_catalog, rhi_schema_catalog,
-    validate_rhi_state_catalogs,
+    RHI_STATE_SCHEMA_VERSION_3_MIGRATION_SHA256, RHI_STATE_SCHEMA_VERSION_3_OBJECT_COUNT,
+    RHI_STATE_SCHEMA_VERSION_3_SHA256, RhiStateCatalogErrorKind, rhi_migration_catalog,
+    rhi_schema_catalog, validate_rhi_state_catalogs,
 };
 
 const CATALOG_SOURCE: &str = include_str!("../src/state_catalog.rs");
@@ -20,14 +21,14 @@ const LIB_SOURCE: &str = include_str!("../src/lib.rs");
 const MANIFEST: &str = include_str!("../Cargo.toml");
 
 #[test]
-fn schema_v1_to_v2_catalogs_have_exact_literal_identities() {
+fn schema_v1_through_v3_catalogs_have_exact_literal_identities() {
     let migrations = rhi_migration_catalog().expect("RHI migration catalog");
     let schema = rhi_schema_catalog().expect("RHI schema catalog");
 
     assert_eq!(RHI_STATE_BASE_SCHEMA_VERSION, 1);
-    assert_eq!(RHI_STATE_SCHEMA_VERSION, 2);
-    assert_eq!(migrations.descriptors().len(), 1);
-    assert_eq!(migrations.current_version(), 2);
+    assert_eq!(RHI_STATE_SCHEMA_VERSION, 3);
+    assert_eq!(migrations.descriptors().len(), 2);
+    assert_eq!(migrations.current_version(), 3);
     assert_eq!(migrations.descriptors()[0].target_version(), 2);
     assert_eq!(
         migrations.descriptors()[0].name().as_str(),
@@ -37,12 +38,21 @@ fn schema_v1_to_v2_catalogs_have_exact_literal_identities() {
         migrations.descriptors()[0].checksum().as_bytes(),
         &RHI_STATE_SCHEMA_VERSION_2_MIGRATION_SHA256
     );
+    assert_eq!(migrations.descriptors()[1].target_version(), 3);
+    assert_eq!(
+        migrations.descriptors()[1].name().as_str(),
+        "create_immutable_trade_evidence"
+    );
+    assert_eq!(
+        migrations.descriptors()[1].checksum().as_bytes(),
+        &RHI_STATE_SCHEMA_VERSION_3_MIGRATION_SHA256
+    );
     assert_eq!(
         migrations.digest().as_bytes(),
         &RHI_MIGRATION_CATALOG_SHA256
     );
 
-    assert_eq!(schema.versions().len(), 2);
+    assert_eq!(schema.versions().len(), 3);
     let version = schema.versions()[0];
     assert_eq!(version.version(), 1);
     assert_eq!(
@@ -65,13 +75,24 @@ fn schema_v1_to_v2_catalogs_have_exact_literal_identities() {
         version.digest().as_bytes(),
         &RHI_STATE_SCHEMA_VERSION_2_SHA256
     );
+    let version = schema.versions()[2];
+    assert_eq!(version.version(), 3);
+    assert_eq!(
+        version.object_count(),
+        RHI_STATE_SCHEMA_VERSION_3_OBJECT_COUNT
+    );
+    assert_eq!(version.object_count(), 22);
+    assert_eq!(
+        version.digest().as_bytes(),
+        &RHI_STATE_SCHEMA_VERSION_3_SHA256
+    );
     assert_eq!(schema.digest().as_bytes(), &RHI_STATE_SCHEMA_CATALOG_SHA256);
     assert_eq!(schema.migration_catalog_digest(), migrations.digest());
     validate_rhi_state_catalogs(&migrations, &schema).expect("exact catalogs");
 
     assert_eq!(
         lower_hex(&RHI_MIGRATION_CATALOG_SHA256),
-        "b640a9095d5318dbfd0afbfbe6e05281113a9cef4564805c021c368c3c52fc08"
+        "14046048b468836f2602ec51e538f2a98b71c945f83d933dccb8603b84f865f0"
     );
     assert_eq!(
         lower_hex(&RHI_STATE_SCHEMA_VERSION_1_SHA256),
@@ -86,8 +107,16 @@ fn schema_v1_to_v2_catalogs_have_exact_literal_identities() {
         "bccbf1e62fe7644c9c377205b25a92298e088b8c26d15ba45133ca5e9b7315a9"
     );
     assert_eq!(
+        lower_hex(&RHI_STATE_SCHEMA_VERSION_3_MIGRATION_SHA256),
+        "07b098c393140afec222fce76ec668698d50f1d23785856873e30445af1a013f"
+    );
+    assert_eq!(
+        lower_hex(&RHI_STATE_SCHEMA_VERSION_3_SHA256),
+        "fd96226405ab68655aee00f683f6023c7aab2dbd23feadac165333490d6f0ad5"
+    );
+    assert_eq!(
         lower_hex(&RHI_STATE_SCHEMA_CATALOG_SHA256),
-        "1b7f7359b62ed7dcd476289e46693d9b3d1369dcaf7d5952f0329a5c86f8b85f"
+        "1325a41b90abfc7d523bbfe83500a1b1a73e492cc930d6ead6c71e29d5447436"
     );
 }
 
@@ -127,7 +156,11 @@ fn independent_validator_rejects_migration_or_schema_drift() {
     let snapshot_digest =
         SchemaVersionCatalog::computed_digest(2, [object.clone()]).expect("snapshot digest");
     let version_two = SchemaVersionCatalog::new(2, [object], snapshot_digest).expect("version two");
-    let schema = SchemaCatalog::new(&exact_migrations, [version_one, version_two])
+    let snapshot_digest =
+        SchemaVersionCatalog::computed_digest(3, [version_two_object()]).expect("v3 digest");
+    let version_three = SchemaVersionCatalog::new(3, [version_two_object()], snapshot_digest)
+        .expect("version three");
+    let schema = SchemaCatalog::new(&exact_migrations, [version_one, version_two, version_three])
         .expect("drift schema catalog");
     assert_eq!(
         validate_rhi_state_catalogs(&exact_migrations, &schema)
@@ -164,8 +197,12 @@ fn catalog_errors_are_stable_source_free_and_redacted() {
     let snapshot =
         SchemaVersionCatalog::computed_digest(2, [object.clone()]).expect("snapshot digest");
     let version_two = SchemaVersionCatalog::new(2, [object], snapshot).expect("version two");
-    let schema =
-        SchemaCatalog::new(&migrations, [version_one, version_two]).expect("schema catalog");
+    let version_three_digest =
+        SchemaVersionCatalog::computed_digest(3, [secret_object()]).expect("v3 digest");
+    let version_three = SchemaVersionCatalog::new(3, [secret_object()], version_three_digest)
+        .expect("version three");
+    let schema = SchemaCatalog::new(&migrations, [version_one, version_two, version_three])
+        .expect("schema catalog");
     let error = validate_rhi_state_catalogs(&migrations, &schema).expect_err("mismatch");
 
     assert_eq!(error.kind(), RhiStateCatalogErrorKind::CatalogMismatch);
@@ -174,6 +211,39 @@ fn catalog_errors_are_stable_source_free_and_redacted() {
     let rendered = format!("{error} {error:?}");
     assert!(!rendered.contains("secret"));
     assert!(!rendered.contains(&lower_hex(snapshot.as_bytes())));
+}
+
+fn version_two_object() -> SchemaObject {
+    const SQL: &str = "CREATE TABLE unexpected (value INTEGER NOT NULL) STRICT";
+    let digest =
+        SchemaObject::computed_digest(SchemaObjectKind::Table, "unexpected", "unexpected", SQL)
+            .expect("object digest");
+    SchemaObject::new(
+        SchemaObjectKind::Table,
+        "unexpected",
+        "unexpected",
+        SQL,
+        digest,
+    )
+    .expect("schema object")
+}
+
+fn secret_object() -> SchemaObject {
+    let digest = SchemaObject::computed_digest(
+        SchemaObjectKind::Table,
+        "secret_table",
+        "secret_table",
+        "secret SQL text",
+    )
+    .expect("object digest");
+    SchemaObject::new(
+        SchemaObjectKind::Table,
+        "secret_table",
+        "secret_table",
+        "secret SQL text",
+        digest,
+    )
+    .expect("object")
 }
 
 #[test]

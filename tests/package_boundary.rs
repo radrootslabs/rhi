@@ -15,6 +15,8 @@ const RUNTIME_FOUNDATION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/runtime_foundation.v1.json");
 const TRADE_INGEST_CONTRACT: &str =
     include_str!("../contracts/services_hardening/trade_ingest.v1.json");
+const TRADE_EVIDENCE_PERSISTENCE_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/trade_evidence_persistence.v1.json");
 const PUBLIC_API: &str = include_str!("../contracts/api_baselines/rhi.txt");
 const SOURCES: &[&str] = &[
     include_str!("../src/adapters/nostr/event.rs"),
@@ -32,6 +34,7 @@ const SOURCES: &[&str] = &[
     include_str!("../src/state_maintenance.rs"),
     include_str!("../src/state_metadata.rs"),
     include_str!("../src/state_repository.rs"),
+    include_str!("../src/state_trade.rs"),
     include_str!("../src/trade_ingest.rs"),
 ];
 
@@ -96,6 +99,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "state_maintenance",
         "state_metadata",
         "state_repository",
+        "state_trade",
         "trade_ingest",
     ] {
         assert!(
@@ -138,6 +142,11 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "admit_rhi_trade_mutation_event",
         "RhiTradeMutationAdmissionLimits",
         "RhiAdmittedTradeMutationEvent",
+        "RhiTradeEvidencePersistenceError",
+        "RhiTradeEvidencePersistenceErrorKind",
+        "RhiTradeEvidencePersistenceOutcome",
+        "RhiTradeSourceObservation",
+        "RHI_TRADE_EVIDENCE_PERSISTENCE_CONTRACT_VERSION",
     ] {
         assert!(
             ROOT.contains(required),
@@ -189,7 +198,7 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .lines()
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
-    assert_eq!(public_error_count, 14);
+    assert_eq!(public_error_count, 15);
 }
 
 #[test]
@@ -209,6 +218,10 @@ fn trade_ingest_is_sealed_bounded_verified_and_effect_free() {
     assert_eq!(contract["effects"]["filesystem"], false);
     assert_eq!(contract["effects"]["sqlite"], false);
     assert_eq!(contract["effects"]["network"], false);
+    assert_eq!(
+        contract["persistence_contract"],
+        "contracts/services_hardening/trade_evidence_persistence.v1.json"
+    );
 
     let source = include_str!("../src/trade_ingest.rs");
     for required in [
@@ -238,6 +251,56 @@ fn trade_ingest_is_sealed_bounded_verified_and_effect_free() {
     }
     assert!(!ROOT.contains("pub mod trade_ingest"));
     assert!(!PUBLIC_API.contains("rhi::trade_ingest::"));
+}
+
+#[test]
+fn trade_evidence_persistence_is_typed_atomic_and_sealed() {
+    let contract: serde_json::Value = serde_json::from_str(TRADE_EVIDENCE_PERSISTENCE_CONTRACT)
+        .expect("trade-evidence persistence contract");
+    assert_eq!(
+        contract["schema"],
+        "radroots.rhi.trade-evidence-persistence.v1"
+    );
+    assert_eq!(contract["contract_version"], 1);
+    assert_eq!(contract["transaction"], "one_governed_sqlx_transaction");
+    assert_eq!(contract["effects"]["checkpoint"], false);
+    assert_eq!(contract["effects"]["dirty_generation"], false);
+    assert_eq!(
+        contract["facts"]["signed_event"]["identity"],
+        serde_json::json!(["verified_event_id", "verified_event_signature"])
+    );
+
+    let source = include_str!("../src/state_trade.rs");
+    for required in [
+        "pub async fn persist_trade_evidence",
+        "RhiAdmittedTradeMutationEvent",
+        "RhiTradeSourceObservation",
+        ".transaction(move |transaction|",
+        "ON CONFLICT (event_id, event_signature) DO NOTHING",
+    ] {
+        assert!(
+            source.contains(required),
+            "trade evidence persistence is missing {required}"
+        );
+    }
+    for forbidden in [
+        "pub fn host(",
+        "pub fn into_parts(",
+        "pub fn event_signature_bytes(",
+        "SystemTime",
+        "std::fs",
+        "std::net",
+        "checkpoint",
+        "dirty_generation",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "trade evidence persistence gained forbidden authority {forbidden}"
+        );
+    }
+    assert!(!ROOT.contains("pub mod state_trade"));
+    assert!(!PUBLIC_API.contains("rhi::state_trade::"));
+    assert!(!PUBLIC_API.contains("sqlx::"));
 }
 
 #[test]
@@ -353,6 +416,10 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "```compile_fail",
         "[RHI API baseline](contracts/api_baselines/rhi.txt)",
         "[`trade_ingest.v1.json`](contracts/services_hardening/trade_ingest.v1.json)",
+        "[`trade_evidence_persistence.v1.json`](contracts/services_hardening/trade_evidence_persistence.v1.json)",
+        "one canonical mutation",
+        "every distinct valid signed",
+        "does not advance reconciliation checkpoints or dirty generation",
         "## Injected runtime adapters",
         "whole-second wall UTC",
         "process-local monotonic time",
@@ -379,6 +446,8 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "Compose those dependencies only through the sealed runtime-adapter boundary",
         "exposes no task handle or concrete transport handle",
         "admit_rhi_trade_mutation_event",
+        "Persist each canonical",
+        "independently signed Nostr event",
     ] {
         assert!(AGENTS.contains(required), "AGENTS is missing {required}");
     }

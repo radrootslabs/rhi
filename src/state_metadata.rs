@@ -420,7 +420,7 @@ fn normalized_config_digest(
     Ok(RhiNormalizedConfigDigest(hasher.finalize().into()))
 }
 
-fn evidence_policy_digest(
+pub(crate) fn evidence_policy_digest(
     normalized: &Value,
 ) -> Result<RhiEvidencePolicyDigest, RhiStateMetadataError> {
     let relays = normalized

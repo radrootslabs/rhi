@@ -17,6 +17,7 @@ mod state_host;
 mod state_maintenance;
 mod state_metadata;
 mod state_repository;
+mod state_trade;
 mod trade_ingest;
 
 pub use adapters::nostr::event::NostrEventAdapter;
@@ -84,8 +85,9 @@ pub use state_catalog::{
     RHI_STATE_SCHEMA_VERSION, RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT,
     RHI_STATE_SCHEMA_VERSION_1_SHA256, RHI_STATE_SCHEMA_VERSION_2_MIGRATION_SHA256,
     RHI_STATE_SCHEMA_VERSION_2_OBJECT_COUNT, RHI_STATE_SCHEMA_VERSION_2_SHA256,
-    RhiStateCatalogError, RhiStateCatalogErrorKind, rhi_migration_catalog, rhi_schema_catalog,
-    validate_rhi_state_catalogs,
+    RHI_STATE_SCHEMA_VERSION_3_MIGRATION_SHA256, RHI_STATE_SCHEMA_VERSION_3_OBJECT_COUNT,
+    RHI_STATE_SCHEMA_VERSION_3_SHA256, RhiStateCatalogError, RhiStateCatalogErrorKind,
+    rhi_migration_catalog, rhi_schema_catalog, validate_rhi_state_catalogs,
 };
 pub use state_config::{
     RHI_CONFIG_BINDING_MAX_GENERATIONS, RhiConfigApplyError, RhiConfigApplyErrorKind,
@@ -118,6 +120,11 @@ pub use state_repository::{
     RhiSourceRepository, RhiStateRepositories, RhiStateRepositoryDescriptor,
     RhiStateRepositoryKind, RhiStateRepositoryWriteClass, RhiSupersessionRepository,
     rhi_state_repository_descriptors,
+};
+pub use state_trade::{
+    RHI_TRADE_EVIDENCE_PERSISTENCE_CONTRACT_VERSION, RhiTradeEvidencePersistenceError,
+    RhiTradeEvidencePersistenceErrorKind, RhiTradeEvidencePersistenceOutcome,
+    RhiTradeSourceObservation,
 };
 pub use trade_ingest::{
     RHI_TRADE_EVENT_EXTRA_FIELD_MAX_COUNT, RHI_TRADE_EVENT_EXTRA_JSON_MAX_BYTES,
