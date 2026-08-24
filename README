@@ -241,6 +241,37 @@ and digest, and the positive backup-size limit. RHI adds no SQLite dependency,
 raw connection, background runtime, implicit deadline, or direct file-copy
 authority.
 
+## Standalone native release contract
+
+The capsule owns a private `cargo xtask native-release` generator and the
+machine-readable
+[`native_release.v1.json`](contracts/services_hardening/native_release.v1.json)
+contract. From one exact clean committed revision, a caller-supplied positive
+deterministic epoch, and an executable ELF64 binary for one governed GNU/Linux
+target, the generator creates one external immutable artifact directory. It
+contains the binary archive, a vendored offline source archive, the non-secret
+configuration example and schema, the standalone systemd unit, exact source
+lock, license and notices, CycloneDX SBOM, unsigned provenance input, artifact
+manifest, and sorted SHA-256 checksums.
+
+Generation is bounded, deterministic, collision-only, mode checked, and
+durability ordered. It scans exact tracked source, the selected binary, copied
+package inputs, and generated documents for governed protected-value patterns,
+then records that protected material, Nix qualification, and OCI content are
+absent. The source-locked third-party vendor graph is represented separately
+by checksums, SBOM, and notices. The generator does not sign, tag, publish,
+deploy, or write artifacts into the source tree. The standalone
+`scripts/release-acceptance.sh` surface exercises the native Cargo contract;
+when invoked by the parent monorepo it is itself run through extbuild.
+SBOM component references are domain-separated hashes of framed Cargo
+name/version/source/checksum identity, so they neither disclose a checkout path
+nor vary when the same exact source is built from another directory.
+
+The checked-in systemd instance unit is package material only. Its presence
+does not claim that the current placeholder binary graph is production-ready,
+installed, enabled, or started. Complete service runtime behavior remains with
+the later RHI checkpoints, and promotion remains Step 182 ownership.
+
 Validate the standalone crate through extbuild:
 
 ```text

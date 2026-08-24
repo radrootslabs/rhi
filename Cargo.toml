@@ -12,6 +12,8 @@ publish = false
 
 [workspace]
 resolver = "3"
+members = [".", "tools/xtask"]
+default-members = ["."]
 
 [workspace.metadata.radroots.service_source_lock]
 service = "rhi"
@@ -22,6 +24,12 @@ state_contract_version = 2
 admin_contract_version = 1
 status_contract_version = 1
 provider_contract_version = 1
+
+[workspace.metadata.radroots.service_release]
+service = "rhi"
+service_package = "rhi"
+binary_name = "rhi"
+version = "0.1.0"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
@@ -73,3 +81,10 @@ zeroize = { version = "1" }
 
 [dev-dependencies]
 tokio = { version = "1", default-features = false, features = ["macros", "rt-multi-thread"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+overflow-checks = true
+strip = "symbols"
+panic = "unwind"

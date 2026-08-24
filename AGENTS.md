@@ -320,6 +320,18 @@
   response, deadline, backlog, retention set, and in-memory collection.
 - Treat generated files as generated. Update them through the owning command
   and run the corresponding freshness check.
+- Keep the native release generator private to `tools/xtask`. It may read
+  only an exact clean committed capsule revision and must write only one
+  caller-selected external output directory using the closed inventory in
+  `contracts/services_hardening/native_release.v1.json`. It must retain
+  bounded streaming I/O, deterministic archives, exact mode and durability
+  checks, protected-material scanning, and stable path-free errors.
+- Standalone package material may include the fixed systemd instance unit,
+  config example/schema, native binary/source archives, SBOM, notices,
+  provenance input, source lock, checksums, and manifest. It must not include
+  parent-owned human docs, credentials, Nix or OCI inputs/outputs, private
+  harnesses, signatures, tags, publication, deployment, or generated artifacts
+  in the source tree.
 
 ## 10. Canonical verification
 

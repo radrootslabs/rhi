@@ -1,0 +1,37 @@
+[Unit]
+Description=Radroots RHI evidence service instance %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rhi
+Group=rhi
+UMask=0077
+ExecStart=/usr/bin/rhi --profile service-host --instance %i run
+Restart=on-failure
+RestartSec=5s
+ConfigDirectory=radroots/services/rhi/%i
+ConfigDirectoryMode=0700
+StateDirectory=radroots/services/rhi/%i
+StateDirectoryMode=0700
+CacheDirectory=radroots/services/rhi/%i
+CacheDirectoryMode=0700
+LogsDirectory=radroots/services/rhi/%i
+LogsDirectoryMode=0700
+RuntimeDirectory=radroots/services/rhi/%i
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target
