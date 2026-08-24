@@ -28,7 +28,7 @@ fn machine_contract_and_typed_descriptor_inventory_are_exact() {
         contract["deferred_behavior"],
         json!([
             "later_schema_migrations",
-            "non_job_repository_crud",
+            "remaining_repository_crud",
             "backup_restore_and_recovery",
             "network_io",
             "task_supervision"
@@ -205,6 +205,24 @@ fn repository_kinds_are_closed_ordered_and_cross_bound() {
             "presence_desired_state",
             Write::CompareAndSwap,
         ),
+        (
+            Kind::PresenceOutbox,
+            "presence_outbox",
+            "presence_outbox",
+            Write::CompareAndSwap,
+        ),
+        (
+            Kind::PresenceTarget,
+            "presence_target",
+            "presence_targets",
+            Write::CompareAndSwap,
+        ),
+        (
+            Kind::PresenceAttempt,
+            "presence_attempt",
+            "presence_attempts",
+            Write::AppendOnly,
+        ),
     ];
     for (descriptor, (kind, code, table, write_class)) in
         rhi_state_repository_descriptors().iter().zip(expected)
@@ -240,6 +258,9 @@ fn capabilities_are_private_sealed_and_defer_unowned_behavior() {
         "pub const fn publication_targets(&self) -> RhiPublicationTargetRepository<'host>",
         "pub const fn publication_attempts(&self) -> RhiPublicationAttemptRepository<'host>",
         "pub const fn desired_presence(&self) -> RhiDesiredPresenceRepository<'host>",
+        "pub const fn presence_outbox(&self) -> RhiPresenceOutboxRepository<'host>",
+        "pub const fn presence_targets(&self) -> RhiPresenceTargetRepository<'host>",
+        "pub const fn presence_attempts(&self) -> RhiPresenceAttemptRepository<'host>",
     ] {
         assert!(REPOSITORY_SOURCE.contains(required), "missing {required}");
     }

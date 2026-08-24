@@ -359,8 +359,38 @@ must still match the latest durable configuration binding. The table stores no
 relay URL, filesystem path, rendered event, signature, authored time, delivery
 attempt, or network result, and its triggers reject deletion and ungoverned
 updates. Rendering, signing, target delivery state, retries, and relay I/O remain
-owned by Step 205. The exact machine contract is
+separate from this semantic-intent commit. The exact machine contract is
 [`presence_desired_state.v1.json`](contracts/services_hardening/presence_desired_state.v1.json).
+
+## Durable exact-byte presence publication
+
+`build_rhi_signed_presence_documents` consumes one committed desired-state
+generation, the independently revalidated complete presence authority, the
+matching decrypted service identity, caller-injected authored time, and
+caller-injected Schnorr auxiliary entropy. It builds the kind-0 service profile
+through the typed `radroots_event` profile plan and cross-checks the kind-31990
+application-handler plan produced by `radroots_nostr` against the typed
+`radroots_event` plan. Every signed document is then independently parsed under
+the bounded NIP-01 wire limits and revalidated for event ID, signature, author,
+kind, time, ordered tags, and exact content before exposure.
+
+Schema v10 retains each independently verified exact signed byte sequence,
+digest, document identity, and complete immutable target inventory. One short
+SQLx-owned transaction commits those bytes and initial target state before any
+injected `RhiExactPresenceSink` can observe them. A second short transaction
+commits `submitted` before remote I/O. The remote await owns no transaction;
+the first commit borrows rather than consumes its sealed document set, so an
+unknown commit result can be reconciled by replaying the same retained bytes;
+the resulting closed outcome, immutable attempt evidence, target schedule,
+outbox disposition, and lease release are committed together afterward.
+Cancellation or acknowledgement loss after `submitted` becomes durable
+`unknown` before the same retained bytes can be retried. Expired work from a
+superseded desired generation is recorded as `unknown` and the old outbox is
+superseded without sampling retry entropy, preventing stale leases from
+blocking the current generation forever. No retry parses, rebuilds,
+reserializes, or re-signs an event, and no raw relay diagnostic is persisted.
+The exact machine contract and deterministic signed vectors are
+[`presence_publication.v1.json`](contracts/services_hardening/presence_publication.v1.json).
 
 ## Atomic reconciliation finalization commit
 
@@ -620,17 +650,18 @@ credential remain excluded from the state-backup contract. That earlier
 wave-two boundary proof did not itself execute a backup; the governed
 resilience boundary below now owns the actual backup and recovery mechanics.
 
-RHI's state surface is partitioned into eighteen distinct non-forgeable typed
+RHI's state surface is partitioned into twenty-one distinct non-forgeable typed
 repository capabilities bound to one already-opened `RhiStateHost`. Their
 closed topology covers source results, cursors, completions, admitted signed
 events, canonical mutations, provenance, dirty generations, reconciliation
 jobs and attempts, immutable manifests/projections/reports, supersession,
-signed attestation events, publication outbox/targets/attempts, and desired
-presence. Each capability has one exact backing-table identity and an
+signed attestation events, publication outbox/targets/attempts, desired
+presence, and presence outbox/targets/attempts. Each capability has one exact backing-table identity and an
 append-only, compare-and-swap, or immutable write class. It exposes no raw
 pool, connection, transaction, SQL, path, or cloneable write authority.
-Schema migration and verification, CRUD behavior, backup/restore, network I/O,
-and task supervision remain owned by their later ordered checkpoints.
+Schema migration and verification, remaining repository behavior,
+backup/restore, service task ownership, and admin routing remain owned by their
+later ordered checkpoints.
 
 RHI now composes the shared SQLx-owned resilience boundary without exposing a
 second database authority. A writable `RhiStateHost` can capture one governed

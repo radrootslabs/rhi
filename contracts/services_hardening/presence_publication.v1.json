@@ -1,0 +1,115 @@
+{
+  "schema": "radroots.rhi.presence-publication",
+  "schema_version": 1,
+  "contract_version": 1,
+  "step": 205,
+  "service": "rhi",
+  "construction": {
+    "desired_state": "exact_committed_presence_desired_generation",
+    "profile_plan": "typed_radroots_event_authored_profile",
+    "application_handler_plan": "typed_radroots_nostr_application_handler_cross_checked_with_radroots_event_plan",
+    "identity": "decrypted_identity_bound_to_current_service_public_key",
+    "authored_time": "caller_injected_whole_unix_seconds",
+    "entropy": "caller_injected_for_signing_only",
+    "validation_input": "sealed_documents_and_public_desired_authority_only",
+    "independent_validation": [
+      "nip01_bounded_parse",
+      "event_id",
+      "signature",
+      "author",
+      "kind",
+      "authored_time",
+      "ordered_tags",
+      "exact_content"
+    ]
+  },
+  "documents": [
+    {
+      "document_kind": "service_profile",
+      "nostr_kind": 0,
+      "tags": [],
+      "content": {
+        "name": "rhi",
+        "display_name": "Radroots RHI",
+        "about": "Radroots evidence reconciliation and attestation service",
+        "bot": true
+      }
+    },
+    {
+      "document_kind": "application_handler",
+      "nostr_kind": 31990,
+      "tags": [["d", "rhi"], ["k", "3441"]],
+      "content": {
+        "name": "Radroots RHI",
+        "about": "Radroots evidence reconciliation and attestation service"
+      }
+    }
+  ],
+  "durable_workflow": {
+    "schema_version": 10,
+    "outbox_table": "presence_outbox",
+    "target_table": "presence_targets",
+    "attempt_table": "presence_attempts",
+    "write_classes": {
+      "presence_outbox": "compare_and_swap",
+      "presence_targets": "compare_and_swap",
+      "presence_attempts": "append_only"
+    },
+    "exact_signed_bytes_committed_before_io": true,
+    "target_submitted_committed_before_io": true,
+    "remote_io_inside_sql_transaction": false,
+    "outbox_states": ["pending", "leased", "complete", "blocked", "superseded"],
+    "target_states": ["pending", "submitted", "accepted", "rejected", "rate_limited", "auth_required", "failed", "unknown"],
+    "attempt_outcomes": ["accepted", "rejected", "rate_limited", "auth_required", "failed", "unknown"],
+    "commit_outcome_unknown": "caller_retains_sealed_exact_bytes_and_rereads_exact_identity_before_retry",
+    "cancelled_or_expired_submitted": "durably_record_unknown_then_retry_same_exact_bytes",
+    "desired_generation_change": "reject_unexpired_stale_lease_then_record_expired_submitted_as_unknown_and_supersede_without_retry_entropy"
+  },
+  "resource_bounds": {
+    "maximum_signed_event_bytes": 32768,
+    "maximum_targets_per_document": 32,
+    "maximum_attempts_per_target": 100,
+    "maximum_authored_unix_seconds": 9223372036854775807,
+    "initial_backoff_milliseconds": 250,
+    "maximum_backoff_milliseconds": 30000,
+    "attempt_deadline_milliseconds": 15000,
+    "maximum_unix_milliseconds": 9223372036854775807
+  },
+  "reference_vector": {
+    "secret_key_fixture": "0101010101010101010101010101010101010101010101010101010101010101",
+    "service_public_key": "1b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
+    "authored_at_unix_s": 1725000100,
+    "profile": {
+      "event_id": "90dea82b6b86799ae2936a256bd08158fa37a0f4f1e34c4061c652bc3492aad7",
+      "exact_signed_event_sha256": "f627a73ae309da87889cf5a636ddd06d9ea6bb879da972572928fe4940d885d2",
+      "exact_signed_event_json": "{\"id\":\"90dea82b6b86799ae2936a256bd08158fa37a0f4f1e34c4061c652bc3492aad7\",\"pubkey\":\"1b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f\",\"created_at\":1725000100,\"kind\":0,\"tags\":[],\"content\":\"{\\\"name\\\":\\\"rhi\\\",\\\"display_name\\\":\\\"Radroots RHI\\\",\\\"about\\\":\\\"Radroots evidence reconciliation and attestation service\\\",\\\"bot\\\":true}\",\"sig\":\"abee71a0dd9fdfb04821964f701d9d27e5198c0b7f85c9ff2b13d88b5c844ee6a296dd60d37827327e9267a79a1aa401029049778523add3f991ddefbf447d92\"}"
+    },
+    "application_handler": {
+      "event_id": "a8a2897ca4aee8a57888b5df1251d2b8cd486c7d9e9d02d25b50c8a79e9a5278",
+      "exact_signed_event_sha256": "6d32dd2e70368406696a8ec447bbe9d6083a75f9144b3ca1371758d2373247d4",
+      "exact_signed_event_json": "{\"id\":\"a8a2897ca4aee8a57888b5df1251d2b8cd486c7d9e9d02d25b50c8a79e9a5278\",\"pubkey\":\"1b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f\",\"created_at\":1725000100,\"kind\":31990,\"tags\":[[\"d\",\"rhi\"],[\"k\",\"3441\"]],\"content\":\"{\\\"name\\\":\\\"Radroots RHI\\\",\\\"about\\\":\\\"Radroots evidence reconciliation and attestation service\\\"}\",\"sig\":\"eda18aa5589b9fafbdb70c72093e1e25125af5d1ec017c984f01cea785e005b6f652519d3fac8f6a30a8705def1d0f8f87fcee08188004c835807fa29eb764d0\"}"
+    }
+  },
+  "effects": {
+    "sqlite": "typed_repository_transactions_only",
+    "network": "injected_exact_presence_sink_only",
+    "clock": "injected",
+    "entropy": "injected",
+    "filesystem": false,
+    "task_spawn": false,
+    "ambient_process_state": false
+  },
+  "deferred": [
+    "service_runtime_task_ownership",
+    "unix_admin_routes",
+    "status_and_metrics_projection",
+    "process_supervision",
+    "rcld_promotion",
+    "parent_pin_alignment",
+    "nix",
+    "oci",
+    "signing",
+    "publication",
+    "deployment"
+  ]
+}

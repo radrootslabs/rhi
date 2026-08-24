@@ -129,6 +129,16 @@ impl rhi::RhiIdentityRole
 pub const fn rhi::RhiIdentityRole::as_str(self) -> &'static str
 pub enum rhi::RhiMetricsCommandV1
 pub rhi::RhiMetricsCommandV1::Snapshot
+pub enum rhi::RhiPresenceAttemptOutcome
+pub rhi::RhiPresenceAttemptOutcome::Accepted
+pub rhi::RhiPresenceAttemptOutcome::AuthRequired
+pub rhi::RhiPresenceAttemptOutcome::Failed
+pub rhi::RhiPresenceAttemptOutcome::RateLimited
+pub rhi::RhiPresenceAttemptOutcome::Rejected
+pub rhi::RhiPresenceAttemptOutcome::Submitted
+pub rhi::RhiPresenceAttemptOutcome::Unknown
+impl rhi::RhiPresenceAttemptOutcome
+pub const fn rhi::RhiPresenceAttemptOutcome::code(self) -> &'static str
 pub enum rhi::RhiPresenceCommandV1
 pub rhi::RhiPresenceCommandV1::Desired
 pub rhi::RhiPresenceCommandV1::Refresh
@@ -153,6 +163,41 @@ pub rhi::RhiPresenceDocumentKind::ApplicationHandler
 pub rhi::RhiPresenceDocumentKind::ServiceProfile
 impl rhi::RhiPresenceDocumentKind
 pub const fn rhi::RhiPresenceDocumentKind::code(self) -> &'static str
+pub enum rhi::RhiPresenceOutboxState
+pub rhi::RhiPresenceOutboxState::Blocked
+pub rhi::RhiPresenceOutboxState::Complete
+pub rhi::RhiPresenceOutboxState::Leased
+pub rhi::RhiPresenceOutboxState::Pending
+pub rhi::RhiPresenceOutboxState::Superseded
+impl rhi::RhiPresenceOutboxState
+pub const fn rhi::RhiPresenceOutboxState::code(self) -> &'static str
+pub enum rhi::RhiPresencePublicationErrorKind
+pub rhi::RhiPresencePublicationErrorKind::ClockUnavailable
+pub rhi::RhiPresencePublicationErrorKind::CommitOutcomeUnknown
+pub rhi::RhiPresencePublicationErrorKind::DesiredStateMismatch
+pub rhi::RhiPresencePublicationErrorKind::EntropyUnavailable
+pub rhi::RhiPresencePublicationErrorKind::IdentityMismatch
+pub rhi::RhiPresencePublicationErrorKind::InvalidInput
+pub rhi::RhiPresencePublicationErrorKind::InvalidMode
+pub rhi::RhiPresencePublicationErrorKind::Invariant
+pub rhi::RhiPresencePublicationErrorKind::LeaseLost
+pub rhi::RhiPresencePublicationErrorKind::NotReady
+pub rhi::RhiPresencePublicationErrorKind::RenderingFailed
+pub rhi::RhiPresencePublicationErrorKind::Storage
+pub rhi::RhiPresencePublicationErrorKind::VerificationFailed
+impl rhi::RhiPresencePublicationErrorKind
+pub const fn rhi::RhiPresencePublicationErrorKind::code(self) -> &'static str
+pub enum rhi::RhiPresenceTargetState
+pub rhi::RhiPresenceTargetState::Accepted
+pub rhi::RhiPresenceTargetState::AuthRequired
+pub rhi::RhiPresenceTargetState::Failed
+pub rhi::RhiPresenceTargetState::Pending
+pub rhi::RhiPresenceTargetState::RateLimited
+pub rhi::RhiPresenceTargetState::Rejected
+pub rhi::RhiPresenceTargetState::Submitted
+pub rhi::RhiPresenceTargetState::Unknown
+impl rhi::RhiPresenceTargetState
+pub const fn rhi::RhiPresenceTargetState::code(self) -> &'static str
 pub enum rhi::RhiPublicationAttemptEvidenceErrorKind
 pub rhi::RhiPublicationAttemptEvidenceErrorKind::InvalidAttemptNumber
 pub rhi::RhiPublicationAttemptEvidenceErrorKind::InvalidTargetOrdinal
@@ -434,6 +479,9 @@ pub rhi::RhiStateRepositoryKind::DesiredPresence
 pub rhi::RhiStateRepositoryKind::DirtyTrade
 pub rhi::RhiStateRepositoryKind::EvidenceManifest
 pub rhi::RhiStateRepositoryKind::Mutation
+pub rhi::RhiStateRepositoryKind::PresenceAttempt
+pub rhi::RhiStateRepositoryKind::PresenceOutbox
+pub rhi::RhiStateRepositoryKind::PresenceTarget
 pub rhi::RhiStateRepositoryKind::Projection
 pub rhi::RhiStateRepositoryKind::Provenance
 pub rhi::RhiStateRepositoryKind::PublicationAttempt
@@ -728,6 +776,15 @@ impl rhi::RhiNormalizedConfigDigest
 pub const fn rhi::RhiNormalizedConfigDigest::as_bytes(&self) -> &[u8; 32]
 impl core::fmt::Debug for rhi::RhiNormalizedConfigDigest
 pub fn rhi::RhiNormalizedConfigDigest::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPreparedPresenceAttempt
+impl rhi::RhiPreparedPresenceAttempt
+pub const fn rhi::RhiPreparedPresenceAttempt::attempt_id(&self) -> rhi::RhiPresenceAttemptId
+pub const fn rhi::RhiPreparedPresenceAttempt::attempt_number(&self) -> u16
+pub const fn rhi::RhiPreparedPresenceAttempt::deadline_at(&self) -> rhi::RhiPresenceUnixMilliseconds
+pub const fn rhi::RhiPreparedPresenceAttempt::exact_signed_event_bytes(&self) -> &[u8]
+pub fn rhi::RhiPreparedPresenceAttempt::relay_id(&self) -> &str
+impl core::fmt::Debug for rhi::RhiPreparedPresenceAttempt
+pub fn rhi::RhiPreparedPresenceAttempt::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiPreparedPublicationAttempt
 impl rhi::RhiPreparedPublicationAttempt
 pub const fn rhi::RhiPreparedPublicationAttempt::attempt_id(&self) -> rhi::RhiPublicationAttemptId
@@ -737,6 +794,31 @@ pub const fn rhi::RhiPreparedPublicationAttempt::exact_signed_event_bytes(&self)
 pub fn rhi::RhiPreparedPublicationAttempt::relay_id(&self) -> &str
 impl core::fmt::Debug for rhi::RhiPreparedPublicationAttempt
 pub fn rhi::RhiPreparedPublicationAttempt::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPresenceAttemptCommit
+impl rhi::RhiPresenceAttemptCommit
+pub const fn rhi::RhiPresenceAttemptCommit::attempt_id(self) -> rhi::RhiPresenceAttemptId
+pub const fn rhi::RhiPresenceAttemptCommit::attempt_number(self) -> u16
+pub const fn rhi::RhiPresenceAttemptCommit::outbox_id(self) -> rhi::RhiPresenceOutboxId
+pub const fn rhi::RhiPresenceAttemptCommit::outbox_state(self) -> rhi::RhiPresenceOutboxState
+pub const fn rhi::RhiPresenceAttemptCommit::outcome(self) -> rhi::RhiPresenceAttemptOutcome
+pub const fn rhi::RhiPresenceAttemptCommit::target_ordinal(self) -> u8
+pub const fn rhi::RhiPresenceAttemptCommit::target_state(self) -> rhi::RhiPresenceTargetState
+pub struct rhi::RhiPresenceAttemptId(_)
+impl rhi::RhiPresenceAttemptId
+pub const fn rhi::RhiPresenceAttemptId::as_bytes(&self) -> &[u8; 32]
+impl core::fmt::Debug for rhi::RhiPresenceAttemptId
+pub fn rhi::RhiPresenceAttemptId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPresenceAttemptRepository<'host>
+impl rhi::RhiPresenceAttemptRepository<'_>
+pub const fn rhi::RhiPresenceAttemptRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
+pub const fn rhi::RhiPresenceAttemptRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
+impl core::fmt::Debug for rhi::RhiPresenceAttemptRepository<'_>
+pub fn rhi::RhiPresenceAttemptRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPresenceCommitOutcome
+impl rhi::RhiPresenceCommitOutcome
+pub const fn rhi::RhiPresenceCommitOutcome::changed(self) -> bool
+pub const fn rhi::RhiPresenceCommitOutcome::desired_state(self) -> rhi::RhiPresenceDesiredState
+pub const fn rhi::RhiPresenceCommitOutcome::document_count(self) -> u8
 pub struct rhi::RhiPresenceDesiredAuthority
 impl rhi::RhiPresenceDesiredAuthority
 pub const fn rhi::RhiPresenceDesiredAuthority::desired_sha256(&self) -> &[u8; 32]
@@ -774,6 +856,48 @@ pub const fn rhi::RhiPresenceDesiredState::target_count(self) -> u8
 pub const fn rhi::RhiPresenceDesiredState::target_set_sha256(&self) -> &[u8; 32]
 impl core::fmt::Debug for rhi::RhiPresenceDesiredState
 pub fn rhi::RhiPresenceDesiredState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPresenceLease
+impl rhi::RhiPresenceLease
+pub const fn rhi::RhiPresenceLease::expires_at(&self) -> rhi::RhiPresenceUnixMilliseconds
+pub const fn rhi::RhiPresenceLease::outbox_id(&self) -> rhi::RhiPresenceOutboxId
+impl core::fmt::Debug for rhi::RhiPresenceLease
+pub fn rhi::RhiPresenceLease::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPresenceLeaseOwner(_)
+impl rhi::RhiPresenceLeaseOwner
+pub fn rhi::RhiPresenceLeaseOwner::from_bytes([u8; 16]) -> core::result::Result<Self, rhi::RhiPresencePublicationError>
+impl core::fmt::Debug for rhi::RhiPresenceLeaseOwner
+pub fn rhi::RhiPresenceLeaseOwner::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPresenceOutboxId(_)
+impl rhi::RhiPresenceOutboxId
+pub const fn rhi::RhiPresenceOutboxId::as_bytes(&self) -> &[u8; 32]
+impl core::fmt::Debug for rhi::RhiPresenceOutboxId
+pub fn rhi::RhiPresenceOutboxId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPresenceOutboxRepository<'host>
+impl rhi::RhiPresenceOutboxRepository<'_>
+pub async fn rhi::RhiPresenceOutboxRepository<'_>::claim_next_presence(&self, rhi::RhiPresenceLeaseOwner, rhi::RhiPresenceUnixMilliseconds) -> core::result::Result<core::option::Option<rhi::RhiPresenceLease>, rhi::RhiPresencePublicationError>
+pub async fn rhi::RhiPresenceOutboxRepository<'_>::commit_signed_presence(&self, &rhi::RhiSignedPresenceDocuments, rhi::RhiPresenceUnixMilliseconds) -> core::result::Result<rhi::RhiPresenceCommitOutcome, rhi::RhiPresencePublicationError>
+pub async fn rhi::RhiPresenceOutboxRepository<'_>::execute_next_presence(&self, rhi::RhiPresenceLeaseOwner, &rhi::RhiTimeEntropyAdapters, &dyn rhi::RhiExactPresenceSink) -> core::result::Result<core::option::Option<rhi::RhiPresenceAttemptCommit>, rhi::RhiPresencePublicationError>
+pub async fn rhi::RhiPresenceOutboxRepository<'_>::prepare_next_presence_target(&self, rhi::RhiPresenceLease, rhi::RhiPresenceUnixMilliseconds) -> core::result::Result<rhi::RhiPreparedPresenceAttempt, rhi::RhiPresencePublicationError>
+pub async fn rhi::RhiPresenceOutboxRepository<'_>::record_presence_outcome(&self, &rhi::RhiPreparedPresenceAttempt, rhi::RhiPresenceUnixMilliseconds, rhi::RhiPresenceAttemptOutcome, rhi::RhiPresenceRetryDelayMilliseconds) -> core::result::Result<rhi::RhiPresenceAttemptCommit, rhi::RhiPresencePublicationError>
+pub async fn rhi::RhiPresenceOutboxRepository<'_>::recover_one_expired_presence(&self, &rhi::RhiTimeEntropyAdapters, rhi::RhiPresenceUnixMilliseconds) -> core::result::Result<bool, rhi::RhiPresencePublicationError>
+impl rhi::RhiPresenceOutboxRepository<'_>
+pub const fn rhi::RhiPresenceOutboxRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
+pub const fn rhi::RhiPresenceOutboxRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
+impl core::fmt::Debug for rhi::RhiPresenceOutboxRepository<'_>
+pub fn rhi::RhiPresenceOutboxRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPresencePublicationError
+impl rhi::RhiPresencePublicationError
+pub const fn rhi::RhiPresencePublicationError::code(self) -> &'static str
+pub const fn rhi::RhiPresencePublicationError::kind(self) -> rhi::RhiPresencePublicationErrorKind
+impl core::error::Error for rhi::RhiPresencePublicationError
+impl core::fmt::Debug for rhi::RhiPresencePublicationError
+pub fn rhi::RhiPresencePublicationError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiPresencePublicationError
+pub fn rhi::RhiPresencePublicationError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPresenceRetryDelayMilliseconds(_)
+impl rhi::RhiPresenceRetryDelayMilliseconds
+pub const fn rhi::RhiPresenceRetryDelayMilliseconds::get(self) -> u64
+pub fn rhi::RhiPresenceRetryDelayMilliseconds::new(u64) -> core::result::Result<Self, rhi::RhiPresencePublicationError>
 pub struct rhi::RhiPresenceTarget
 impl rhi::RhiPresenceTarget
 pub const fn rhi::RhiPresenceTarget::ordinal(&self) -> u8
@@ -781,6 +905,16 @@ pub fn rhi::RhiPresenceTarget::relay_id(&self) -> &str
 pub const fn rhi::RhiPresenceTarget::required(&self) -> bool
 impl core::fmt::Debug for rhi::RhiPresenceTarget
 pub fn rhi::RhiPresenceTarget::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPresenceTargetRepository<'host>
+impl rhi::RhiPresenceTargetRepository<'_>
+pub const fn rhi::RhiPresenceTargetRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
+pub const fn rhi::RhiPresenceTargetRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
+impl core::fmt::Debug for rhi::RhiPresenceTargetRepository<'_>
+pub fn rhi::RhiPresenceTargetRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPresenceUnixMilliseconds(_)
+impl rhi::RhiPresenceUnixMilliseconds
+pub const fn rhi::RhiPresenceUnixMilliseconds::get(self) -> u64
+pub fn rhi::RhiPresenceUnixMilliseconds::new(u64) -> core::result::Result<Self, rhi::RhiPresencePublicationError>
 pub struct rhi::RhiProjectionRepository<'host>
 impl rhi::RhiProjectionRepository<'_>
 pub const fn rhi::RhiProjectionRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
@@ -1343,6 +1477,22 @@ pub const fn rhi::RhiSignedEvidenceAttestation::signed_event_sha256(&self) -> &[
 pub fn rhi::RhiSignedEvidenceAttestation::statement_digest(&self) -> [u8; 32]
 impl core::fmt::Debug for rhi::RhiSignedEvidenceAttestation
 pub fn rhi::RhiSignedEvidenceAttestation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiSignedPresenceDocument
+impl rhi::RhiSignedPresenceDocument
+pub const fn rhi::RhiSignedPresenceDocument::created_at_unix_seconds(&self) -> u64
+pub const fn rhi::RhiSignedPresenceDocument::event_id(&self) -> &[u8; 32]
+pub const fn rhi::RhiSignedPresenceDocument::kind(&self) -> rhi::RhiPresenceDocumentKind
+pub fn rhi::RhiSignedPresenceDocument::signed_event_bytes(&self) -> &[u8]
+pub const fn rhi::RhiSignedPresenceDocument::signed_event_sha256(&self) -> &[u8; 32]
+impl core::fmt::Debug for rhi::RhiSignedPresenceDocument
+pub fn rhi::RhiSignedPresenceDocument::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiSignedPresenceDocuments
+impl rhi::RhiSignedPresenceDocuments
+pub const fn rhi::RhiSignedPresenceDocuments::desired_state(&self) -> rhi::RhiPresenceDesiredState
+pub fn rhi::RhiSignedPresenceDocuments::documents(&self) -> &[rhi::RhiSignedPresenceDocument]
+pub fn rhi::RhiSignedPresenceDocuments::target_count(&self) -> usize
+impl core::fmt::Debug for rhi::RhiSignedPresenceDocuments
+pub fn rhi::RhiSignedPresenceDocuments::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiSourceCompletionRepository<'host>
 impl rhi::RhiSourceCompletionRepository<'_>
 pub const fn rhi::RhiSourceCompletionRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
@@ -1436,6 +1586,9 @@ pub const fn rhi::RhiStateRepositories<'host>::desired_presence(&self) -> rhi::R
 pub const fn rhi::RhiStateRepositories<'host>::dirty_trades(&self) -> rhi::RhiDirtyTradeRepository<'host>
 pub const fn rhi::RhiStateRepositories<'host>::evidence_manifests(&self) -> rhi::RhiEvidenceManifestRepository<'host>
 pub const fn rhi::RhiStateRepositories<'host>::mutations(&self) -> rhi::RhiMutationRepository<'host>
+pub const fn rhi::RhiStateRepositories<'host>::presence_attempts(&self) -> rhi::RhiPresenceAttemptRepository<'host>
+pub const fn rhi::RhiStateRepositories<'host>::presence_outbox(&self) -> rhi::RhiPresenceOutboxRepository<'host>
+pub const fn rhi::RhiStateRepositories<'host>::presence_targets(&self) -> rhi::RhiPresenceTargetRepository<'host>
 pub const fn rhi::RhiStateRepositories<'host>::projections(&self) -> rhi::RhiProjectionRepository<'host>
 pub const fn rhi::RhiStateRepositories<'host>::provenance(&self) -> rhi::RhiProvenanceRepository<'host>
 pub const fn rhi::RhiStateRepositories<'host>::publication_attempts(&self) -> rhi::RhiPublicationAttemptRepository<'host>
@@ -1639,6 +1792,9 @@ pub const rhi::RHI_ENCRYPTED_IDENTITY_ENVELOPE_MAX_BYTES: usize
 pub const rhi::RHI_MIGRATION_CATALOG_SHA256: [u8; 32]
 pub const rhi::RHI_PRESENCE_DESIRED_CONTRACT_VERSION: u32
 pub const rhi::RHI_PRESENCE_DESIRED_MAX_TARGETS: usize
+pub const rhi::RHI_PRESENCE_MAX_ATTEMPTS: u16
+pub const rhi::RHI_PRESENCE_PUBLICATION_CONTRACT_VERSION: u32
+pub const rhi::RHI_PRESENCE_SIGNED_EVENT_MAX_BYTES: usize
 pub const rhi::RHI_PROVIDER_CONTRACT_VERSION: u32
 pub const rhi::RHI_PUBLICATION_ATTEMPT_EVIDENCE_CONTRACT_VERSION: u32
 pub const rhi::RHI_PUBLICATION_ATTEMPT_NUMBER_MAXIMUM: u16
@@ -1671,6 +1827,9 @@ pub const rhi::RHI_STATE_REPOSITORY_CONTRACT_VERSION: u32
 pub const rhi::RHI_STATE_REPOSITORY_COUNT: usize
 pub const rhi::RHI_STATE_SCHEMA_CATALOG_SHA256: [u8; 32]
 pub const rhi::RHI_STATE_SCHEMA_VERSION: u32
+pub const rhi::RHI_STATE_SCHEMA_VERSION_10_MIGRATION_SHA256: [u8; 32]
+pub const rhi::RHI_STATE_SCHEMA_VERSION_10_OBJECT_COUNT: u32
+pub const rhi::RHI_STATE_SCHEMA_VERSION_10_SHA256: [u8; 32]
 pub const rhi::RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT: u32
 pub const rhi::RHI_STATE_SCHEMA_VERSION_1_SHA256: [u8; 32]
 pub const rhi::RHI_STATE_SCHEMA_VERSION_2_MIGRATION_SHA256: [u8; 32]
@@ -1714,6 +1873,8 @@ pub trait rhi::RhiCredentialAccess: core::marker::Send + core::marker::Sync
 pub fn rhi::RhiCredentialAccess::resolve_existing(&self, &rhi::RhiRuntimeContext, &rhi::RhiIdentityEnvelopeBinding) -> core::result::Result<rhi::RhiWrappingCredential, rhi::RhiCredentialResolutionError>
 impl rhi::RhiCredentialAccess for rhi::CanonicalRhiCredentialAccess
 pub fn rhi::CanonicalRhiCredentialAccess::resolve_existing(&self, &rhi::RhiRuntimeContext, &rhi::RhiIdentityEnvelopeBinding) -> core::result::Result<rhi::RhiWrappingCredential, rhi::RhiCredentialResolutionError>
+pub trait rhi::RhiExactPresenceSink: core::marker::Send + core::marker::Sync
+pub fn rhi::RhiExactPresenceSink::submit_exact<'a>(&'a self, &'a rhi::RhiPreparedPresenceAttempt) -> radroots_transport::source::BoxFuture<'a, rhi::RhiPresenceAttemptOutcome>
 pub trait rhi::RhiExactPublicationSink: core::marker::Send + core::marker::Sync
 pub fn rhi::RhiExactPublicationSink::submit_exact<'a>(&'a self, &'a rhi::RhiPreparedPublicationAttempt) -> radroots_transport::source::BoxFuture<'a, rhi::RhiPublicationAttemptOutcome>
 pub trait rhi::RhiIdentityAccess: core::marker::Send + core::marker::Sync
@@ -1724,6 +1885,7 @@ pub fn rhi::admit_rhi_trade_mutation_event(rhi::RhiTradeMutationAdmissionLimits,
 pub async fn rhi::apply_rhi_configuration(&rhi::RhiRuntimeContext, &rhi::RhiConfigDocumentV1, &rhi::RhiConfigDocumentV1, radroots_service_sqlite::migration::MigrationAppliedAtUnixSeconds, &radroots_service_sqlite::migration::MigrationBuildIdentity) -> core::result::Result<rhi::RhiConfigApplyOutcome, rhi::RhiConfigApplyError>
 pub fn rhi::attest_projection_claim(&radroots_trade::trade_contract_v1::RadrootsTradeProjectionV1, &radroots_event::id::MutationId, &rhi::TradeAgreementAttestationPolicy) -> core::result::Result<rhi::TradeAgreementAttestationReportV1, rhi::TradeAgreementAttestationError>
 pub fn rhi::build_rhi_signed_evidence_attestation(rhi::RhiReconciliationFinalizationFence, &rhi::RhiDecryptedIdentity, radroots_service_host::time::UnixTimeSeconds, &dyn radroots_service_host::entropy::EntropySource, core::option::Option<rhi::RhiEvidenceAttestationSupersession>) -> core::result::Result<rhi::RhiSignedEvidenceAttestation, rhi::RhiReconciliationAttestationError>
+pub fn rhi::build_rhi_signed_presence_documents(rhi::RhiPresenceDesiredCommitOutcome, &rhi::RhiPresenceDesiredAuthority, &rhi::RhiDecryptedIdentity, radroots_service_host::time::UnixTimeSeconds, &dyn radroots_service_host::entropy::EntropySource) -> core::result::Result<rhi::RhiSignedPresenceDocuments, rhi::RhiPresencePublicationError>
 pub fn rhi::evaluate_rhi_reconciliation_claim(rhi::RhiReconciliationProjection, radroots_event::id::MutationId) -> rhi::RhiReconciliationEvaluation
 pub async fn rhi::finalize_rhi_state_restore(rhi::RhiStagedStateRestore) -> core::result::Result<(), rhi::RhiStateMaintenanceError>
 pub async fn rhi::ingest_rhi_trade_source(&rhi::RhiStateRepositories<'_>, &rhi::RhiTransportAdapters, &rhi::RhiConfigDocumentV1, &str, radroots_event::id::TradeId, rhi::RhiTradeSourceAttempt) -> core::result::Result<rhi::RhiTradeSourceIngestOutcome, rhi::RhiTradeSourceIngestError>
@@ -1741,10 +1903,11 @@ pub fn rhi::resolve_rhi_runtime_context(&radroots_runtime_paths::roots::Radroots
 pub fn rhi::resolve_rhi_wrapping_credential(&rhi::RhiRuntimeContext, &rhi::RhiIdentityEnvelopeBinding) -> core::result::Result<rhi::RhiWrappingCredential, rhi::RhiCredentialResolutionError>
 pub fn rhi::rhi_migration_catalog() -> core::result::Result<radroots_service_sqlite::migration::MigrationCatalog, rhi::RhiStateCatalogError>
 pub fn rhi::rhi_schema_catalog() -> core::result::Result<radroots_service_sqlite::integrity::catalog::SchemaCatalog, rhi::RhiStateCatalogError>
-pub const fn rhi::rhi_state_repository_descriptors() -> &'static [rhi::RhiStateRepositoryDescriptor; 18]
+pub const fn rhi::rhi_state_repository_descriptors() -> &'static [rhi::RhiStateRepositoryDescriptor; 21]
 pub async fn rhi::stage_rhi_state_restore(&rhi::RhiRuntimeContext, &rhi::RhiStateMetadata, rhi::RhiVerifiedStateBackup) -> core::result::Result<rhi::RhiStagedStateRestore, rhi::RhiStateMaintenanceError>
 pub fn rhi::trade_mutation_subscription_kinds() -> alloc::vec::Vec<u32>
 pub fn rhi::validate_rhi_presence_desired_authority(&rhi::RhiConfigDocumentV1, &rhi::RhiPresenceDesiredAuthority) -> core::result::Result<(), rhi::RhiPresenceDesiredError>
+pub fn rhi::validate_rhi_signed_presence_documents(&rhi::RhiSignedPresenceDocuments, &rhi::RhiPresenceDesiredAuthority) -> core::result::Result<(), rhi::RhiPresencePublicationError>
 pub fn rhi::validate_rhi_state_catalogs(&radroots_service_sqlite::migration::MigrationCatalog, &radroots_service_sqlite::integrity::catalog::SchemaCatalog) -> core::result::Result<(), rhi::RhiStateCatalogError>
 pub fn rhi::verify_rhi_state_backup(&[u8], radroots_service_sqlite::backup::manifest::BackupManifestSha256, &std::path::Path, &rhi::RhiStateMetadata, core::num::nonzero::NonZeroU64) -> core::result::Result<rhi::RhiVerifiedStateBackup, rhi::RhiStateMaintenanceError>
 pub type rhi::RhiReconciliationCoverage = radroots_trade::evidence::RadrootsTradeEvidenceCoverageV1

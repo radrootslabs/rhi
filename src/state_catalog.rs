@@ -12,7 +12,7 @@ use radroots_service_sqlite::{
 pub const RHI_STATE_BASE_SCHEMA_VERSION: u32 = 1;
 
 /// The newest governed RHI state schema understood by this binary.
-pub const RHI_STATE_SCHEMA_VERSION: u32 = 9;
+pub const RHI_STATE_SCHEMA_VERSION: u32 = 10;
 
 /// The shared metadata and migration-ledger objects present at schema v1.
 pub const RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT: u32 = 6;
@@ -41,10 +41,13 @@ pub const RHI_STATE_SCHEMA_VERSION_8_OBJECT_COUNT: u32 = 65;
 /// The shared objects plus deterministic durable presence desired state.
 pub const RHI_STATE_SCHEMA_VERSION_9_OBJECT_COUNT: u32 = 69;
 
+/// The shared objects plus durable exact-byte presence delivery state.
+pub const RHI_STATE_SCHEMA_VERSION_10_OBJECT_COUNT: u32 = 80;
+
 /// SHA-256 identity of the ordered migration catalog rooted at schema v1.
 pub const RHI_MIGRATION_CATALOG_SHA256: [u8; 32] = [
-    0x7f, 0x8c, 0x03, 0xb4, 0x81, 0x84, 0x08, 0xb5, 0x86, 0x74, 0x74, 0x12, 0xc2, 0x65, 0xac, 0x72,
-    0xcd, 0x4d, 0xd8, 0x8a, 0x29, 0x0d, 0x8b, 0xbe, 0xe1, 0xd5, 0xf6, 0x8a, 0xdb, 0xf7, 0xaf, 0xd0,
+    0x25, 0xe5, 0xba, 0x77, 0x3e, 0xf3, 0xdb, 0x01, 0x33, 0xa8, 0x07, 0x7a, 0x08, 0x3e, 0x88, 0xb4,
+    0x0f, 0xc6, 0xda, 0xdf, 0x9f, 0xb6, 0xf0, 0xcf, 0xde, 0x0e, 0x4b, 0xa4, 0xd3, 0xe0, 0x81, 0xd9,
 ];
 
 /// SHA-256 identity of the exact schema-v1 object snapshot.
@@ -149,10 +152,22 @@ pub const RHI_STATE_SCHEMA_VERSION_9_SHA256: [u8; 32] = [
     0xa8, 0x48, 0x6d, 0x2d, 0xc0, 0x8b, 0x6a, 0x78, 0x08, 0xbb, 0x20, 0x07, 0xc9, 0x43, 0x35, 0xec,
 ];
 
+/// SHA-256 identity of the schema-v10 presence-publication migration.
+pub const RHI_STATE_SCHEMA_VERSION_10_MIGRATION_SHA256: [u8; 32] = [
+    0x54, 0x1a, 0xd1, 0x3b, 0x2c, 0xb0, 0x8d, 0x59, 0x85, 0x72, 0x05, 0xe6, 0xff, 0xae, 0xc1, 0x9b,
+    0x74, 0xde, 0x08, 0x53, 0x24, 0x0f, 0xdf, 0x11, 0xfa, 0x13, 0x40, 0xe4, 0x06, 0xc7, 0x11, 0x4e,
+];
+
+/// SHA-256 identity of the exact schema-v10 object snapshot.
+pub const RHI_STATE_SCHEMA_VERSION_10_SHA256: [u8; 32] = [
+    0xd2, 0xae, 0xd5, 0x1d, 0x0a, 0x6a, 0x2c, 0x01, 0xed, 0xa1, 0x84, 0x46, 0x08, 0x47, 0x2b, 0x2d,
+    0xcd, 0x50, 0x2a, 0xba, 0xa8, 0xa4, 0xca, 0x30, 0xa4, 0x82, 0x35, 0x35, 0xb8, 0xbd, 0x0e, 0x45,
+];
+
 /// SHA-256 identity of the schema catalog bound to the migration catalog.
 pub const RHI_STATE_SCHEMA_CATALOG_SHA256: [u8; 32] = [
-    0x5b, 0xea, 0x3e, 0x3e, 0xc6, 0xbe, 0x3f, 0x12, 0x49, 0xad, 0x19, 0xed, 0x7b, 0x2d, 0x2e, 0x87,
-    0x2c, 0x34, 0x02, 0x55, 0x79, 0xa5, 0x99, 0xf2, 0x54, 0xde, 0x8e, 0x80, 0xcb, 0xa9, 0xb3, 0xc7,
+    0x4f, 0x4d, 0x5f, 0x55, 0x46, 0xa7, 0xc9, 0x4e, 0xf3, 0xcd, 0xab, 0xe2, 0x3e, 0xad, 0xd0, 0xc9,
+    0x7a, 0x64, 0x98, 0x09, 0x84, 0xee, 0x38, 0xca, 0xcb, 0x82, 0x8f, 0x11, 0x25, 0x91, 0x34, 0x88,
 ];
 
 macro_rules! rhi_config_bindings_table_sql {
@@ -844,6 +859,286 @@ const CREATE_PRESENCE_DESIRED_STATE_MIGRATION_SQL: &str = concat!(
     ";\n",
     presence_desired_state_no_delete_sql!(),
     ";",
+);
+
+macro_rules! presence_outbox_table_sql {
+    () => {
+        r#"CREATE TABLE presence_outbox (
+    outbox_id BLOB NOT NULL PRIMARY KEY CHECK (length(outbox_id) = 32),
+    desired_generation INTEGER NOT NULL
+        CHECK (desired_generation BETWEEN 1 AND 9223372036854775807),
+    document_kind TEXT NOT NULL
+        CHECK (document_kind IN ('service_profile', 'application_handler')),
+    desired_sha256 BLOB NOT NULL CHECK (length(desired_sha256) = 32),
+    target_set_sha256 BLOB NOT NULL CHECK (length(target_set_sha256) = 32),
+    event_id BLOB NOT NULL CHECK (length(event_id) = 32),
+    event_sha256 BLOB NOT NULL CHECK (length(event_sha256) = 32),
+    exact_signed_event_bytes BLOB NOT NULL
+        CHECK (length(exact_signed_event_bytes) BETWEEN 1 AND 32768),
+    authored_at_unix_s INTEGER NOT NULL
+        CHECK (authored_at_unix_s BETWEEN 0 AND 9223372036854775807),
+    service_public_key TEXT NOT NULL
+        CHECK (length(CAST(service_public_key AS BLOB)) = 64)
+        CHECK (service_public_key NOT GLOB '*[^0-9a-f]*'),
+    target_count INTEGER NOT NULL CHECK (target_count BETWEEN 1 AND 32),
+    required_target_count INTEGER NOT NULL
+        CHECK (required_target_count BETWEEN 0 AND target_count),
+    max_attempts INTEGER NOT NULL CHECK (max_attempts = 100),
+    initial_backoff_ms INTEGER NOT NULL CHECK (initial_backoff_ms = 250),
+    maximum_backoff_ms INTEGER NOT NULL CHECK (maximum_backoff_ms = 30000),
+    attempt_deadline_ms INTEGER NOT NULL CHECK (attempt_deadline_ms = 15000),
+    state TEXT NOT NULL
+        CHECK (state IN ('pending', 'leased', 'complete', 'blocked', 'superseded')),
+    revision INTEGER NOT NULL CHECK (revision >= 1),
+    next_attempt_unix_ms INTEGER
+        CHECK (next_attempt_unix_ms IS NULL
+            OR next_attempt_unix_ms BETWEEN 0 AND 9223372036854775807),
+    lease_owner BLOB CHECK (lease_owner IS NULL OR length(lease_owner) = 16),
+    lease_expires_unix_ms INTEGER
+        CHECK (lease_expires_unix_ms IS NULL
+            OR lease_expires_unix_ms BETWEEN 1 AND 9223372036854775807),
+    created_at_unix_ms INTEGER NOT NULL
+        CHECK (created_at_unix_ms BETWEEN 0 AND 9223372036854775807),
+    updated_at_unix_ms INTEGER NOT NULL
+        CHECK (updated_at_unix_ms BETWEEN created_at_unix_ms AND 9223372036854775807),
+    UNIQUE (desired_generation, document_kind),
+    CHECK (
+        (state = 'pending' AND next_attempt_unix_ms IS NOT NULL
+            AND lease_owner IS NULL AND lease_expires_unix_ms IS NULL)
+        OR
+        (state = 'leased' AND next_attempt_unix_ms IS NULL
+            AND lease_owner IS NOT NULL AND lease_expires_unix_ms IS NOT NULL)
+        OR
+        (state IN ('complete', 'blocked', 'superseded')
+            AND next_attempt_unix_ms IS NULL
+            AND lease_owner IS NULL AND lease_expires_unix_ms IS NULL)
+    )
+) STRICT"#
+    };
+}
+
+macro_rules! presence_outbox_schedule_sql {
+    () => {
+        r#"CREATE INDEX presence_outbox_by_schedule
+ON presence_outbox (state, next_attempt_unix_ms, created_at_unix_ms, document_kind, outbox_id)"#
+    };
+}
+
+macro_rules! presence_outbox_guard_update_sql {
+    () => {
+        r#"CREATE TRIGGER presence_outbox_guard_update
+BEFORE UPDATE ON presence_outbox
+WHEN NEW.outbox_id != OLD.outbox_id
+    OR NEW.desired_generation != OLD.desired_generation
+    OR NEW.document_kind != OLD.document_kind
+    OR NEW.desired_sha256 != OLD.desired_sha256
+    OR NEW.target_set_sha256 != OLD.target_set_sha256
+    OR NEW.event_id != OLD.event_id
+    OR NEW.event_sha256 != OLD.event_sha256
+    OR NEW.exact_signed_event_bytes != OLD.exact_signed_event_bytes
+    OR NEW.authored_at_unix_s != OLD.authored_at_unix_s
+    OR NEW.service_public_key != OLD.service_public_key
+    OR NEW.target_count != OLD.target_count
+    OR NEW.required_target_count != OLD.required_target_count
+    OR NEW.max_attempts != OLD.max_attempts
+    OR NEW.initial_backoff_ms != OLD.initial_backoff_ms
+    OR NEW.maximum_backoff_ms != OLD.maximum_backoff_ms
+    OR NEW.attempt_deadline_ms != OLD.attempt_deadline_ms
+    OR NEW.created_at_unix_ms != OLD.created_at_unix_ms
+    OR NEW.revision != OLD.revision + 1
+    OR NEW.updated_at_unix_ms < OLD.updated_at_unix_ms
+    OR NOT (
+        (OLD.state = 'pending' AND NEW.state IN ('leased', 'superseded'))
+        OR (OLD.state = 'leased'
+            AND NEW.state IN ('pending', 'complete', 'blocked', 'superseded'))
+        OR (OLD.state = 'blocked' AND NEW.state IN ('pending', 'superseded'))
+    )
+BEGIN
+    SELECT RAISE(ABORT, 'presence outbox transition is invalid');
+END"#
+    };
+}
+
+macro_rules! presence_targets_table_sql {
+    () => {
+        r#"CREATE TABLE presence_targets (
+    outbox_id BLOB NOT NULL CHECK (length(outbox_id) = 32),
+    target_ordinal INTEGER NOT NULL CHECK (target_ordinal BETWEEN 0 AND 31),
+    relay_id TEXT NOT NULL
+        CHECK (length(CAST(relay_id AS BLOB)) BETWEEN 1 AND 64)
+        CHECK (relay_id NOT GLOB '*[^a-z0-9_-]*')
+        CHECK (substr(relay_id, 1, 1) GLOB '[a-z]'),
+    required INTEGER NOT NULL CHECK (required IN (0, 1)),
+    state TEXT NOT NULL CHECK (state IN (
+        'pending', 'submitted', 'accepted', 'rejected',
+        'rate_limited', 'auth_required', 'failed', 'unknown'
+    )),
+    revision INTEGER NOT NULL CHECK (revision >= 1),
+    attempt_count INTEGER NOT NULL CHECK (attempt_count BETWEEN 0 AND 100),
+    next_attempt_unix_ms INTEGER
+        CHECK (next_attempt_unix_ms IS NULL
+            OR next_attempt_unix_ms BETWEEN 0 AND 9223372036854775807),
+    last_attempt_id BLOB
+        CHECK (last_attempt_id IS NULL OR length(last_attempt_id) = 32),
+    updated_at_unix_ms INTEGER NOT NULL
+        CHECK (updated_at_unix_ms BETWEEN 0 AND 9223372036854775807),
+    PRIMARY KEY (outbox_id, target_ordinal),
+    UNIQUE (outbox_id, relay_id),
+    FOREIGN KEY (outbox_id) REFERENCES presence_outbox (outbox_id),
+    CHECK (
+        (state = 'pending' AND attempt_count = 0
+            AND next_attempt_unix_ms IS NOT NULL AND last_attempt_id IS NULL)
+        OR
+        (state = 'submitted' AND attempt_count BETWEEN 1 AND 100
+            AND next_attempt_unix_ms IS NULL AND last_attempt_id IS NOT NULL)
+        OR
+        (state IN ('accepted', 'rejected', 'auth_required')
+            AND attempt_count BETWEEN 1 AND 100
+            AND next_attempt_unix_ms IS NULL AND last_attempt_id IS NOT NULL)
+        OR
+        (state IN ('rate_limited', 'failed', 'unknown')
+            AND attempt_count BETWEEN 1 AND 99
+            AND next_attempt_unix_ms IS NOT NULL AND last_attempt_id IS NOT NULL)
+        OR
+        (state IN ('rate_limited', 'failed', 'unknown')
+            AND attempt_count = 100
+            AND next_attempt_unix_ms IS NULL AND last_attempt_id IS NOT NULL)
+    )
+) STRICT"#
+    };
+}
+
+macro_rules! presence_targets_schedule_sql {
+    () => {
+        r#"CREATE INDEX presence_targets_by_schedule
+ON presence_targets (state, next_attempt_unix_ms, outbox_id, target_ordinal)"#
+    };
+}
+
+macro_rules! presence_targets_guard_update_sql {
+    () => {
+        r#"CREATE TRIGGER presence_targets_guard_update
+BEFORE UPDATE ON presence_targets
+WHEN NEW.outbox_id != OLD.outbox_id
+    OR NEW.target_ordinal != OLD.target_ordinal
+    OR NEW.relay_id != OLD.relay_id
+    OR NEW.required != OLD.required
+    OR NEW.revision != OLD.revision + 1
+    OR NEW.updated_at_unix_ms < OLD.updated_at_unix_ms
+    OR NOT (
+        (OLD.state IN ('pending', 'rate_limited', 'failed', 'unknown')
+            AND NEW.state = 'submitted'
+            AND NEW.attempt_count = OLD.attempt_count + 1
+            AND NEW.last_attempt_id IS NOT NULL
+            AND NEW.last_attempt_id IS NOT OLD.last_attempt_id)
+        OR
+        (OLD.state = 'submitted'
+            AND NEW.state IN (
+                'accepted', 'rejected', 'rate_limited',
+                'auth_required', 'failed', 'unknown'
+            )
+            AND NEW.attempt_count = OLD.attempt_count
+            AND NEW.last_attempt_id = OLD.last_attempt_id)
+    )
+BEGIN
+    SELECT RAISE(ABORT, 'presence target transition is invalid');
+END"#
+    };
+}
+
+macro_rules! presence_attempts_table_sql {
+    () => {
+        r#"CREATE TABLE presence_attempts (
+    attempt_id BLOB NOT NULL PRIMARY KEY CHECK (length(attempt_id) = 32),
+    outbox_id BLOB NOT NULL CHECK (length(outbox_id) = 32),
+    target_ordinal INTEGER NOT NULL CHECK (target_ordinal BETWEEN 0 AND 31),
+    attempt_number INTEGER NOT NULL CHECK (attempt_number BETWEEN 1 AND 100),
+    event_sha256 BLOB NOT NULL CHECK (length(event_sha256) = 32),
+    lease_owner BLOB NOT NULL CHECK (length(lease_owner) = 16),
+    started_at_unix_ms INTEGER NOT NULL
+        CHECK (started_at_unix_ms BETWEEN 0 AND 9223372036854775807),
+    finished_at_unix_ms INTEGER NOT NULL
+        CHECK (finished_at_unix_ms BETWEEN started_at_unix_ms AND 9223372036854775807),
+    outcome TEXT NOT NULL CHECK (outcome IN (
+        'accepted', 'rejected', 'rate_limited',
+        'auth_required', 'failed', 'unknown'
+    )),
+    result_code TEXT NOT NULL
+        CHECK (length(CAST(result_code AS BLOB)) BETWEEN 1 AND 64),
+    UNIQUE (outbox_id, target_ordinal, attempt_number),
+    FOREIGN KEY (outbox_id, target_ordinal)
+        REFERENCES presence_targets (outbox_id, target_ordinal)
+) STRICT"#
+    };
+}
+
+const CREATE_PRESENCE_OUTBOX_TABLE_SQL: &str = presence_outbox_table_sql!();
+const CREATE_PRESENCE_OUTBOX_SCHEDULE_SQL: &str = presence_outbox_schedule_sql!();
+const CREATE_PRESENCE_OUTBOX_GUARD_UPDATE_SQL: &str = presence_outbox_guard_update_sql!();
+const CREATE_PRESENCE_OUTBOX_NO_DELETE_SQL: &str = immutable_no_delete_sql!(
+    "presence_outbox_no_delete",
+    "presence_outbox",
+    "presence outbox rows are retained"
+);
+const CREATE_PRESENCE_TARGETS_TABLE_SQL: &str = presence_targets_table_sql!();
+const CREATE_PRESENCE_TARGETS_SCHEDULE_SQL: &str = presence_targets_schedule_sql!();
+const CREATE_PRESENCE_TARGETS_GUARD_UPDATE_SQL: &str = presence_targets_guard_update_sql!();
+const CREATE_PRESENCE_TARGETS_NO_DELETE_SQL: &str = immutable_no_delete_sql!(
+    "presence_targets_no_delete",
+    "presence_targets",
+    "presence targets are retained"
+);
+const CREATE_PRESENCE_ATTEMPTS_TABLE_SQL: &str = presence_attempts_table_sql!();
+const CREATE_PRESENCE_ATTEMPTS_NO_UPDATE_SQL: &str = immutable_no_update_sql!(
+    "presence_attempts_no_update",
+    "presence_attempts",
+    "presence attempts are immutable"
+);
+const CREATE_PRESENCE_ATTEMPTS_NO_DELETE_SQL: &str = immutable_no_delete_sql!(
+    "presence_attempts_no_delete",
+    "presence_attempts",
+    "presence attempts are retained"
+);
+
+const CREATE_PRESENCE_PUBLICATION_MIGRATION_SQL: &str = concat!(
+    presence_outbox_table_sql!(),
+    ";\n",
+    presence_outbox_schedule_sql!(),
+    ";\n",
+    presence_outbox_guard_update_sql!(),
+    ";\n",
+    immutable_no_delete_sql!(
+        "presence_outbox_no_delete",
+        "presence_outbox",
+        "presence outbox rows are retained"
+    ),
+    ";\n",
+    presence_targets_table_sql!(),
+    ";\n",
+    presence_targets_schedule_sql!(),
+    ";\n",
+    presence_targets_guard_update_sql!(),
+    ";\n",
+    immutable_no_delete_sql!(
+        "presence_targets_no_delete",
+        "presence_targets",
+        "presence targets are retained"
+    ),
+    ";\n",
+    presence_attempts_table_sql!(),
+    ";\n",
+    immutable_no_update_sql!(
+        "presence_attempts_no_update",
+        "presence_attempts",
+        "presence attempts are immutable"
+    ),
+    ";\n",
+    immutable_no_delete_sql!(
+        "presence_attempts_no_delete",
+        "presence_attempts",
+        "presence attempts are retained"
+    ),
+    ";"
 );
 
 macro_rules! evidence_reconciliations_table_sql {
@@ -1651,6 +1946,51 @@ const PRESENCE_DESIRED_STATE_NO_DELETE_SHA256: [u8; 32] = [
     0xca, 0x44, 0xab, 0x2e, 0x4f, 0x77, 0x65, 0x29, 0x75, 0x02, 0x4b, 0xbf, 0x1f, 0x04, 0xdc, 0x3f,
 ];
 
+const PRESENCE_OUTBOX_TABLE_SHA256: [u8; 32] = [
+    0x7e, 0x59, 0xa4, 0xb4, 0x54, 0x09, 0x9e, 0x47, 0xf8, 0xad, 0x0d, 0xb8, 0x7f, 0xd2, 0xa0, 0xc5,
+    0xf6, 0x69, 0x8d, 0x70, 0xda, 0x96, 0x8d, 0xb0, 0x57, 0x6a, 0xa8, 0x54, 0x28, 0xd1, 0x40, 0xdd,
+];
+const PRESENCE_OUTBOX_SCHEDULE_SHA256: [u8; 32] = [
+    0xed, 0x0e, 0x52, 0xba, 0xc1, 0xa8, 0xc8, 0xe3, 0x25, 0xf0, 0x28, 0xe4, 0x2c, 0x8d, 0x88, 0x8f,
+    0x0e, 0x8b, 0x42, 0x63, 0x7c, 0x95, 0x25, 0xf1, 0x02, 0x0c, 0x18, 0x41, 0x3b, 0xf0, 0xf0, 0x41,
+];
+const PRESENCE_OUTBOX_GUARD_UPDATE_SHA256: [u8; 32] = [
+    0x1d, 0x80, 0x93, 0xa8, 0xe7, 0x70, 0x82, 0xc4, 0x2f, 0xb3, 0xe4, 0x79, 0xc6, 0x22, 0x6f, 0x39,
+    0x92, 0x88, 0x80, 0xd4, 0x92, 0xa9, 0x6c, 0x04, 0x29, 0x6b, 0xf2, 0xcc, 0x56, 0x69, 0x6e, 0xce,
+];
+const PRESENCE_OUTBOX_NO_DELETE_SHA256: [u8; 32] = [
+    0xc4, 0xe9, 0xb5, 0x5a, 0x02, 0x0b, 0x67, 0x1d, 0x7d, 0x6c, 0x81, 0xf6, 0x99, 0x90, 0x65, 0x52,
+    0xd9, 0x5e, 0x97, 0xfd, 0xba, 0xac, 0xad, 0x7b, 0x01, 0xb5, 0x02, 0x3f, 0x6b, 0x5f, 0x79, 0xeb,
+];
+const PRESENCE_TARGETS_TABLE_SHA256: [u8; 32] = [
+    0x1e, 0xfa, 0xc9, 0xe2, 0x8d, 0x55, 0xcf, 0x90, 0xa5, 0x5d, 0xc4, 0x13, 0x1a, 0x8e, 0xcb, 0xc3,
+    0x86, 0x2e, 0xff, 0xa9, 0x3d, 0xb3, 0x63, 0xff, 0xed, 0xd4, 0xa1, 0xd6, 0xcd, 0xa4, 0xb7, 0x8c,
+];
+const PRESENCE_TARGETS_SCHEDULE_SHA256: [u8; 32] = [
+    0x6d, 0xbc, 0xf6, 0x25, 0x20, 0x1e, 0x11, 0x2e, 0x1a, 0x54, 0xa7, 0xc8, 0x87, 0xaf, 0xbb, 0xb8,
+    0x21, 0x0a, 0xdc, 0xf6, 0xfa, 0xc1, 0xc5, 0x99, 0xe1, 0xaa, 0x6c, 0xa5, 0xc4, 0x56, 0x74, 0x6a,
+];
+const PRESENCE_TARGETS_GUARD_UPDATE_SHA256: [u8; 32] = [
+    0xa0, 0x8f, 0x28, 0x9e, 0x60, 0x32, 0x27, 0xfa, 0x74, 0x34, 0xea, 0x8d, 0x4a, 0xb5, 0x2a, 0x07,
+    0x60, 0xdc, 0xd2, 0x8f, 0xe1, 0x35, 0x33, 0x51, 0xa3, 0x5c, 0x3e, 0x6c, 0x73, 0x5d, 0x12, 0x44,
+];
+const PRESENCE_TARGETS_NO_DELETE_SHA256: [u8; 32] = [
+    0x8f, 0x0a, 0x46, 0x61, 0x55, 0x96, 0xa8, 0x33, 0x6f, 0x5f, 0x56, 0xa0, 0x3e, 0xa9, 0xd3, 0x5c,
+    0x7d, 0xc3, 0x69, 0xb3, 0xa3, 0x1d, 0x91, 0x0c, 0x23, 0x05, 0xeb, 0xeb, 0xcb, 0x50, 0x71, 0x25,
+];
+const PRESENCE_ATTEMPTS_TABLE_SHA256: [u8; 32] = [
+    0xed, 0x26, 0x46, 0x45, 0x6f, 0x96, 0x45, 0xde, 0x57, 0xcb, 0xef, 0x79, 0x62, 0xd6, 0xfe, 0x43,
+    0x9d, 0xae, 0x10, 0xfd, 0x5e, 0x4c, 0x25, 0x90, 0x91, 0x62, 0x58, 0x8f, 0x58, 0x0d, 0x94, 0x9c,
+];
+const PRESENCE_ATTEMPTS_NO_UPDATE_SHA256: [u8; 32] = [
+    0x8b, 0xe2, 0xd1, 0xa5, 0xe6, 0x5d, 0xb9, 0x96, 0xe3, 0x27, 0xb8, 0xee, 0x27, 0x29, 0xa3, 0xe9,
+    0x1d, 0xa0, 0x68, 0x0e, 0x16, 0x05, 0x90, 0x77, 0x3a, 0x78, 0x1e, 0x80, 0x00, 0x35, 0xac, 0x44,
+];
+const PRESENCE_ATTEMPTS_NO_DELETE_SHA256: [u8; 32] = [
+    0x8c, 0x59, 0xe5, 0x11, 0x0e, 0xe5, 0xa7, 0x45, 0x3d, 0xde, 0xca, 0x36, 0xc2, 0x87, 0xc3, 0x6e,
+    0xbd, 0xf7, 0x74, 0xbb, 0x8d, 0x84, 0xc9, 0xab, 0xd9, 0x76, 0xe2, 0xae, 0x9c, 0xd2, 0x4a, 0x71,
+];
+
 /// Stable classes for invalid embedded RHI catalog definitions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RhiStateCatalogErrorKind {
@@ -1777,6 +2117,13 @@ fn build_rhi_migration_catalog() -> Result<MigrationCatalog, RhiStateCatalogErro
         MigrationChecksum::from_bytes(RHI_STATE_SCHEMA_VERSION_9_MIGRATION_SHA256),
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::MigrationCatalog))?;
+    let presence_publication = MigrationDescriptor::sql(
+        10,
+        "create_presence_publication_workflow",
+        CREATE_PRESENCE_PUBLICATION_MIGRATION_SQL,
+        MigrationChecksum::from_bytes(RHI_STATE_SCHEMA_VERSION_10_MIGRATION_SHA256),
+    )
+    .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::MigrationCatalog))?;
     let catalog = MigrationCatalog::new([
         configuration,
         trade_evidence,
@@ -1786,6 +2133,7 @@ fn build_rhi_migration_catalog() -> Result<MigrationCatalog, RhiStateCatalogErro
         report_publication,
         reconciliation_job_shape_guards,
         presence_desired_state,
+        presence_publication,
     ])
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::MigrationCatalog))?;
     Ok(catalog)
@@ -1795,7 +2143,7 @@ fn build_rhi_migration_catalog() -> Result<MigrationCatalog, RhiStateCatalogErro
 pub fn rhi_migration_catalog() -> Result<MigrationCatalog, RhiStateCatalogError> {
     let catalog = build_rhi_migration_catalog()?;
     if catalog.current_version() != RHI_STATE_SCHEMA_VERSION
-        || catalog.descriptors().len() != 8
+        || catalog.descriptors().len() != 9
         || catalog.digest().as_bytes() != &RHI_MIGRATION_CATALOG_SHA256
     {
         return Err(RhiStateCatalogError::new(
@@ -1865,9 +2213,15 @@ fn build_rhi_schema_catalog(
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
     let version_nine = SchemaVersionCatalog::new(
-        RHI_STATE_SCHEMA_VERSION,
+        9,
         rhi_schema_version_nine_objects()?,
         SchemaDigest::from_bytes(RHI_STATE_SCHEMA_VERSION_9_SHA256),
+    )
+    .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
+    let version_ten = SchemaVersionCatalog::new(
+        10,
+        rhi_schema_version_ten_objects()?,
+        SchemaDigest::from_bytes(RHI_STATE_SCHEMA_VERSION_10_SHA256),
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
     let catalog = SchemaCatalog::new(
@@ -1882,6 +2236,7 @@ fn build_rhi_schema_catalog(
             version_seven,
             version_eight,
             version_nine,
+            version_ten,
         ],
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
@@ -1895,10 +2250,10 @@ pub fn validate_rhi_state_catalogs(
 ) -> Result<(), RhiStateCatalogError> {
     let versions = schema.versions();
     let valid = migrations.current_version() == RHI_STATE_SCHEMA_VERSION
-        && migrations.descriptors().len() == 8
+        && migrations.descriptors().len() == 9
         && migrations.digest().as_bytes() == &RHI_MIGRATION_CATALOG_SHA256
         && schema.migration_catalog_digest() == migrations.digest()
-        && versions.len() == 9
+        && versions.len() == 10
         && versions[0].version() == RHI_STATE_BASE_SCHEMA_VERSION
         && versions[0].object_count() == RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT
         && versions[0].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_1_SHA256
@@ -1923,9 +2278,12 @@ pub fn validate_rhi_state_catalogs(
         && versions[7].version() == 8
         && versions[7].object_count() == RHI_STATE_SCHEMA_VERSION_8_OBJECT_COUNT
         && versions[7].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_8_SHA256
-        && versions[8].version() == RHI_STATE_SCHEMA_VERSION
+        && versions[8].version() == 9
         && versions[8].object_count() == RHI_STATE_SCHEMA_VERSION_9_OBJECT_COUNT
         && versions[8].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_9_SHA256
+        && versions[9].version() == RHI_STATE_SCHEMA_VERSION
+        && versions[9].object_count() == RHI_STATE_SCHEMA_VERSION_10_OBJECT_COUNT
+        && versions[9].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_10_SHA256
         && schema.digest().as_bytes() == &RHI_STATE_SCHEMA_CATALOG_SHA256;
     if valid {
         Ok(())
@@ -2013,6 +2371,104 @@ fn rhi_schema_version_nine_objects() -> Result<Vec<SchemaObject>, RhiStateCatalo
     let mut objects = rhi_schema_version_eight_objects()?;
     objects.extend(rhi_presence_desired_state_objects()?);
     Ok(objects)
+}
+
+fn rhi_schema_version_ten_objects() -> Result<Vec<SchemaObject>, RhiStateCatalogError> {
+    let mut objects = rhi_schema_version_nine_objects()?;
+    objects.extend(rhi_presence_publication_objects()?);
+    Ok(objects)
+}
+
+fn rhi_presence_publication_objects() -> Result<[SchemaObject; 11], RhiStateCatalogError> {
+    let object = |kind, name, table_name, sql, digest| {
+        SchemaObject::new(
+            kind,
+            name,
+            table_name,
+            sql,
+            SchemaDigest::from_bytes(digest),
+        )
+        .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))
+    };
+    Ok([
+        object(
+            SchemaObjectKind::Table,
+            "presence_outbox",
+            "presence_outbox",
+            CREATE_PRESENCE_OUTBOX_TABLE_SQL,
+            PRESENCE_OUTBOX_TABLE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Index,
+            "presence_outbox_by_schedule",
+            "presence_outbox",
+            CREATE_PRESENCE_OUTBOX_SCHEDULE_SQL,
+            PRESENCE_OUTBOX_SCHEDULE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "presence_outbox_guard_update",
+            "presence_outbox",
+            CREATE_PRESENCE_OUTBOX_GUARD_UPDATE_SQL,
+            PRESENCE_OUTBOX_GUARD_UPDATE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "presence_outbox_no_delete",
+            "presence_outbox",
+            CREATE_PRESENCE_OUTBOX_NO_DELETE_SQL,
+            PRESENCE_OUTBOX_NO_DELETE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Table,
+            "presence_targets",
+            "presence_targets",
+            CREATE_PRESENCE_TARGETS_TABLE_SQL,
+            PRESENCE_TARGETS_TABLE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Index,
+            "presence_targets_by_schedule",
+            "presence_targets",
+            CREATE_PRESENCE_TARGETS_SCHEDULE_SQL,
+            PRESENCE_TARGETS_SCHEDULE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "presence_targets_guard_update",
+            "presence_targets",
+            CREATE_PRESENCE_TARGETS_GUARD_UPDATE_SQL,
+            PRESENCE_TARGETS_GUARD_UPDATE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "presence_targets_no_delete",
+            "presence_targets",
+            CREATE_PRESENCE_TARGETS_NO_DELETE_SQL,
+            PRESENCE_TARGETS_NO_DELETE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Table,
+            "presence_attempts",
+            "presence_attempts",
+            CREATE_PRESENCE_ATTEMPTS_TABLE_SQL,
+            PRESENCE_ATTEMPTS_TABLE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "presence_attempts_no_update",
+            "presence_attempts",
+            CREATE_PRESENCE_ATTEMPTS_NO_UPDATE_SQL,
+            PRESENCE_ATTEMPTS_NO_UPDATE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "presence_attempts_no_delete",
+            "presence_attempts",
+            CREATE_PRESENCE_ATTEMPTS_NO_DELETE_SQL,
+            PRESENCE_ATTEMPTS_NO_DELETE_SHA256,
+        )?,
+    ])
 }
 
 fn rhi_presence_desired_state_objects() -> Result<[SchemaObject; 4], RhiStateCatalogError> {

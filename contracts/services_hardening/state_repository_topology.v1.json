@@ -2,7 +2,7 @@
   "schema": "radroots.rhi.state-repository-topology",
   "schema_version": 1,
   "contract_version": 1,
-  "repository_count": 18,
+  "repository_count": 21,
   "construction": "sealed_to_open_rhi_state_host",
   "raw_sqlite_authority_exposed": false,
   "repositories": [
@@ -23,11 +23,14 @@
     { "kind": "publication_outbox", "backing_table": "publication_outbox", "write_class": "compare_and_swap" },
     { "kind": "publication_target", "backing_table": "publication_targets", "write_class": "compare_and_swap" },
     { "kind": "publication_attempt", "backing_table": "publication_attempts", "write_class": "append_only" },
-    { "kind": "desired_presence", "backing_table": "presence_desired_state", "write_class": "compare_and_swap" }
+    { "kind": "desired_presence", "backing_table": "presence_desired_state", "write_class": "compare_and_swap" },
+    { "kind": "presence_outbox", "backing_table": "presence_outbox", "write_class": "compare_and_swap" },
+    { "kind": "presence_target", "backing_table": "presence_targets", "write_class": "compare_and_swap" },
+    { "kind": "presence_attempt", "backing_table": "presence_attempts", "write_class": "append_only" }
   ],
   "deferred_behavior": [
     "later_schema_migrations",
-    "non_job_repository_crud",
+    "remaining_repository_crud",
     "backup_restore_and_recovery",
     "network_io",
     "task_supervision"

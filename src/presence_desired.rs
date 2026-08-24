@@ -196,6 +196,10 @@ impl RhiPresenceDesiredAuthority {
     pub const fn desired_sha256(&self) -> &[u8; 32] {
         &self.desired_sha256
     }
+
+    pub(crate) fn service_public_key(&self) -> &str {
+        &self.service_public_key
+    }
 }
 
 impl fmt::Debug for RhiPresenceDesiredAuthority {
@@ -842,6 +846,13 @@ fn matches_authority(
                 .count()
         && state.queue_capacity == authority.queue_capacity
         && state.desired_sha256 == authority.desired_sha256
+}
+
+pub(crate) fn presence_authority_matches_state(
+    state: RhiPresenceDesiredState,
+    authority: &RhiPresenceDesiredAuthority,
+) -> bool {
+    matches_authority(state, authority)
 }
 
 fn has_document(authority: &RhiPresenceDesiredAuthority, kind: RhiPresenceDocumentKind) -> bool {

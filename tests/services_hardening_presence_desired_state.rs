@@ -263,7 +263,7 @@ async fn desired_state_is_durable_exact_replay_and_semantic_change_only() {
 }
 
 #[test]
-fn machine_contract_freezes_step_204_and_defers_step_205_effects() {
+fn machine_contract_freezes_desired_state_without_publication_effects() {
     let contract: serde_json::Value = serde_json::from_str(CONTRACT).expect("contract");
     assert_eq!(contract["schema"], "radroots.rhi.presence-desired-state");
     assert_eq!(contract["contract_version"], 1);
@@ -280,7 +280,13 @@ fn machine_contract_freezes_step_204_and_defers_step_205_effects() {
     assert_eq!(contract["effects"]["entropy"], false);
     assert_eq!(contract["effects"]["network"], false);
     assert_eq!(contract["effects"]["relay_io"], false);
-    assert_eq!(contract["step_205_deferrals"].as_array().unwrap().len(), 7);
+    assert_eq!(
+        contract["separate_publication_authority"]
+            .as_array()
+            .unwrap()
+            .len(),
+        7
+    );
     for required in [
         "DESIRED_STATE_DOMAIN",
         "TARGET_SET_DOMAIN",
@@ -307,7 +313,7 @@ fn machine_contract_freezes_step_204_and_defers_step_205_effects() {
     ] {
         assert!(
             !SOURCE.contains(forbidden),
-            "unexpected Step205 effect {forbidden}"
+            "unexpected desired-state effect {forbidden}"
         );
     }
     for kind in [

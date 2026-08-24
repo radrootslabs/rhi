@@ -9,6 +9,7 @@ mod features;
 mod identity_credential;
 mod identity_envelope;
 mod presence_desired;
+mod presence_publication;
 mod publication;
 mod publication_attempt;
 mod publication_execution;
@@ -75,6 +76,16 @@ pub use presence_desired::{
     RhiPresenceDesiredAuthority, RhiPresenceDesiredCommitOutcome, RhiPresenceDesiredError,
     RhiPresenceDesiredErrorKind, RhiPresenceDesiredMode, RhiPresenceDesiredState,
     RhiPresenceDocumentKind, RhiPresenceTarget, validate_rhi_presence_desired_authority,
+};
+pub use presence_publication::{
+    RHI_PRESENCE_MAX_ATTEMPTS, RHI_PRESENCE_PUBLICATION_CONTRACT_VERSION,
+    RHI_PRESENCE_SIGNED_EVENT_MAX_BYTES, RhiExactPresenceSink, RhiPreparedPresenceAttempt,
+    RhiPresenceAttemptCommit, RhiPresenceAttemptId, RhiPresenceAttemptOutcome,
+    RhiPresenceCommitOutcome, RhiPresenceLease, RhiPresenceLeaseOwner, RhiPresenceOutboxId,
+    RhiPresenceOutboxState, RhiPresencePublicationError, RhiPresencePublicationErrorKind,
+    RhiPresenceRetryDelayMilliseconds, RhiPresenceTargetState, RhiPresenceUnixMilliseconds,
+    RhiSignedPresenceDocument, RhiSignedPresenceDocuments, build_rhi_signed_presence_documents,
+    validate_rhi_signed_presence_documents,
 };
 pub use publication::{
     RHI_PUBLICATION_CONTRACT_VERSION, RHI_PUBLICATION_MAX_ATTEMPTS, RHI_PUBLICATION_MAX_TARGETS,
@@ -196,8 +207,10 @@ pub use state_catalog::{
     RHI_STATE_SCHEMA_VERSION_7_SHA256, RHI_STATE_SCHEMA_VERSION_8_MIGRATION_SHA256,
     RHI_STATE_SCHEMA_VERSION_8_OBJECT_COUNT, RHI_STATE_SCHEMA_VERSION_8_SHA256,
     RHI_STATE_SCHEMA_VERSION_9_MIGRATION_SHA256, RHI_STATE_SCHEMA_VERSION_9_OBJECT_COUNT,
-    RHI_STATE_SCHEMA_VERSION_9_SHA256, RhiStateCatalogError, RhiStateCatalogErrorKind,
-    rhi_migration_catalog, rhi_schema_catalog, validate_rhi_state_catalogs,
+    RHI_STATE_SCHEMA_VERSION_9_SHA256, RHI_STATE_SCHEMA_VERSION_10_MIGRATION_SHA256,
+    RHI_STATE_SCHEMA_VERSION_10_OBJECT_COUNT, RHI_STATE_SCHEMA_VERSION_10_SHA256,
+    RhiStateCatalogError, RhiStateCatalogErrorKind, rhi_migration_catalog, rhi_schema_catalog,
+    validate_rhi_state_catalogs,
 };
 pub use state_config::{
     RHI_CONFIG_BINDING_MAX_GENERATIONS, RhiConfigApplyError, RhiConfigApplyErrorKind,
@@ -222,7 +235,8 @@ pub use state_metadata::{
 pub use state_repository::{
     RHI_STATE_REPOSITORY_CONTRACT_VERSION, RHI_STATE_REPOSITORY_COUNT,
     RhiDesiredPresenceRepository, RhiDirtyTradeRepository, RhiEvidenceManifestRepository,
-    RhiMutationRepository, RhiProjectionRepository, RhiProvenanceRepository,
+    RhiMutationRepository, RhiPresenceAttemptRepository, RhiPresenceOutboxRepository,
+    RhiPresenceTargetRepository, RhiProjectionRepository, RhiProvenanceRepository,
     RhiPublicationAttemptRepository, RhiPublicationOutboxRepository,
     RhiPublicationTargetRepository, RhiReconciliationAttemptRepository,
     RhiReconciliationJobRepository, RhiReportRepository, RhiSignedAttestationEventRepository,

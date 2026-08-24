@@ -217,9 +217,21 @@
   Durable desired state contains only the closed mode, document-presence bits,
   bounded target counts, queue capacity, and governed digests; it never stores
   relay URLs, rendered or signed events, attempts, schedules, or outcomes.
-- Keep rendered and independently verified signed presence bytes, per-document
-  target state, attempt evidence, retry scheduling, and relay I/O with the next
-  ordered checkpoint. Never reconstruct exact committed bytes during retry.
+- Build service-profile and application-handler presence only through the
+  governed typed Lib plans, then independently revalidate exact ID, signature,
+  author, kind, authored time, ordered tags, and content before persistence.
+  Commit each verified signed byte sequence and the complete immutable target
+  inventory before an injected presence sink can observe it. Preserve the
+  caller's sealed exact-byte capability across an unknown commit result so
+  reconciliation never depends on re-signing.
+- Persist presence `submitted` in a short SQLx-owned transaction before relay
+  I/O, keep the remote await outside every transaction, and atomically append
+  the closed attempt outcome with target scheduling, outbox disposition, and
+  lease release. Cancellation or lost acknowledgement becomes durable
+  `unknown` before retry of the same retained bytes. Recover an expired stale
+  desired generation to `unknown` and supersede it without retry entropy so it
+  cannot block the current generation indefinitely. Never reconstruct exact
+  committed presence bytes or persist raw relay diagnostics.
 
 ## 7. Configuration, identity, state, and process boundaries
 

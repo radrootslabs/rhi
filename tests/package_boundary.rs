@@ -14,6 +14,9 @@ const RUNTIME_FOUNDATION: &str = include_str!("../src/runtime_foundation.rs");
 const PRESENCE_DESIRED: &str = include_str!("../src/presence_desired.rs");
 const PRESENCE_DESIRED_CONTRACT: &str =
     include_str!("../contracts/services_hardening/presence_desired_state.v1.json");
+const PRESENCE_PUBLICATION: &str = include_str!("../src/presence_publication.rs");
+const PRESENCE_PUBLICATION_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/presence_publication.v1.json");
 const PUBLICATION: &str = include_str!("../src/publication.rs");
 const PUBLICATION_ATTEMPT: &str = include_str!("../src/publication_attempt.rs");
 const PUBLICATION_ATTEMPT_CONTRACT: &str =
@@ -73,6 +76,7 @@ const SOURCES: &[&str] = &[
     include_str!("../src/identity_credential.rs"),
     include_str!("../src/identity_envelope.rs"),
     include_str!("../src/presence_desired.rs"),
+    include_str!("../src/presence_publication.rs"),
     include_str!("../src/publication.rs"),
     include_str!("../src/publication_attempt.rs"),
     include_str!("../src/publication_execution.rs"),
@@ -153,6 +157,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "identity_credential",
         "identity_envelope",
         "presence_desired",
+        "presence_publication",
         "publication",
         "publication_attempt",
         "publication_execution",
@@ -208,6 +213,20 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "RhiPresenceDesiredState",
         "validate_rhi_presence_desired_authority",
         "RHI_PRESENCE_DESIRED_CONTRACT_VERSION",
+        "RhiExactPresenceSink",
+        "RhiPreparedPresenceAttempt",
+        "RhiPresenceAttemptCommit",
+        "RhiPresenceAttemptOutcome",
+        "RhiPresenceLease",
+        "RhiPresenceLeaseOwner",
+        "RhiPresenceOutboxState",
+        "RhiPresencePublicationErrorKind",
+        "RhiPresenceTargetState",
+        "RhiSignedPresenceDocument",
+        "RhiSignedPresenceDocuments",
+        "build_rhi_signed_presence_documents",
+        "validate_rhi_signed_presence_documents",
+        "RHI_PRESENCE_PUBLICATION_CONTRACT_VERSION",
         "RhiPublicationErrorKind",
         "RhiPublicationMode",
         "RhiPublicationRetryPolicy",
@@ -320,6 +339,8 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
     assert!(PUBLIC_API.contains("pub struct rhi::RhiPresenceDesiredAuthority"));
     assert!(PUBLIC_API.contains("pub struct rhi::RhiPresenceDesiredState"));
     assert!(PUBLIC_API.contains("pub enum rhi::RhiPresenceDesiredErrorKind"));
+    assert!(PUBLIC_API.contains("pub struct rhi::RhiSignedPresenceDocument"));
+    assert!(PUBLIC_API.contains("pub enum rhi::RhiPresencePublicationErrorKind"));
     assert!(!PUBLIC_API.contains("rhi::adapters::"));
     assert!(!PUBLIC_API.contains("rhi::features::"));
     assert!(!PUBLIC_API.contains("rhi::runtime_adapters::"));
@@ -327,6 +348,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
     assert!(!PUBLIC_API.contains("rhi::publication_attempt::"));
     assert!(!PUBLIC_API.contains("rhi::publication_execution::"));
     assert!(!PUBLIC_API.contains("rhi::publication_submission::"));
+    assert!(!PUBLIC_API.contains("rhi::presence_publication::"));
 }
 
 #[test]
@@ -368,6 +390,91 @@ fn presence_desired_state_is_config_bound_durable_and_effect_free() {
     }
     assert!(!ROOT.contains("pub mod presence_desired"));
     assert!(!PUBLIC_API.contains("rhi::presence_desired::"));
+}
+
+#[test]
+fn presence_publication_is_typed_verified_durable_and_exact_byte_only() {
+    let contract: serde_json::Value =
+        serde_json::from_str(PRESENCE_PUBLICATION_CONTRACT).expect("presence-publication contract");
+    assert_eq!(contract["schema"], "radroots.rhi.presence-publication");
+    assert_eq!(contract["schema_version"], 1);
+    assert_eq!(contract["contract_version"], 1);
+    assert_eq!(contract["step"], 205);
+    assert_eq!(contract["durable_workflow"]["schema_version"], 10);
+    assert_eq!(
+        contract["durable_workflow"]["exact_signed_bytes_committed_before_io"],
+        true
+    );
+    assert_eq!(
+        contract["durable_workflow"]["target_submitted_committed_before_io"],
+        true
+    );
+    assert_eq!(
+        contract["durable_workflow"]["remote_io_inside_sql_transaction"],
+        false
+    );
+    assert_eq!(
+        contract["durable_workflow"]["commit_outcome_unknown"],
+        "caller_retains_sealed_exact_bytes_and_rereads_exact_identity_before_retry"
+    );
+    assert_eq!(
+        contract["construction"]["validation_input"],
+        "sealed_documents_and_public_desired_authority_only"
+    );
+    assert_eq!(
+        contract["resource_bounds"]["maximum_signed_event_bytes"],
+        32_768
+    );
+    assert_eq!(
+        contract["resource_bounds"]["maximum_attempts_per_target"],
+        100
+    );
+    assert_eq!(
+        contract["resource_bounds"]["maximum_authored_unix_seconds"],
+        i64::MAX
+    );
+    for required in [
+        "AuthoredProfile::new(PROFILE_NAME)",
+        "ApplicationHandlerSpec::new(APPLICATION_HANDLER_KINDS.to_vec())",
+        "validate_signed_document(",
+        "pub fn validate_rhi_signed_presence_documents(\n    documents: &RhiSignedPresenceDocuments,\n    authority: &RhiPresenceDesiredAuthority,\n)",
+        "verify_id(&event)",
+        "verify(&event)",
+        "pub trait RhiExactPresenceSink: Send + Sync",
+        "pub async fn commit_signed_presence(\n        &self,\n        documents: &RhiSignedPresenceDocuments,",
+        "pub async fn claim_next_presence(",
+        "pub async fn prepare_next_presence_target(",
+        "pub async fn record_presence_outcome(",
+        "pub async fn recover_one_expired_presence(",
+        "pub async fn execute_next_presence(",
+        "state = 'submitted'",
+        "INSERT INTO presence_attempts",
+        "sink.submit_exact(&prepared).await",
+        "ServiceSqliteTransactionErrorKind::CommitOutcomeUnknown",
+    ] {
+        assert!(
+            PRESENCE_PUBLICATION.contains(required),
+            "presence publication is missing {required}"
+        );
+    }
+    for forbidden in [
+        "SystemTime",
+        "thread_rng",
+        "OsRng",
+        "tokio::spawn",
+        "std::net",
+        "std::fs",
+        "SqliteConnection",
+        "SqlitePool",
+        "EventSink",
+    ] {
+        assert!(
+            !PRESENCE_PUBLICATION.contains(forbidden),
+            "presence publication gained forbidden authority {forbidden}"
+        );
+    }
+    assert!(!ROOT.contains("pub mod presence_publication"));
+    assert!(!PUBLIC_API.contains("rhi::presence_publication::"));
 }
 
 #[test]
@@ -854,7 +961,7 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .lines()
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
-    assert_eq!(public_error_count, 30);
+    assert_eq!(public_error_count, 31);
 }
 
 #[test]
@@ -1290,6 +1397,11 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "## Explicit publication authority and durable schema",
         "## Deterministic durable presence intent",
         "[`presence_desired_state.v1.json`](contracts/services_hardening/presence_desired_state.v1.json)",
+        "## Durable exact-byte presence publication",
+        "[`presence_publication.v1.json`](contracts/services_hardening/presence_publication.v1.json)",
+        "Expired work from a",
+        "superseded desired generation is recorded as `unknown`",
+        "unknown commit result can be reconciled by replaying the same retained bytes",
         "[`publication_outbox.v1.json`](contracts/services_hardening/publication_outbox.v1.json)",
         "## Bounded publication attempt evidence",
         "[`publication_attempt_evidence.v1.json`](contracts/services_hardening/publication_attempt_evidence.v1.json)",
@@ -1359,6 +1471,9 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "Persist each canonical",
         "independently signed Nostr event",
         "Commit a signed finalization only through the sealed attempt repository",
+        "Build service-profile and application-handler presence only through the",
+        "Preserve the\n  caller's sealed exact-byte capability",
+        "Recover an expired stale",
     ] {
         assert!(AGENTS.contains(required), "AGENTS is missing {required}");
     }

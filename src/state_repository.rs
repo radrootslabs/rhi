@@ -8,7 +8,7 @@ use crate::RhiStateHost;
 pub const RHI_STATE_REPOSITORY_CONTRACT_VERSION: u32 = 1;
 
 /// Number of distinct typed repository capabilities in the v1 topology.
-pub const RHI_STATE_REPOSITORY_COUNT: usize = 18;
+pub const RHI_STATE_REPOSITORY_COUNT: usize = 21;
 
 /// Closed mutation class for one governed repository.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -52,6 +52,9 @@ pub enum RhiStateRepositoryKind {
     PublicationTarget,
     PublicationAttempt,
     DesiredPresence,
+    PresenceOutbox,
+    PresenceTarget,
+    PresenceAttempt,
 }
 
 impl RhiStateRepositoryKind {
@@ -245,6 +248,24 @@ const DESCRIPTORS: [RhiStateRepositoryDescriptor; RHI_STATE_REPOSITORY_COUNT] = 
         "presence_desired_state",
         Write::CompareAndSwap,
     ),
+    RhiStateRepositoryDescriptor::new(
+        Kind::PresenceOutbox,
+        "presence_outbox",
+        "presence_outbox",
+        Write::CompareAndSwap,
+    ),
+    RhiStateRepositoryDescriptor::new(
+        Kind::PresenceTarget,
+        "presence_target",
+        "presence_targets",
+        Write::CompareAndSwap,
+    ),
+    RhiStateRepositoryDescriptor::new(
+        Kind::PresenceAttempt,
+        "presence_attempt",
+        "presence_attempts",
+        Write::AppendOnly,
+    ),
 ];
 
 const fn descriptor(kind: RhiStateRepositoryKind) -> RhiStateRepositoryDescriptor {
@@ -397,6 +418,24 @@ impl<'host> RhiStateRepositories<'host> {
     pub const fn desired_presence(&self) -> RhiDesiredPresenceRepository<'host> {
         RhiDesiredPresenceRepository { host: self.host }
     }
+
+    /// Returns typed exact-byte presence-outbox access.
+    #[must_use]
+    pub const fn presence_outbox(&self) -> RhiPresenceOutboxRepository<'host> {
+        RhiPresenceOutboxRepository { host: self.host }
+    }
+
+    /// Returns typed durable presence-target access.
+    #[must_use]
+    pub const fn presence_targets(&self) -> RhiPresenceTargetRepository<'host> {
+        RhiPresenceTargetRepository { host: self.host }
+    }
+
+    /// Returns typed append-only presence-attempt access.
+    #[must_use]
+    pub const fn presence_attempts(&self) -> RhiPresenceAttemptRepository<'host> {
+        RhiPresenceAttemptRepository { host: self.host }
+    }
 }
 
 impl fmt::Debug for RhiStateRepositories<'_> {
@@ -460,6 +499,9 @@ repository_handle!(RhiPublicationOutboxRepository, PublicationOutbox);
 repository_handle!(RhiPublicationTargetRepository, PublicationTarget);
 repository_handle!(RhiPublicationAttemptRepository, PublicationAttempt);
 repository_handle!(RhiDesiredPresenceRepository, DesiredPresence);
+repository_handle!(RhiPresenceOutboxRepository, PresenceOutbox);
+repository_handle!(RhiPresenceTargetRepository, PresenceTarget);
+repository_handle!(RhiPresenceAttemptRepository, PresenceAttempt);
 
 impl<'host> RhiReconciliationJobRepository<'host> {
     pub(crate) const fn host(&self) -> &'host RhiStateHost {
@@ -480,6 +522,12 @@ impl<'host> RhiPublicationOutboxRepository<'host> {
 }
 
 impl<'host> RhiDesiredPresenceRepository<'host> {
+    pub(crate) const fn host(&self) -> &'host RhiStateHost {
+        self.host
+    }
+}
+
+impl<'host> RhiPresenceOutboxRepository<'host> {
     pub(crate) const fn host(&self) -> &'host RhiStateHost {
         self.host
     }

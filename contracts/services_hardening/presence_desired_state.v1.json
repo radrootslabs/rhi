@@ -68,7 +68,7 @@
     "before_relay_io": true,
     "commit_outcome_unknown": "typed_and_not_retried_as_uncommitted_without_reread"
   },
-  "step_205_deferrals": [
+  "separate_publication_authority": [
     "rendered_typed_events",
     "exact_signed_bytes",
     "per_document_target_state",
