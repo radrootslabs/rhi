@@ -18,6 +18,8 @@ const RECONCILIATION_ATTEMPTS: &str = include_str!("../src/reconciliation_attemp
 const RECONCILIATION_COMMIT: &str = include_str!("../src/reconciliation_commit.rs");
 const RECONCILIATION_ATTESTATION: &str = include_str!("../src/reconciliation_attestation.rs");
 const RECONCILIATION_FINALIZATION: &str = include_str!("../src/reconciliation_finalization.rs");
+const RECONCILIATION_FINALIZATION_COMMIT: &str =
+    include_str!("../src/reconciliation_finalization_commit.rs");
 const RECONCILIATION_MANIFEST: &str = include_str!("../src/reconciliation_manifest.rs");
 const RECONCILIATION_REDUCER: &str = include_str!("../src/reconciliation_reducer.rs");
 const RECONCILIATION_JOBS: &str = include_str!("../src/reconciliation_job.rs");
@@ -32,6 +34,8 @@ const RECONCILIATION_ATTESTATION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/reconciliation_attestation.v1.json");
 const RECONCILIATION_FINALIZATION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/reconciliation_finalization.v1.json");
+const RECONCILIATION_FINALIZATION_COMMIT_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/reconciliation_finalization_commit.v1.json");
 const RECONCILIATION_MANIFEST_CONTRACT: &str =
     include_str!("../contracts/services_hardening/reconciliation_manifest.v1.json");
 const RECONCILIATION_REDUCER_CONTRACT: &str =
@@ -59,6 +63,7 @@ const SOURCES: &[&str] = &[
     include_str!("../src/reconciliation_attestation.rs"),
     include_str!("../src/reconciliation_commit.rs"),
     include_str!("../src/reconciliation_finalization.rs"),
+    include_str!("../src/reconciliation_finalization_commit.rs"),
     include_str!("../src/reconciliation_job.rs"),
     include_str!("../src/reconciliation_manifest.rs"),
     include_str!("../src/reconciliation_reducer.rs"),
@@ -134,6 +139,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "reconciliation_attestation",
         "reconciliation_commit",
         "reconciliation_finalization",
+        "reconciliation_finalization_commit",
         "reconciliation_job",
         "reconciliation_manifest",
         "reconciliation_reducer",
@@ -194,6 +200,9 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "RhiReconciliationFinalizationFence",
         "RhiReconciliationFinalizationErrorKind",
         "RHI_RECONCILIATION_FINALIZATION_CONTRACT_VERSION",
+        "RhiReconciliationFinalizationCommitOutcome",
+        "RhiReconciliationFinalizationCommitErrorKind",
+        "RHI_RECONCILIATION_FINALIZATION_COMMIT_CONTRACT_VERSION",
         "RhiReconciliationManifest",
         "RhiReconciliationManifestErrorKind",
         "RhiReconciliationScopePrerequisites",
@@ -411,6 +420,42 @@ fn reconciliation_finalization_is_attempt_bound_nonmutating_and_revalidated() {
 }
 
 #[test]
+fn reconciliation_finalization_commit_is_atomic_idempotent_and_effect_bounded() {
+    let contract: serde_json::Value =
+        serde_json::from_str(RECONCILIATION_FINALIZATION_COMMIT_CONTRACT)
+            .expect("reconciliation-finalization-commit contract");
+    assert_eq!(
+        contract["schema"],
+        "radroots.rhi.reconciliation-finalization-commit"
+    );
+    assert_eq!(contract["contract_version"], 1);
+    assert_eq!(contract["transaction"]["count"], 1);
+    assert_eq!(contract["effects"]["network"], false);
+    for required in [
+        "pub async fn commit_finalization(",
+        "reconcile_existing(transaction, record)",
+        "validate_finalization_identity(transaction, record.lease, record.identity, record.now)",
+        "validate_source_inventory(transaction, record)",
+        "validate_advanced_checkpoints(transaction, record)",
+        "validate_supersession(transaction, record)",
+        "COMPLETE_JOB_SQL",
+    ] {
+        assert!(
+            RECONCILIATION_FINALIZATION_COMMIT.contains(required),
+            "atomic finalization is missing {required}"
+        );
+    }
+    for forbidden in ["tokio::spawn", "SystemTime", "std::fs", "reqwest"] {
+        assert!(
+            !RECONCILIATION_FINALIZATION_COMMIT.contains(forbidden),
+            "atomic finalization gained forbidden authority {forbidden}"
+        );
+    }
+    assert!(!ROOT.contains("pub mod reconciliation_finalization_commit"));
+    assert!(!PUBLIC_API.contains("rhi::reconciliation_finalization_commit::"));
+}
+
+#[test]
 fn reconciliation_manifest_is_canonical_sealed_and_effect_free() {
     let contract: serde_json::Value = serde_json::from_str(RECONCILIATION_MANIFEST_CONTRACT)
         .expect("reconciliation-manifest contract");
@@ -552,7 +597,7 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .lines()
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
-    assert_eq!(public_error_count, 25);
+    assert_eq!(public_error_count, 26);
 }
 
 #[test]
@@ -979,6 +1024,10 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "## Generation-fenced finalization preflight",
         "[`reconciliation_finalization.v1.json`](contracts/services_hardening/reconciliation_finalization.v1.json)",
         "Step 199 must rerun the same validator inside the final",
+        "## Atomic reconciliation finalization commit",
+        "[`reconciliation_finalization_commit.v1.json`](contracts/services_hardening/reconciliation_finalization_commit.v1.json)",
+        "An exact retry returns",
+        "Disabled publication creates no outbox or target row",
         "## Canonical signed reconciliation attestation",
         "[`reconciliation_attestation.v1.json`](contracts/services_hardening/reconciliation_attestation.v1.json)",
         "## Explicit publication authority and durable schema",
@@ -1045,6 +1094,7 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "admit_rhi_trade_mutation_event",
         "Persist each canonical",
         "independently signed Nostr event",
+        "Commit a signed finalization only through the sealed attempt repository",
     ] {
         assert!(AGENTS.contains(required), "AGENTS is missing {required}");
     }

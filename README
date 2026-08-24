@@ -343,6 +343,28 @@ outcomes, retry, recovery, and wave qualification. The exact machine contract
 is
 [`publication_outbox.v1.json`](contracts/services_hardening/publication_outbox.v1.json).
 
+## Atomic reconciliation finalization commit
+
+`RhiReconciliationAttemptRepository::commit_finalization` borrows one sealed,
+independently verified signed attestation and the publication authority derived
+from the same normalized configuration as the open state host. One short
+SQLx-owned transaction first reconciles an exact prior success, then reruns the
+live lease, dirty-generation, policy, committed-attempt, source-inventory,
+checkpoint, supersession, and publication-capacity fences before its first
+write.
+
+The same transaction retains the exact canonical manifest, projection,
+canonical report, and independently verified signed-event bytes; records the
+explicit supersession; creates the immutable outbox and ordered target set only
+when publication is required; and completes the exact reconciliation job.
+Disabled publication creates no outbox or target row. An exact retry returns
+`created = false` even after the lease was consumed or expired, while any
+mismatched durable footprint fails closed. This boundary performs no source or
+relay I/O, network access, filesystem access, task spawn, ambient clock read,
+or ambient entropy read. Publication claims and relay submission remain later
+steps. The exact machine contract is
+[`reconciliation_finalization_commit.v1.json`](contracts/services_hardening/reconciliation_finalization_commit.v1.json).
+
 ## Existing-state runtime foundation
 
 `open_rhi_runtime_foundation` opens only an already initialized database from

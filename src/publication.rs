@@ -6,7 +6,7 @@ use std::error::Error;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::RhiConfigDocumentV1;
+use crate::{RhiConfigDocumentV1, state_metadata::normalized_config_digest};
 
 /// Exact version of the RHI publication-authority contract.
 pub const RHI_PUBLICATION_CONTRACT_VERSION: u32 = 1;
@@ -124,8 +124,9 @@ impl fmt::Debug for RhiPublicationTarget {
 ///
 /// let _forged = RhiPublicationAuthority { mode: todo!() };
 /// ```
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct RhiPublicationAuthority {
+    configuration_sha256: [u8; 32],
     mode: RhiPublicationMode,
     targets: Box<[RhiPublicationTarget]>,
     retry: Option<RhiPublicationRetryPolicy>,
@@ -134,10 +135,23 @@ pub struct RhiPublicationAuthority {
     authority_sha256: [u8; 32],
 }
 
+impl PartialEq for RhiPublicationAuthority {
+    fn eq(&self, other: &Self) -> bool {
+        self.mode == other.mode
+            && self.targets == other.targets
+            && self.retry == other.retry
+            && self.queue_capacity == other.queue_capacity
+            && self.target_set_sha256 == other.target_set_sha256
+            && self.authority_sha256 == other.authority_sha256
+    }
+}
+
+impl Eq for RhiPublicationAuthority {}
+
 impl RhiPublicationAuthority {
     /// Derives the only publication authority from one complete admitted config.
     pub fn from_config(config: &RhiConfigDocumentV1) -> Result<Self, RhiPublicationError> {
-        derive_authority(config.normalized())
+        derive_authority(config.normalized(), config.profile())
     }
 
     /// Returns the explicit configured publication mode.
@@ -174,6 +188,10 @@ impl RhiPublicationAuthority {
     #[must_use]
     pub const fn authority_sha256(&self) -> &[u8; 32] {
         &self.authority_sha256
+    }
+
+    pub(crate) const fn configuration_sha256(&self) -> &[u8; 32] {
+        &self.configuration_sha256
     }
 }
 
@@ -250,7 +268,13 @@ impl fmt::Debug for RhiPublicationError {
 
 impl Error for RhiPublicationError {}
 
-fn derive_authority(document: &Value) -> Result<RhiPublicationAuthority, RhiPublicationError> {
+fn derive_authority(
+    document: &Value,
+    profile: crate::RhiConfigProfile,
+) -> Result<RhiPublicationAuthority, RhiPublicationError> {
+    let configuration_sha256 = *normalized_config_digest(profile, document)
+        .map_err(|_| failure(RhiPublicationErrorKind::InvalidConfiguration))?
+        .as_bytes();
     let mode = match string(document, "/publication/mode")? {
         "required" => RhiPublicationMode::Required,
         "disabled" => RhiPublicationMode::Disabled,
@@ -356,6 +380,7 @@ fn derive_authority(document: &Value) -> Result<RhiPublicationAuthority, RhiPubl
         queue_capacity,
     )?;
     Ok(RhiPublicationAuthority {
+        configuration_sha256,
         mode,
         targets: targets.into_boxed_slice(),
         retry,

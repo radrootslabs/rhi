@@ -405,7 +405,7 @@ fn require_profile_binding(
         .ok_or_else(|| RhiStateMetadataError::new(RhiStateMetadataErrorKind::Profile))
 }
 
-fn normalized_config_digest(
+pub(crate) fn normalized_config_digest(
     profile: RhiConfigProfile,
     normalized: &Value,
 ) -> Result<RhiNormalizedConfigDigest, RhiStateMetadataError> {

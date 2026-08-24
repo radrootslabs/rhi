@@ -167,6 +167,14 @@
   sealed manifest, projection, and evaluation chain. A finalization preflight
   is not commit authority: rerun its exact lease, generation, policy, and
   attempt validator inside the Step 199 atomic transaction before any write.
+- Commit a signed finalization only through the sealed attempt repository.
+  Bind publication authority to the same normalized configuration as the open
+  state host, reconcile exact prior success before testing the consumed lease,
+  and write manifest, projection, report, exact signed bytes, explicit
+  supersession, required outbox/targets, and completed job in one short SQLx
+  transaction. Disabled publication must create no outbox, and no source,
+  relay, network, filesystem, task, clock, or entropy operation may occur in
+  this boundary.
 
 ## 6. Report, attestation, and publication invariants
 

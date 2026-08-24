@@ -10,11 +10,13 @@ use radroots_storage::event::SourceGeneration;
 use rhi::{
     RadrootsHostEnvironment, RadrootsPathResolver, RadrootsPlatform, RhiDecryptedIdentity,
     RhiEncryptedIdentityProvisioningMaterial, RhiEvidenceAttestationSupersession,
-    RhiIdentityEnvelopeBinding, RhiReconciliationAttemptErrorKind, RhiReconciliationAttemptPlan,
+    RhiIdentityEnvelopeBinding, RhiPublicationAuthority, RhiPublicationMode,
+    RhiReconciliationAttemptErrorKind, RhiReconciliationAttemptPlan,
     RhiReconciliationAttemptResults, RhiReconciliationAttestationErrorKind,
-    RhiReconciliationCommitErrorKind, RhiReconciliationFinalizationErrorKind,
-    RhiReconciliationJobErrorKind, RhiReconciliationJobPolicy, RhiReconciliationJobState,
-    RhiReconciliationLease, RhiReconciliationLeaseOwner, RhiReconciliationRetryDelayMilliseconds,
+    RhiReconciliationCommitErrorKind, RhiReconciliationFinalizationCommitErrorKind,
+    RhiReconciliationFinalizationErrorKind, RhiReconciliationJobErrorKind,
+    RhiReconciliationJobPolicy, RhiReconciliationJobState, RhiReconciliationLease,
+    RhiReconciliationLeaseOwner, RhiReconciliationRetryDelayMilliseconds,
     RhiReconciliationScopePrerequisites, RhiReconciliationSourceReplayPlan,
     RhiReconciliationSourceResult, RhiReconciliationUnixMilliseconds, RhiRuntimeContext,
     RhiStateMetadata, RhiTradeMutationAdmissionLimits, RhiTradeMutationAuthoredTimePolicy,
@@ -1913,6 +1915,296 @@ async fn signed_attestation_supersession_is_verified_ordered_and_explicit() {
         next_root,
         stale_root,
     ));
+}
+
+#[tokio::test]
+async fn atomic_finalization_commits_exact_required_inventory_and_reconciles_retry() {
+    let (
+        root,
+        runtime,
+        metadata,
+        configuration,
+        host,
+        lease,
+        signed,
+        publication,
+        manifest,
+        _trade,
+    ) = signed_finalization_fixture("finalization-commit-required", false).await;
+    let repositories = host.repositories();
+    let first = repositories
+        .reconciliation_attempts()
+        .commit_finalization(&signed, &publication, now(1_784_347_208_000))
+        .await
+        .expect("atomic finalization");
+    assert!(first.created());
+    assert_eq!(first.publication_mode(), RhiPublicationMode::Required);
+    assert_eq!(first.target_count(), 2);
+
+    let mut progressed = fixture_connection(&runtime).await;
+    let checkpoint = sqlx::query(
+        r#"UPDATE relay_checkpoints
+SET cursor_created_at_unix_s = cursor_created_at_unix_s + 1,
+    cursor_event_id = ?, revision = revision + 1,
+    completed_at_unix_s = completed_at_unix_s + 1"#,
+    )
+    .bind([0xfe; 32].as_slice())
+    .execute(&mut progressed)
+    .await
+    .expect("later checkpoint progression");
+    assert_eq!(checkpoint.rows_affected(), 1);
+    progressed.close().await.expect("progression close");
+
+    let retry = repositories
+        .reconciliation_attempts()
+        .commit_finalization(&signed, &publication, lease.lease_expires())
+        .await
+        .expect("exact retry after consumed lease");
+    assert!(!retry.created());
+    assert_eq!(retry.publication_mode(), RhiPublicationMode::Required);
+    assert_eq!(retry.target_count(), 2);
+
+    let mut connection = fixture_connection(&runtime).await;
+    let counts: (i64, i64, i64, i64, i64, i64, i64) = sqlx::query_as(
+        r#"SELECT
+            (SELECT COUNT(*) FROM evidence_manifests),
+            (SELECT COUNT(*) FROM trade_projections),
+            (SELECT COUNT(*) FROM attestation_reports),
+            (SELECT COUNT(*) FROM signed_attestation_events),
+            (SELECT COUNT(*) FROM publication_outbox),
+            (SELECT COUNT(*) FROM publication_targets),
+            (SELECT COUNT(*) FROM reconciliation_jobs WHERE state = 'completed')"#,
+    )
+    .fetch_one(&mut connection)
+    .await
+    .expect("final inventory counts");
+    assert_eq!(counts, (1, 1, 1, 1, 1, 2, 1));
+    let exact: (Vec<u8>, Vec<u8>, Vec<u8>, String, i64) = sqlx::query_as(
+        r#"SELECT manifest.canonical_manifest, report.canonical_report,
+            event.canonical_event_json, outbox.state, outbox.target_count
+FROM evidence_manifests AS manifest
+JOIN attestation_reports AS report
+    ON report.manifest_sha256 = manifest.manifest_sha256
+JOIN signed_attestation_events AS event
+    ON event.statement_sha256 = report.statement_sha256
+JOIN publication_outbox AS outbox ON outbox.event_id = event.event_id"#,
+    )
+    .fetch_one(&mut connection)
+    .await
+    .expect("exact final inventory");
+    assert_eq!(exact.0.as_slice(), manifest.as_ref());
+    assert_eq!(exact.1.as_slice(), signed.canonical_report_bytes());
+    assert_eq!(exact.2.as_slice(), signed.signed_event_bytes());
+    assert_eq!(exact.3, "pending");
+    assert_eq!(exact.4, 2);
+    connection.close().await.expect("fixture close");
+
+    host.close().await.expect("host close");
+    drop((
+        signed,
+        publication,
+        manifest,
+        configuration,
+        metadata,
+        runtime,
+        root,
+    ));
+}
+
+#[tokio::test]
+async fn atomic_finalization_disabled_mode_creates_no_publication_rows() {
+    let (
+        root,
+        runtime,
+        metadata,
+        configuration,
+        host,
+        _lease,
+        signed,
+        publication,
+        manifest,
+        _trade,
+    ) = signed_finalization_fixture("finalization-commit-disabled", true).await;
+    let outcome = host
+        .repositories()
+        .reconciliation_attempts()
+        .commit_finalization(&signed, &publication, now(1_784_347_208_000))
+        .await
+        .expect("disabled finalization");
+    assert!(outcome.created());
+    assert_eq!(outcome.publication_mode(), RhiPublicationMode::Disabled);
+    assert_eq!(outcome.target_count(), 0);
+    let mut connection = fixture_connection(&runtime).await;
+    let counts: (i64, i64, i64) = sqlx::query_as(
+        r#"SELECT
+            (SELECT COUNT(*) FROM signed_attestation_events),
+            (SELECT COUNT(*) FROM publication_outbox),
+            (SELECT COUNT(*) FROM publication_targets)"#,
+    )
+    .fetch_one(&mut connection)
+    .await
+    .expect("disabled counts");
+    assert_eq!(counts, (1, 0, 0));
+    connection.close().await.expect("fixture close");
+    host.close().await.expect("host close");
+    drop((
+        signed,
+        publication,
+        manifest,
+        configuration,
+        metadata,
+        runtime,
+        root,
+    ));
+}
+
+#[tokio::test]
+async fn atomic_finalization_rejects_configuration_and_generation_drift_without_partial_rows() {
+    let (
+        root,
+        runtime,
+        metadata,
+        configuration,
+        host,
+        _lease,
+        signed,
+        publication,
+        manifest,
+        trade,
+    ) = signed_finalization_fixture("finalization-commit-drift", false).await;
+    let changed = attestation_configuration(
+        &runtime,
+        &Keys::new(SecretKey::from_slice(&attestation_secret()).expect("identity secret"))
+            .public_key()
+            .to_hex(),
+    )
+    .replace("samples = 512", "samples = 511");
+    let changed = parse_rhi_config_v1(changed.as_bytes(), rhi::RhiConfigProfile::RepoLocal)
+        .expect("changed configuration");
+    let mismatched = RhiPublicationAuthority::from_config(&changed).expect("changed authority");
+    assert_eq!(mismatched, publication);
+    let error = host
+        .repositories()
+        .reconciliation_attempts()
+        .commit_finalization(&signed, &mismatched, now(1_784_347_208_000))
+        .await
+        .expect_err("configuration mismatch");
+    assert_eq!(
+        error.kind(),
+        RhiReconciliationFinalizationCommitErrorKind::InvalidInput
+    );
+
+    write_dirty(
+        &runtime,
+        trade,
+        3,
+        *metadata.evidence_policy_digest().as_bytes(),
+        1_784_347_208,
+    )
+    .await;
+    let error = host
+        .repositories()
+        .reconciliation_attempts()
+        .commit_finalization(&signed, &publication, now(1_784_347_208_001))
+        .await
+        .expect_err("generation drift");
+    assert_eq!(
+        error.kind(),
+        RhiReconciliationFinalizationCommitErrorKind::GenerationConflict
+    );
+    let mut connection = fixture_connection(&runtime).await;
+    let counts: (i64, i64, i64, i64, i64) = sqlx::query_as(
+        r#"SELECT
+            (SELECT COUNT(*) FROM evidence_manifests),
+            (SELECT COUNT(*) FROM trade_projections),
+            (SELECT COUNT(*) FROM attestation_reports),
+            (SELECT COUNT(*) FROM signed_attestation_events),
+            (SELECT COUNT(*) FROM publication_outbox)"#,
+    )
+    .fetch_one(&mut connection)
+    .await
+    .expect("rolled-back inventory");
+    assert_eq!(counts, (0, 0, 0, 0, 0));
+    connection.close().await.expect("fixture close");
+    host.close().await.expect("host close");
+    drop((
+        signed,
+        publication,
+        manifest,
+        configuration,
+        metadata,
+        runtime,
+        root,
+    ));
+}
+
+async fn signed_finalization_fixture(
+    instance: &str,
+    publication_disabled: bool,
+) -> (
+    tempfile::TempDir,
+    RhiRuntimeContext,
+    RhiStateMetadata,
+    rhi::RhiConfigDocumentV1,
+    rhi::RhiStateHost,
+    RhiReconciliationLease,
+    rhi::RhiSignedEvidenceAttestation,
+    RhiPublicationAuthority,
+    Box<[u8]>,
+    TradeId,
+) {
+    let expected_public_key =
+        Keys::new(SecretKey::from_slice(&attestation_secret()).expect("identity secret"))
+            .public_key()
+            .to_hex();
+    let (root, runtime, metadata, configuration, host, lease, evaluation) =
+        finalization_fixture_with_source(instance, |runtime| {
+            let source = attestation_configuration(runtime, &expected_public_key);
+            if publication_disabled {
+                let publication = source.find("[publication]").expect("publication section");
+                let presence = source.find("[presence]").expect("presence section");
+                format!(
+                    "{}[publication]\nmode = \"disabled\"\n\n{}",
+                    &source[..publication],
+                    &source[presence..]
+                )
+            } else {
+                source
+            }
+        })
+        .await;
+    let manifest = evaluation.projection().manifest().canonical_bytes().into();
+    let trade = *evaluation.projection().manifest().trade_id();
+    let identity = provision_attestation_identity(&runtime, &configuration, &metadata);
+    let fence = host
+        .repositories()
+        .reconciliation_attempts()
+        .prepare_finalization(lease, evaluation, now(1_784_347_206_000))
+        .await
+        .expect("finalization fence");
+    let signed = build_rhi_signed_evidence_attestation(
+        fence,
+        &identity,
+        UnixTimeSeconds::new(1_784_347_207),
+        &FixedAttestationEntropy(0xb1),
+        None,
+    )
+    .expect("signed attestation");
+    let publication =
+        RhiPublicationAuthority::from_config(&configuration).expect("publication authority");
+    drop(identity);
+    (
+        root,
+        runtime,
+        metadata,
+        configuration,
+        host,
+        lease,
+        signed,
+        publication,
+        manifest,
+        trade,
+    )
 }
 
 async fn fixture_connection(runtime: &RhiRuntimeContext) -> SqliteConnection {

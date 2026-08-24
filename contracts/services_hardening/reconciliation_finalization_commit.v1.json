@@ -1,0 +1,89 @@
+{
+  "schema": "radroots.rhi.reconciliation-finalization-commit",
+  "schema_version": 1,
+  "contract_version": 1,
+  "authority": "sealed_signed_attestation_plus_exact_config_derived_publication_authority",
+  "input": {
+    "attestation": "borrowed_sealed_step_196_signed_attestation",
+    "publication": "same_normalized_configuration_as_open_state_host",
+    "time": "caller_injected_integer_utc_milliseconds",
+    "network": false
+  },
+  "transaction": {
+    "count": 1,
+    "boundary": "one_short_service_sqlite_transaction",
+    "reconcile_exact_prior_success_before_consumed_lease_validation": true,
+    "fences_before_first_write": [
+      "exact_live_lease",
+      "exact_dirty_generation",
+      "exact_evidence_policy_digest",
+      "exact_committed_attempt",
+      "exact_manifest_source_inventory",
+      "every_advanced_checkpoint",
+      "exact_superseded_statement_and_event_pair",
+      "configured_publication_queue_capacity"
+    ],
+    "atomic_writes": [
+      "canonical_manifest",
+      "projection",
+      "canonical_report",
+      "exact_verified_signed_event_bytes",
+      "explicit_supersession",
+      "required_publication_outbox",
+      "immutable_ordered_publication_targets",
+      "completed_reconciliation_job"
+    ]
+  },
+  "publication": {
+    "required": "one_pending_outbox_plus_exact_configured_target_inventory",
+    "disabled": "no_outbox_and_no_target_rows",
+    "outbox_identity": "sha256_domain_plus_event_id_plus_authority_digest_plus_target_set_digest",
+    "relay_io": false,
+    "claim_or_submission": false
+  },
+  "idempotency": {
+    "identity": "exact_attestation_and_publication_immutable_footprint",
+    "exact_retry": "created_false_even_after_lease_consumption_or_expiry",
+    "later_checkpoint_or_outbox_progress": "does_not_change_immutable_success_reconciliation",
+    "mismatch": "conflict",
+    "commit_acknowledgement_loss": "commit_outcome_unknown_then_exact_retry"
+  },
+  "result": {
+    "created": "true_for_first_commit_false_for_exact_reconciliation",
+    "publication_mode": [
+      "required",
+      "disabled"
+    ],
+    "target_count": "exact_u8_or_zero_when_disabled",
+    "debug": "mode_and_counts_only",
+    "errors": "crate_owned_source_free_redacted"
+  },
+  "effects": {
+    "sqlite_read": true,
+    "sqlite_write": true,
+    "filesystem": false,
+    "source_or_relay": false,
+    "network": false,
+    "task_spawn": false,
+    "ambient_clock": false,
+    "ambient_entropy": false
+  },
+  "forbidden": [
+    "manifest_or_projection_recomputation",
+    "report_or_signed_event_reserialization",
+    "stale_lease_or_generation_commit",
+    "partial_finalization_inventory",
+    "publication_from_a_different_configuration",
+    "implicit_publication_when_disabled",
+    "relay_io_inside_transaction",
+    "checkpoint_advance",
+    "raw_sqlx_authority_escape"
+  ],
+  "deferred": [
+    "publication_claims",
+    "relay_submission",
+    "publication_result_recording",
+    "retry_and_terminal_outbox_state",
+    "integration_wave_qualification"
+  ]
+}

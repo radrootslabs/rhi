@@ -180,6 +180,18 @@ pub rhi::RhiReconciliationCommitErrorKind::LeaseLost
 pub rhi::RhiReconciliationCommitErrorKind::Storage
 impl rhi::RhiReconciliationCommitErrorKind
 pub const fn rhi::RhiReconciliationCommitErrorKind::code(self) -> &'static str
+pub enum rhi::RhiReconciliationFinalizationCommitErrorKind
+pub rhi::RhiReconciliationFinalizationCommitErrorKind::AttemptUnavailable
+pub rhi::RhiReconciliationFinalizationCommitErrorKind::CommitOutcomeUnknown
+pub rhi::RhiReconciliationFinalizationCommitErrorKind::Conflict
+pub rhi::RhiReconciliationFinalizationCommitErrorKind::GenerationConflict
+pub rhi::RhiReconciliationFinalizationCommitErrorKind::InvalidInput
+pub rhi::RhiReconciliationFinalizationCommitErrorKind::InvalidMode
+pub rhi::RhiReconciliationFinalizationCommitErrorKind::LeaseLost
+pub rhi::RhiReconciliationFinalizationCommitErrorKind::PublicationQueueFull
+pub rhi::RhiReconciliationFinalizationCommitErrorKind::Storage
+impl rhi::RhiReconciliationFinalizationCommitErrorKind
+pub const fn rhi::RhiReconciliationFinalizationCommitErrorKind::code(self) -> &'static str
 pub enum rhi::RhiReconciliationFinalizationErrorKind
 pub rhi::RhiReconciliationFinalizationErrorKind::AttemptUnavailable
 pub rhi::RhiReconciliationFinalizationErrorKind::CommitOutcomeUnknown
@@ -658,6 +670,9 @@ pub const fn rhi::RhiPublicationAuthority::queue_capacity(&self) -> u32
 pub const fn rhi::RhiPublicationAuthority::retry_policy(&self) -> core::option::Option<rhi::RhiPublicationRetryPolicy>
 pub const fn rhi::RhiPublicationAuthority::target_set_sha256(&self) -> &[u8; 32]
 pub fn rhi::RhiPublicationAuthority::targets(&self) -> &[rhi::RhiPublicationTarget]
+impl core::cmp::Eq for rhi::RhiPublicationAuthority
+impl core::cmp::PartialEq for rhi::RhiPublicationAuthority
+pub fn rhi::RhiPublicationAuthority::eq(&self, &Self) -> bool
 impl core::fmt::Debug for rhi::RhiPublicationAuthority
 pub fn rhi::RhiPublicationAuthority::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiPublicationError
@@ -722,6 +737,8 @@ impl core::fmt::Debug for rhi::RhiReconciliationAttemptPlan
 pub fn rhi::RhiReconciliationAttemptPlan::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiReconciliationAttemptRepository<'host>
 impl rhi::RhiReconciliationAttemptRepository<'_>
+pub async fn rhi::RhiReconciliationAttemptRepository<'_>::commit_finalization(&self, &rhi::RhiSignedEvidenceAttestation, &rhi::RhiPublicationAuthority, rhi::RhiReconciliationUnixMilliseconds) -> core::result::Result<rhi::RhiReconciliationFinalizationCommitOutcome, rhi::RhiReconciliationFinalizationCommitError>
+impl rhi::RhiReconciliationAttemptRepository<'_>
 pub async fn rhi::RhiReconciliationAttemptRepository<'_>::commit_source_replays<I>(&self, rhi::RhiReconciliationLease, rhi::RhiReconciliationAttemptPlan, I) -> core::result::Result<rhi::RhiReconciliationSourceCommitOutcome, rhi::RhiReconciliationCommitError> where I: core::iter::traits::collect::IntoIterator<Item = rhi::RhiReconciliationSourceReplay>
 impl rhi::RhiReconciliationAttemptRepository<'_>
 pub const fn rhi::RhiReconciliationAttemptRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
@@ -765,6 +782,22 @@ pub const fn rhi::RhiReconciliationEvaluation::projection(&self) -> &rhi::RhiRec
 pub const fn rhi::RhiReconciliationEvaluation::reason_codes(&self) -> &[rhi::RhiReconciliationReasonCode]
 impl core::fmt::Debug for rhi::RhiReconciliationEvaluation
 pub fn rhi::RhiReconciliationEvaluation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationFinalizationCommitError
+impl rhi::RhiReconciliationFinalizationCommitError
+pub const fn rhi::RhiReconciliationFinalizationCommitError::code(self) -> &'static str
+pub const fn rhi::RhiReconciliationFinalizationCommitError::kind(self) -> rhi::RhiReconciliationFinalizationCommitErrorKind
+impl core::error::Error for rhi::RhiReconciliationFinalizationCommitError
+impl core::fmt::Debug for rhi::RhiReconciliationFinalizationCommitError
+pub fn rhi::RhiReconciliationFinalizationCommitError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiReconciliationFinalizationCommitError
+pub fn rhi::RhiReconciliationFinalizationCommitError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationFinalizationCommitOutcome
+impl rhi::RhiReconciliationFinalizationCommitOutcome
+pub const fn rhi::RhiReconciliationFinalizationCommitOutcome::created(self) -> bool
+pub const fn rhi::RhiReconciliationFinalizationCommitOutcome::publication_mode(self) -> rhi::RhiPublicationMode
+pub const fn rhi::RhiReconciliationFinalizationCommitOutcome::target_count(self) -> u8
+impl core::fmt::Debug for rhi::RhiReconciliationFinalizationCommitOutcome
+pub fn rhi::RhiReconciliationFinalizationCommitOutcome::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiReconciliationFinalizationError
 impl rhi::RhiReconciliationFinalizationError
 pub const fn rhi::RhiReconciliationFinalizationError::code(self) -> &'static str
@@ -1386,6 +1419,7 @@ pub const rhi::RHI_RECONCILIATION_ATTEMPT_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_ATTEMPT_MAX_SOURCES: usize
 pub const rhi::RHI_RECONCILIATION_ATTESTATION_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_COMMIT_CONTRACT_VERSION: u32
+pub const rhi::RHI_RECONCILIATION_FINALIZATION_COMMIT_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_FINALIZATION_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_JOB_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_JOB_MAX_ACTIVE: u32

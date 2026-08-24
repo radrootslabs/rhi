@@ -462,6 +462,10 @@ pub struct RhiReconciliationJob {
 }
 
 impl RhiReconciliationJob {
+    pub(crate) const fn policy(self) -> RhiReconciliationJobPolicy {
+        self.policy
+    }
+
     pub(crate) const fn attempt_policy_matches(self, expected: RhiReconciliationJobPolicy) -> bool {
         self.policy.lease_duration_ms == expected.lease_duration_ms
             && self.policy.lease_renewal_ms == expected.lease_renewal_ms
@@ -584,6 +588,10 @@ impl RhiReconciliationLease {
     #[must_use]
     pub const fn lease_expires(self) -> RhiReconciliationUnixMilliseconds {
         self.lease_expires
+    }
+
+    pub(crate) const fn owner_bytes(self) -> [u8; LEASE_OWNER_BYTES] {
+        self.owner.0
     }
 
     #[must_use]

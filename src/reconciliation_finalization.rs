@@ -160,12 +160,12 @@ impl fmt::Debug for RhiReconciliationFinalizationFence {
 }
 
 #[derive(Clone, Copy)]
-struct FinalizationIdentity {
-    attempt_id: RhiReconciliationAttemptId,
-    job_id: RhiReconciliationJobId,
-    trade_id: TradeId,
-    generation: u64,
-    policy_digest: RhiEvidencePolicyDigest,
+pub(crate) struct FinalizationIdentity {
+    pub(crate) attempt_id: RhiReconciliationAttemptId,
+    pub(crate) job_id: RhiReconciliationJobId,
+    pub(crate) trade_id: TradeId,
+    pub(crate) generation: u64,
+    pub(crate) policy_digest: RhiEvidencePolicyDigest,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -206,6 +206,12 @@ impl RhiReconciliationAttemptRepository<'_> {
             })
             .await
             .map_err(map_transaction_error)
+    }
+}
+
+impl RhiReconciliationFinalizationFence {
+    pub(crate) const fn validation_parts(&self) -> (RhiReconciliationLease, FinalizationIdentity) {
+        (self.lease, self.identity)
     }
 }
 
@@ -254,7 +260,7 @@ fn finalization_identity(
     })
 }
 
-async fn validate_finalization_identity(
+pub(crate) async fn validate_finalization_identity(
     transaction: &mut ServiceSqliteTransaction<'_>,
     lease: RhiReconciliationLease,
     identity: FinalizationIdentity,

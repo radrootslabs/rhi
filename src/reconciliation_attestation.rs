@@ -252,6 +252,28 @@ impl RhiSignedEvidenceAttestation {
     pub const fn has_supersession(&self) -> bool {
         self.report.supersession().is_some()
     }
+
+    pub(crate) const fn fence(&self) -> &RhiReconciliationFinalizationFence {
+        &self.fence
+    }
+
+    pub(crate) const fn issuer_public_key_bytes(&self) -> [u8; 32] {
+        self.report.issuer_public_key().into_bytes()
+    }
+
+    pub(crate) const fn claim_mutation_id_bytes(&self) -> [u8; 32] {
+        *self.report.claim_mutation_id().as_bytes()
+    }
+
+    pub(crate) const fn report_observed_at_unix_seconds(&self) -> u64 {
+        self.report.observed_at_unix_s()
+    }
+
+    pub(crate) fn supersession_bytes(&self) -> Option<([u8; 32], [u8; 32])> {
+        self.report
+            .supersession()
+            .map(|value| (*value.report_id().as_bytes(), *value.event_id().as_bytes()))
+    }
 }
 
 impl fmt::Debug for RhiSignedEvidenceAttestation {
