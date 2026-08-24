@@ -1,0 +1,81 @@
+{
+  "schema": "radroots.rhi.reconciliation-reducer",
+  "schema_version": 1,
+  "contract_version": 1,
+  "input": {
+    "authority": "sealed_confirmed_reconciliation_manifest_only",
+    "consumption": "owned_manifest_retained_inside_projection",
+    "mutation_material": "private_canonical_content_bound_to_manifest_observations",
+    "mutation_order": "mutation_id_ascending",
+    "representative_event": "smallest_event_id_for_mutation",
+    "maximum_mutations": 65536,
+    "maximum_canonical_content_bytes": 134217728,
+    "private_terms": "none_without_explicit_manifest_evidence",
+    "prior_attestations": "none_without_explicit_manifest_evidence",
+    "observed_time": "exact_manifest_observed_at_unix_seconds",
+    "evidence_state": {
+      "missing": "missing",
+      "partial": "query_partial",
+      "scope_satisfied": "complete",
+      "unsupported": "unsupported_version"
+    }
+  },
+  "shared_reducer": {
+    "contract_id": "radroots.trade.reducer.v1",
+    "contract_version": 1,
+    "canonical_projection": "radroots_trade_projection_v1",
+    "projection_digest": "shared_domain_separated_lowercase_hex_sha256"
+  },
+  "projection_digest": {
+    "algorithm": "sha256",
+    "domain_utf8_then_nul": "radroots.rhi.reconciliation_projection.v1",
+    "ordered_fields": [
+      "rhi_reducer_contract_version_u32_be",
+      "shared_reducer_contract_id_length_u64_be",
+      "shared_reducer_contract_id_utf8",
+      "shared_reducer_contract_version_u16_be",
+      "evidence_manifest_digest",
+      "evidence_policy_digest",
+      "shared_projection_digest"
+    ]
+  },
+  "result": {
+    "sealed": true,
+    "caller_forgeable": false,
+    "retains_manifest": true,
+    "shared_projection_public_access": false,
+    "shared_projection_retained_for_later_steps": true,
+    "shared_projection_digest_available": true,
+    "rhi_projection_digest_available": true,
+    "debug": "counts_only_redacted",
+    "errors": "crate_owned_source_free_redacted"
+  },
+  "effects": {
+    "sqlite": false,
+    "filesystem": false,
+    "source_or_relay": false,
+    "network": false,
+    "task_spawn": false,
+    "ambient_clock": false,
+    "ambient_entropy": false
+  },
+  "forbidden": [
+    "raw_manifest_constructor",
+    "caller_supplied_mutation_material",
+    "database_lookup",
+    "source_or_relay_lookup",
+    "arrival_order_selected_truth",
+    "unbound_projection_digest",
+    "final_coverage_or_outcome_authority",
+    "projection_persistence",
+    "report_or_attestation_construction"
+  ],
+  "deferred": [
+    "final_coverage_and_outcome",
+    "generation_fenced_commit",
+    "report_and_attestation",
+    "manifest_and_projection_persistence",
+    "publication",
+    "job_finalization"
+  ]
+}

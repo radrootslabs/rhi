@@ -183,6 +183,11 @@ pub rhi::RhiReconciliationManifestErrorKind::InvalidCommittedInventory
 pub rhi::RhiReconciliationManifestErrorKind::InvalidObservationTime
 impl rhi::RhiReconciliationManifestErrorKind
 pub const fn rhi::RhiReconciliationManifestErrorKind::code(self) -> &'static str
+pub enum rhi::RhiReconciliationReducerErrorKind
+pub rhi::RhiReconciliationReducerErrorKind::InvalidManifest
+pub rhi::RhiReconciliationReducerErrorKind::ProjectionUnavailable
+impl rhi::RhiReconciliationReducerErrorKind
+pub const fn rhi::RhiReconciliationReducerErrorKind::code(self) -> &'static str
 pub enum rhi::RhiReconciliationReplayErrorKind
 pub rhi::RhiReconciliationReplayErrorKind::InvalidConfiguration
 pub rhi::RhiReconciliationReplayErrorKind::InvalidInput
@@ -742,6 +747,28 @@ impl core::fmt::Debug for rhi::RhiReconciliationManifestError
 pub fn rhi::RhiReconciliationManifestError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for rhi::RhiReconciliationManifestError
 pub fn rhi::RhiReconciliationManifestError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationProjection
+impl rhi::RhiReconciliationProjection
+pub const fn rhi::RhiReconciliationProjection::contract_version(&self) -> u32
+pub const fn rhi::RhiReconciliationProjection::digest(&self) -> [u8; 32]
+pub fn rhi::RhiReconciliationProjection::issue_count(&self) -> usize
+pub const fn rhi::RhiReconciliationProjection::manifest(&self) -> &rhi::RhiReconciliationManifest
+pub const fn rhi::RhiReconciliationProjection::root_mutation_id(&self) -> core::option::Option<&radroots_event::id::MutationId>
+pub const fn rhi::RhiReconciliationProjection::shared_projection_digest(&self) -> [u8; 32]
+pub const fn rhi::RhiReconciliationProjection::shared_reducer_contract_id(&self) -> &'static str
+pub const fn rhi::RhiReconciliationProjection::shared_reducer_contract_version(&self) -> u16
+pub const fn rhi::RhiReconciliationProjection::trade_id(&self) -> &radroots_event::id::TradeId
+impl core::fmt::Debug for rhi::RhiReconciliationProjection
+pub fn rhi::RhiReconciliationProjection::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationReducerError
+impl rhi::RhiReconciliationReducerError
+pub const fn rhi::RhiReconciliationReducerError::code(self) -> &'static str
+pub const fn rhi::RhiReconciliationReducerError::kind(self) -> rhi::RhiReconciliationReducerErrorKind
+impl core::error::Error for rhi::RhiReconciliationReducerError
+impl core::fmt::Debug for rhi::RhiReconciliationReducerError
+pub fn rhi::RhiReconciliationReducerError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiReconciliationReducerError
+pub fn rhi::RhiReconciliationReducerError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiReconciliationReplayError
 impl rhi::RhiReconciliationReplayError
 pub const fn rhi::RhiReconciliationReplayError::code(self) -> &'static str
@@ -1225,6 +1252,7 @@ pub const rhi::RHI_RECONCILIATION_COMMIT_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_JOB_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_JOB_MAX_ACTIVE: u32
 pub const rhi::RHI_RECONCILIATION_MANIFEST_CONTRACT_VERSION: u32
+pub const rhi::RHI_RECONCILIATION_REDUCER_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_REPLAY_CONTRACT_VERSION: u32
 pub const rhi::RHI_RUNTIME_ADAPTER_CONTRACT_VERSION: u32
 pub const rhi::RHI_RUNTIME_FOUNDATION_CONTRACT_VERSION: u32
@@ -1288,6 +1316,7 @@ pub async fn rhi::open_rhi_state_read_write_from_config(&rhi::RhiRuntimeContext,
 pub fn rhi::parse_rhi_cli_v1_from<I, T>(I) -> core::result::Result<rhi::RhiCliInvocationV1, rhi::RhiCliV1Error> where I: core::iter::traits::collect::IntoIterator<Item = T>, T: core::convert::Into<std::ffi::os_str::OsString> + core::clone::Clone
 pub fn rhi::parse_rhi_config_v1(&[u8], rhi::RhiConfigProfile) -> core::result::Result<rhi::RhiConfigDocumentV1, rhi::RhiConfigV1Error>
 pub fn rhi::provision_rhi_encrypted_identity(&rhi::RhiIdentityEnvelopeBinding, &rhi::RhiWrappingCredential, rhi::RhiEncryptedIdentityProvisioningMaterial) -> core::result::Result<rhi::RhiDecryptedIdentity, rhi::RhiEncryptedIdentityEnvelopeError>
+pub fn rhi::reduce_rhi_reconciliation_manifest(rhi::RhiReconciliationManifest) -> core::result::Result<rhi::RhiReconciliationProjection, rhi::RhiReconciliationReducerError>
 pub fn rhi::resolve_rhi_runtime_context(&radroots_runtime_paths::roots::RadrootsPathResolver, &rhi::RhiCliInvocationV1) -> core::result::Result<rhi::RhiRuntimeContext, rhi::RhiRuntimeContextError>
 pub fn rhi::resolve_rhi_wrapping_credential(&rhi::RhiRuntimeContext, &rhi::RhiIdentityEnvelopeBinding) -> core::result::Result<rhi::RhiWrappingCredential, rhi::RhiCredentialResolutionError>
 pub fn rhi::rhi_migration_catalog() -> core::result::Result<radroots_service_sqlite::migration::MigrationCatalog, rhi::RhiStateCatalogError>

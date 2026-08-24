@@ -66,6 +66,24 @@ fn machine_contract_freezes_the_complete_step_191_boundary() {
     assert_eq!(contract["effects"]["sqlite"], false);
     assert_eq!(contract["effects"]["ambient_clock"], false);
     assert_eq!(contract["effects"]["ambient_entropy"], false);
+    assert_eq!(
+        contract["private_reducer_material"]["construction"],
+        "deduplicated_from_confirmed_step_190_canonical_mutation_content"
+    );
+    assert_eq!(
+        contract["private_reducer_material"]["canonical_manifest_wire_changed"],
+        false
+    );
+    assert_eq!(
+        contract["private_reducer_material"]["maximum_canonical_content_bytes"],
+        134_217_728
+    );
+    assert!(
+        !contract["deferred"]
+            .as_array()
+            .expect("deferred inventory")
+            .contains(&json!("lineage_reducer"))
+    );
 }
 
 #[test]

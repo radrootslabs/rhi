@@ -74,6 +74,17 @@
     "debug": "counts_only_redacted",
     "errors": "crate_owned_source_free_redacted"
   },
+  "private_reducer_material": {
+    "construction": "deduplicated_from_confirmed_step_190_canonical_mutation_content",
+    "ordering": "mutation_id_ascending",
+    "representative_event": "smallest_event_id_for_mutation",
+    "maximum_mutations": 65536,
+    "maximum_canonical_content_bytes": 134217728,
+    "storage": "immutable_reference_counted_bytes",
+    "canonical_manifest_wire_changed": false,
+    "public_raw_access": false,
+    "reducer_owner": "reconciliation_reducer.v1.json"
+  },
   "effects": {
     "sqlite": false,
     "filesystem": false,
@@ -94,7 +105,6 @@
   ],
   "deferred": [
     "wave_qualification",
-    "lineage_reducer",
     "coverage_and_outcome_projection",
     "manifest_persistence",
     "attestation",

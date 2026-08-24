@@ -1,7 +1,7 @@
 //! Immutable manifest materialization from one confirmed reconciliation commit.
 
 use core::{fmt, num::NonZeroU64};
-use std::error::Error;
+use std::{collections::BTreeMap, error::Error, sync::Arc};
 
 use radroots_event::id::{EventId, MutationId, TradeId};
 use radroots_service_host::UnixTimeSeconds;
@@ -30,6 +30,8 @@ const SOURCE_RESULT_DIGEST_DOMAIN: &[u8] =
     b"radroots.rhi.reconciliation_manifest_source_result.v1\0";
 const PROVENANCE_DIGEST_DOMAIN: &[u8] = b"radroots.rhi.evidence_provenance.v1\0";
 const SOURCE_SELECTOR: &[u8] = b"trade_mutation_lineage_v1";
+pub(crate) const RHI_REDUCER_MAXIMUM_MUTATIONS: usize = 65_536;
+pub(crate) const RHI_REDUCER_MAXIMUM_MUTATION_MATERIAL_BYTES: usize = 134_217_728;
 
 /// Exact non-source prerequisite state bound into one manifest.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -111,6 +113,7 @@ impl Error for RhiReconciliationManifestError {}
 /// ```
 pub struct RhiReconciliationManifest {
     inner: RadrootsTradeEvidenceManifestV1,
+    reducer_mutations: Box<[RhiReducerMutationMaterial]>,
 }
 
 impl RhiReconciliationManifest {
@@ -173,6 +176,14 @@ impl RhiReconciliationManifest {
     pub fn observation_count(&self) -> usize {
         self.inner.observations().len()
     }
+
+    pub(crate) const fn inner(&self) -> &RadrootsTradeEvidenceManifestV1 {
+        &self.inner
+    }
+
+    pub(crate) fn reducer_mutations(&self) -> &[RhiReducerMutationMaterial] {
+        &self.reducer_mutations
+    }
 }
 
 impl fmt::Debug for RhiReconciliationManifest {
@@ -207,6 +218,13 @@ pub(crate) struct RhiCommittedManifestMaterial {
     latest_finished_unix_ms: u64,
     sources: Box<[RadrootsTradeEvidenceManifestSourceResultV1]>,
     observations: Box<[RadrootsTradeEvidenceManifestObservationV1]>,
+    reducer_mutations: Box<[RhiReducerMutationMaterial]>,
+}
+
+pub(crate) struct RhiReducerMutationMaterial {
+    pub(crate) mutation_id: MutationId,
+    pub(crate) event_id: EventId,
+    pub(crate) canonical_content: Arc<[u8]>,
 }
 
 pub(crate) fn committed_manifest_material(
@@ -223,6 +241,7 @@ pub(crate) fn committed_manifest_material(
         total.checked_add(part.facts.len()).ok_or(())
     })?;
     let mut observations = Vec::with_capacity(observation_capacity);
+    let mut reducer_mutations = BTreeMap::<[u8; 32], RhiReducerMutationMaterial>::new();
 
     for (ordinal, part) in parts.iter().enumerate() {
         if part.trade_id != trade_id
@@ -252,7 +271,30 @@ pub(crate) fn committed_manifest_material(
         ));
         for fact in &part.facts {
             observations.push(manifest_observation(source_id.clone(), part, fact)?);
+            reducer_mutations
+                .entry(fact.record.mutation_id)
+                .and_modify(|current| {
+                    if fact.record.event_id < *current.event_id.as_bytes() {
+                        current.event_id = EventId::from_bytes(fact.record.event_id);
+                        current.canonical_content = fact.record.canonical_content.clone();
+                    }
+                })
+                .or_insert_with(|| RhiReducerMutationMaterial {
+                    mutation_id: MutationId::from_bytes(fact.record.mutation_id),
+                    event_id: EventId::from_bytes(fact.record.event_id),
+                    canonical_content: fact.record.canonical_content.clone(),
+                });
         }
+    }
+    if reducer_mutations.len() > RHI_REDUCER_MAXIMUM_MUTATIONS
+        || reducer_mutations
+            .values()
+            .try_fold(0_usize, |total, material| {
+                total.checked_add(material.canonical_content.len())
+            })
+            .is_none_or(|total| total > RHI_REDUCER_MAXIMUM_MUTATION_MATERIAL_BYTES)
+    {
+        return Err(());
     }
 
     Ok(RhiCommittedManifestMaterial {
@@ -262,6 +304,10 @@ pub(crate) fn committed_manifest_material(
         latest_finished_unix_ms,
         sources: sources.into_boxed_slice(),
         observations: observations.into_boxed_slice(),
+        reducer_mutations: reducer_mutations
+            .into_values()
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
     })
 }
 
@@ -293,7 +339,10 @@ fn freeze_manifest(
         material.observations.into_vec(),
     )
     .map_err(|_| error(RhiReconciliationManifestErrorKind::InvalidCommittedInventory))?;
-    Ok(RhiReconciliationManifest { inner })
+    Ok(RhiReconciliationManifest {
+        inner,
+        reducer_mutations: material.reducer_mutations,
+    })
 }
 
 fn map_completion(value: RhiTradeSourceCompletion) -> RadrootsTradeEvidenceSourceCompletionV1 {

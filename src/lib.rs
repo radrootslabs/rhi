@@ -12,6 +12,7 @@ mod reconciliation_attempt;
 mod reconciliation_commit;
 mod reconciliation_job;
 mod reconciliation_manifest;
+mod reconciliation_reducer;
 mod reconciliation_replay;
 mod runtime_adapters;
 mod runtime_context;
@@ -93,6 +94,11 @@ pub use reconciliation_manifest::{
     RHI_RECONCILIATION_MANIFEST_CONTRACT_VERSION, RhiReconciliationManifest,
     RhiReconciliationManifestError, RhiReconciliationManifestErrorKind,
     RhiReconciliationScopePrerequisites,
+};
+pub use reconciliation_reducer::{
+    RHI_RECONCILIATION_REDUCER_CONTRACT_VERSION, RhiReconciliationProjection,
+    RhiReconciliationReducerError, RhiReconciliationReducerErrorKind,
+    reduce_rhi_reconciliation_manifest,
 };
 pub use reconciliation_replay::{
     RHI_RECONCILIATION_REPLAY_CONTRACT_VERSION, RhiReconciliationReplayError,

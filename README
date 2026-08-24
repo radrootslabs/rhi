@@ -249,6 +249,23 @@ lease expiry/reclaim, queue and result bounds, stale leases/generations, and
 durable reopen behavior without adding runtime, scheduler, source, or network
 authority.
 
+## Pure reconciliation reducer
+
+[`reconciliation_reducer.v1.json`](contracts/services_hardening/reconciliation_reducer.v1.json)
+binds the promoted shared `radroots.trade.reducer.v1` to one sealed confirmed
+reconciliation manifest. The manifest privately retains only the bounded
+canonical mutation material derived from its Step 190 commit; callers cannot
+inject or replace reducer inputs. Reduction consumes the owned manifest,
+retains it inside a sealed projection, and binds the shared projection digest
+to the manifest and evidence-policy digests with a separate domain-separated
+RHI digest. The projection retains the canonical shared result privately for
+later checkpoints while exposing only bounded identity, digest, and count
+evidence.
+Reduction performs no SQLite, filesystem, source, relay, network, task, clock,
+or entropy operation. Final four-state coverage, three-state outcome,
+generation-fenced persistence, reports, attestations, and publication retain
+their later checkpoint owners.
+
 ## Existing-state runtime foundation
 
 `open_rhi_runtime_foundation` opens only an already initialized database from

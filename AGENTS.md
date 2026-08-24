@@ -143,6 +143,12 @@
 - Keep Step 191 manifest materialization pure and in memory. Step 199 alone
   owns durable manifest persistence; reducers, final coverage/outcome,
   attestation, publication, and job finalization retain their ordered owners.
+- Reduce only the sealed owned reconciliation manifest. Retain its bounded
+  canonical mutation material privately from the confirmed Step 190 commit,
+  map its already-governed evidence coverage into the shared reducer input,
+  and bind the canonical shared projection digest to the exact manifest and
+  evidence-policy digests. Do not accept caller mutation material or add
+  SQLite, filesystem, source, relay, task, clock, entropy, or network access.
 - Coverage is exactly `Missing`, `Partial`, `ScopeSatisfied`, or `Unsupported`.
   ScopeSatisfied means only that the configured policy was satisfied; optional
   evidence never substitutes for required-source completion.

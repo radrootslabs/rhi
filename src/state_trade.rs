@@ -1,7 +1,7 @@
 //! Atomic immutable persistence for admitted trade-event evidence.
 
 use core::fmt;
-use std::error::Error;
+use std::{error::Error, sync::Arc};
 
 use radroots_service_sqlite::{
     ServiceSqliteTransaction, ServiceSqliteTransactionError, ServiceSqliteTransactionErrorKind,
@@ -316,7 +316,7 @@ pub(crate) struct PersistenceRecord {
     pub(crate) author_pubkey: [u8; 32],
     pub(crate) event_kind: u32,
     pub(crate) authored_at_unix_s: u64,
-    pub(crate) canonical_content: Box<[u8]>,
+    pub(crate) canonical_content: Arc<[u8]>,
     pub(crate) canonical_event_json: Box<[u8]>,
 }
 
@@ -345,7 +345,7 @@ impl PersistenceRecord {
             author_pubkey: *event.author().as_bytes(),
             event_kind: event.kind_u32(),
             authored_at_unix_s: event.created_at_u64(),
-            canonical_content: canonical_content.into_boxed_slice(),
+            canonical_content: canonical_content.into(),
             canonical_event_json: canonical_event_json.into_boxed_slice(),
         })
     }
