@@ -82,8 +82,6 @@ fn admin_inventory_is_closed_unique_and_model_complete() {
             "GET|/v1/status|radroots.rhi.status.get.v1|empty|service_status_v1|false",
             "GET|/v1/config/effective|radroots.rhi.config.effective.get.v1|empty|effective_config_v1|false",
             "GET|/v1/identity/status|radroots.rhi.identity.status.get.v1|identity_status_query_v1|identity_status_v1|false",
-            "POST|/v1/identity/rekey|radroots.rhi.identity.rekey.v1|identity_rekey_request_v1|identity_mutation_receipt_v1|true",
-            "POST|/v1/identity/replace|radroots.rhi.identity.replace.v1|identity_replace_request_v1|identity_mutation_receipt_v1|true",
             "GET|/v1/identity/public|radroots.rhi.identity.public.get.v1|identity_public_query_v1|identity_public_v1|false",
             "GET|/v1/state/status|radroots.rhi.state.status.get.v1|empty|state_status_v1|false",
             "POST|/v1/state/backup|radroots.rhi.state.backup.create.v1|state_backup_request_v1|state_backup_receipt_v1|true",
@@ -103,6 +101,7 @@ fn admin_inventory_is_closed_unique_and_model_complete() {
             "POST|/v1/presence/refresh|radroots.rhi.presence.refresh.v1|presence_refresh_request_v1|presence_refresh_receipt_v1|true"
         ]
     );
+    assert_eq!(routes.len(), 20);
     let route_keys = routes
         .iter()
         .map(|route| format!("{} {}", route["method"], route["path"]))
@@ -121,6 +120,7 @@ fn admin_inventory_is_closed_unique_and_model_complete() {
 
     let models = value["admin"]["models"].as_object().expect("models");
     let types = value["admin"]["types"].as_object().expect("types");
+    assert_eq!(models.len(), 33);
     for route in routes {
         for key in ["request_model", "response_model"] {
             let model = route[key].as_str().expect("model reference");
@@ -195,16 +195,26 @@ fn admin_inventory_is_closed_unique_and_model_complete() {
         value["admin"]["identity_contract"],
         serde_json::json!({
             "roles": [{ "id": "service", "required": true, "disabled_allowed": false, "providers": ["encrypted_file"] }],
-            "rekey_provider": "encrypted_file_only",
-            "replace_provider_variants": {
-                "discriminator": "provider",
-                "encrypted_file": {
-                    "required_fields": ["provider", "envelope_path", "credential_reference", "expected_public_key"],
-                    "provider_value": "encrypted_file"
-                }
-            }
+            "rotation_mode": "offline_create_new_configuration_apply_restart",
+            "live_rekey_route": false,
+            "live_replace_route": false
         })
     );
+    for removed in [
+        "identity_rekey_request_v1",
+        "identity_replace_request_v1",
+        "identity_mutation_receipt_v1",
+    ] {
+        assert!(!models.contains_key(removed));
+    }
+    for removed in [
+        "credential_reference",
+        "encrypted_file_provider",
+        "identity_provider_replacement",
+        "encrypted_file_replacement",
+    ] {
+        assert!(!types.contains_key(removed));
+    }
     assert_eq!(
         value["admin"]["types"]["service_phase"],
         serde_json::json!({ "kind": "enum", "values": ["starting", "ready", "degraded", "unready", "stopping", "failed"] })
@@ -291,7 +301,7 @@ fn admin_inventory_is_closed_unique_and_model_complete() {
     assert_eq!(mutation_operations, committed_effects);
     assert_eq!(
         decision_sections_digest(&value),
-        "cbb049e8aaa52db31ee99f18556fd6d9121032c06ac20377c5e63496092b539f"
+        "b227c6f248605a1672d3b7b07f60b0fd9ba8b890478d17e081cd7e3caed8a889"
     );
 }
 

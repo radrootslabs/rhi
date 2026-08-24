@@ -4,8 +4,8 @@
   "service": "rhi",
   "shared_transport": "radroots_service_host",
   "final_inventory": {
-    "route_count": 22,
-    "model_count": 36,
+    "route_count": 20,
+    "model_count": 33,
     "source": "operator_contract.v1.json"
   },
   "registered_routes": [
@@ -17,9 +17,9 @@
     "radroots.rhi.state.backup.create.v1",
     "radroots.rhi.metrics.snapshot.get.v1"
   ],
-  "deferred_route_groups": [
+  "historical_deferred_route_groups": [
     "domain_queries_and_mutations_step_207",
-    "identity_and_sensitive_mutations_step_208"
+    "reserved_identity_mutations_removed_step_208"
   ],
   "authority": {
     "raw_shared_router_public": false,

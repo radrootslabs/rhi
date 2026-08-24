@@ -5,6 +5,8 @@ const README: &str = include_str!("../README");
 const AGENTS: &str = include_str!("../AGENTS.md");
 const ROOT: &str = include_str!("../src/lib.rs");
 const ADMIN: &str = include_str!("../src/admin_v1.rs");
+const ADMIN_IDENTITY_OFFLINE_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/admin_identity_offline.v1.json");
 const ADAPTERS: &str = include_str!("../src/adapters/mod.rs");
 const NOSTR_ADAPTERS: &str = include_str!("../src/adapters/nostr/mod.rs");
 const FEATURES: &str = include_str!("../src/features/mod.rs");
@@ -372,12 +374,22 @@ fn active_admin_boundary_hides_shared_transport_authority() {
         "pub trait RhiAdminHandler",
         "pub const COMMON: [Self; 7]",
         "pub const DOMAIN: [Self; 13]",
+        "pub const ALL: [Self; 20]",
         "pub const ACTIVE: [Self; 20]",
     ] {
         assert!(
             ADMIN.contains(required),
             "missing common admin boundary `{required}`"
         );
+    }
+    let offline: serde_json::Value =
+        serde_json::from_str(ADMIN_IDENTITY_OFFLINE_CONTRACT).expect("offline identity contract");
+    assert_eq!(offline["final_inventory"]["route_count"], 20);
+    assert_eq!(offline["final_inventory"]["model_count"], 33);
+    assert_eq!(offline["identity_rotation"]["unix_admin_mutation"], false);
+    for forbidden in ["IdentityRekey", "IdentityReplace"] {
+        assert!(!ADMIN.contains(forbidden));
+        assert!(!PUBLIC_API.contains(forbidden));
     }
     for forbidden in [
         "pub fn into_inner",
@@ -1494,10 +1506,11 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "seven common RHI routes",
         "thirteen reconciliation, job, source",
         "cursors use canonical base64url without padding",
-        "two identity-sensitive mutations remain unregistered",
-        "22-route/36-model inventory",
+        "Step 208 removes the two never-registered live identity rekey/replace routes",
+        "20-route/33-model inventory",
         "[`admin_common.v1.json`](contracts/services_hardening/admin_common.v1.json)",
         "[`admin_domain.v1.json`](contracts/services_hardening/admin_domain.v1.json)",
+        "[`admin_identity_offline.v1.json`](contracts/services_hardening/admin_identity_offline.v1.json)",
     ] {
         assert!(README.contains(required), "README is missing {required}");
     }

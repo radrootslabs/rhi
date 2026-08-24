@@ -578,10 +578,16 @@ bound by the handler to the same route, filters, and snapshot. Every decoded
 stable operation-ID exact replay and conflicting-reuse rejection, and success
 still means the handler's contract-defined local effect is durably committed,
 not relay delivery. The adapter performs no SQLite or relay I/O itself. The
-two identity-sensitive mutations remain unregistered for Step 208, before
-Step 209 qualifies the complete 22-route/36-model inventory. The cumulative
-domain contract is
+Step 208 removes the two never-registered live identity rekey/replace routes,
+their three mutation-only models, and the unused operator types that could have
+suggested live provider authority. Identity rotation is only offline create-new
+envelope plus validated configuration apply and restart. Unix peer authorization
+remains a transport admission gate and grants neither direct SQLite nor
+identity-provider mutation authority. Step 209 qualifies the complete
+20-route/33-model inventory. The cumulative domain contract is
 [`admin_domain.v1.json`](contracts/services_hardening/admin_domain.v1.json).
+The offline identity correction is
+[`admin_identity_offline.v1.json`](contracts/services_hardening/admin_identity_offline.v1.json).
 
 ## Sealed service-instance paths
 

@@ -47,15 +47,7 @@ fn domain_inventory_is_exact_ordered_disjoint_and_cumulative() {
         .iter()
         .map(|route| route["operation_id"].as_str().expect("operation ID"))
         .collect::<Vec<_>>();
-    let deferred = [
-        "radroots.rhi.identity.rekey.v1",
-        "radroots.rhi.identity.replace.v1",
-    ];
-    let expected_active = governed
-        .iter()
-        .copied()
-        .filter(|route| !deferred.contains(route))
-        .collect::<Vec<_>>();
+    let expected_active = governed.clone();
     assert_eq!(active, expected_active);
     assert_eq!(
         RhiAdminRoute::COMMON
@@ -80,20 +72,13 @@ fn domain_inventory_is_exact_ordered_disjoint_and_cumulative() {
     );
     assert_eq!(active.iter().copied().collect::<BTreeSet<_>>().len(), 20);
     assert_eq!(
-        domain["deferred_routes"],
+        domain["removed_live_identity_routes"],
         serde_json::json!([
             "radroots.rhi.identity.rekey.v1",
             "radroots.rhi.identity.replace.v1"
         ])
     );
-    assert_eq!(
-        governed
-            .iter()
-            .copied()
-            .filter(|route| deferred.contains(route))
-            .collect::<Vec<_>>(),
-        deferred
-    );
+    assert_eq!(governed.len(), 20);
 }
 
 #[test]

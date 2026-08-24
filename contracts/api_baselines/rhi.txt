@@ -39,8 +39,6 @@ pub rhi::RhiAdminMethod::Post
 pub enum rhi::RhiAdminRoute
 pub rhi::RhiAdminRoute::EffectiveConfig
 pub rhi::RhiAdminRoute::IdentityPublic
-pub rhi::RhiAdminRoute::IdentityRekey
-pub rhi::RhiAdminRoute::IdentityReplace
 pub rhi::RhiAdminRoute::IdentityStatus
 pub rhi::RhiAdminRoute::MetricsSnapshot
 pub rhi::RhiAdminRoute::PresenceDesired
@@ -61,7 +59,7 @@ pub rhi::RhiAdminRoute::TradeReportCurrent
 pub rhi::RhiAdminRoute::TradeReports
 impl rhi::RhiAdminRoute
 pub const rhi::RhiAdminRoute::ACTIVE: [Self; 20]
-pub const rhi::RhiAdminRoute::ALL: [Self; 22]
+pub const rhi::RhiAdminRoute::ALL: [Self; 20]
 pub const rhi::RhiAdminRoute::COMMON: [Self; 7]
 pub const rhi::RhiAdminRoute::DOMAIN: [Self; 13]
 pub const fn rhi::RhiAdminRoute::is_mutation(self) -> bool

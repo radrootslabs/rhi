@@ -399,16 +399,18 @@
   a live socket owner; remove only a proven stale socket under the resolved
   instance runtime directory.
 - Keep the public RHI route and document vocabulary closed against the exact
-  operator contract. Register only routes owned by the current ordered step:
-  Step 206 owns the seven common routes, Step 207 owns domain routes, Step 208
-  owns sensitive routes, and Step 209 alone may claim the complete 22-route
-  surface. Never expose the shared raw router, listener, JSON handler, or a
-  caller-selected socket path.
-- Through Step 207, the active set is exactly seven common plus thirteen
-  domain routes. Pagination is bounded to 200 items, query fields are closed,
-  authenticated cursors remain bound by the handler to route/filter/snapshot,
-  and decoded trade parameters use the exact lowercase-hex trade-ID type. The
-  two identity-sensitive mutations remain unregistered until Step 208.
+  operator contract. Step 206 owns the seven common routes and Step 207 owns
+  the thirteen domain routes. Step 208 removes the stale, never-registered live
+  identity rekey/replace vocabulary, and Step 209 alone may claim the complete
+  20-route/33-model surface. Never expose the shared raw router, listener, JSON
+  handler, or a caller-selected socket path.
+- Through Step 208, the active and final route sets are exactly seven common
+  plus thirteen domain routes. Pagination is bounded to 200 items, query fields
+  are closed, authenticated cursors remain bound by the handler to
+  route/filter/snapshot, and decoded trade parameters use the exact
+  lowercase-hex trade-ID type. Identity rotation remains offline create-new
+  plus validated configuration apply and restart; Unix peer admission grants
+  no direct SQLite or identity-provider mutation authority.
 - Optional TCP operations expose only cached `/livez`, `/readyz`, and
   `/metrics`; requests must not perform SQLite, source, relay, DNS, identity,
   evidence, or credential probes.

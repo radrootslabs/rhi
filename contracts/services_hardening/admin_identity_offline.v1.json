@@ -1,0 +1,58 @@
+{
+  "schema": "radroots.rhi.admin-identity-offline.v1",
+  "contract_version": 1,
+  "service": "rhi",
+  "final_inventory": {
+    "route_count": 20,
+    "model_count": 33,
+    "source": "operator_contract.v1.json"
+  },
+  "removed_live_routes": [
+    {
+      "method": "POST",
+      "path": "/v1/identity/rekey",
+      "operation_id": "radroots.rhi.identity.rekey.v1"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/identity/replace",
+      "operation_id": "radroots.rhi.identity.replace.v1"
+    }
+  ],
+  "removed_models": [
+    "identity_rekey_request_v1",
+    "identity_replace_request_v1",
+    "identity_mutation_receipt_v1"
+  ],
+  "removed_operator_types": [
+    "credential_reference",
+    "encrypted_file_provider",
+    "identity_provider_replacement",
+    "encrypted_file_replacement"
+  ],
+  "identity_rotation": {
+    "mode": "offline_create_new_configuration_apply_restart",
+    "in_place_overwrite": false,
+    "ordinary_run_generation": false,
+    "unix_admin_mutation": false
+  },
+  "peer_authorization": {
+    "owned_by": "radroots_service_host",
+    "applies_before_route_dispatch": true,
+    "grants_identity_provider_authority": false,
+    "grants_direct_sqlite_authority": false
+  },
+  "negative_requirements": {
+    "removed_paths_unavailable": true,
+    "removed_operation_ids_absent": true,
+    "removed_models_absent": true,
+    "raw_shared_router_public": false,
+    "raw_listener_public": false,
+    "caller_selected_socket_path": false
+  },
+  "deferred": {
+    "nix": true,
+    "oci": true,
+    "terminal_consumer_convergence": true
+  }
+}

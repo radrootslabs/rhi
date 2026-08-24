@@ -17,8 +17,6 @@
       { "method": "GET", "path": "/v1/status", "operation_id": "radroots.rhi.status.get.v1", "request_model": "empty", "response_model": "service_status_v1", "mutation": false },
       { "method": "GET", "path": "/v1/config/effective", "operation_id": "radroots.rhi.config.effective.get.v1", "request_model": "empty", "response_model": "effective_config_v1", "mutation": false },
       { "method": "GET", "path": "/v1/identity/status", "operation_id": "radroots.rhi.identity.status.get.v1", "request_model": "identity_status_query_v1", "response_model": "identity_status_v1", "mutation": false },
-      { "method": "POST", "path": "/v1/identity/rekey", "operation_id": "radroots.rhi.identity.rekey.v1", "request_model": "identity_rekey_request_v1", "response_model": "identity_mutation_receipt_v1", "mutation": true },
-      { "method": "POST", "path": "/v1/identity/replace", "operation_id": "radroots.rhi.identity.replace.v1", "request_model": "identity_replace_request_v1", "response_model": "identity_mutation_receipt_v1", "mutation": true },
       { "method": "GET", "path": "/v1/identity/public", "operation_id": "radroots.rhi.identity.public.get.v1", "request_model": "identity_public_query_v1", "response_model": "identity_public_v1", "mutation": false },
       { "method": "GET", "path": "/v1/state/status", "operation_id": "radroots.rhi.state.status.get.v1", "request_model": "empty", "response_model": "state_status_v1", "mutation": false },
       { "method": "POST", "path": "/v1/state/backup", "operation_id": "radroots.rhi.state.backup.create.v1", "request_model": "state_backup_request_v1", "response_model": "state_backup_receipt_v1", "mutation": true },
@@ -53,14 +51,9 @@
       "roles": [
         { "id": "service", "required": true, "disabled_allowed": false, "providers": ["encrypted_file"] }
       ],
-      "rekey_provider": "encrypted_file_only",
-      "replace_provider_variants": {
-        "discriminator": "provider",
-        "encrypted_file": {
-          "required_fields": ["provider", "envelope_path", "credential_reference", "expected_public_key"],
-          "provider_value": "encrypted_file"
-        }
-      }
+      "rotation_mode": "offline_create_new_configuration_apply_restart",
+      "live_rekey_route": false,
+      "live_replace_route": false
     },
     "types": {
       "rhi_literal": { "kind": "literal", "value": "rhi" },
@@ -84,13 +77,9 @@
       "report_contract_literal": { "kind": "literal", "value": "radroots.rhi.evidence_attestation.v1" },
       "attestation_method_literal": { "kind": "literal", "value": "signed_evidence_snapshot" },
       "absolute_path": { "kind": "string", "minimum_utf8_bytes": 1, "maximum_utf8_bytes": 4096, "pattern": "^/" },
-      "credential_reference": { "kind": "string", "minimum_utf8_bytes": 1, "maximum_utf8_bytes": 256 },
       "confirmation": { "kind": "literal", "value": "confirm" },
       "identity_role": { "kind": "enum", "values": ["service"] },
-      "encrypted_file_provider": { "kind": "literal", "value": "encrypted_file" },
       "identity_provider_kind": { "kind": "enum", "values": ["encrypted_file"] },
-      "identity_provider_replacement": { "kind": "tagged_union", "discriminator": "provider", "variants": ["encrypted_file_replacement"] },
-      "encrypted_file_replacement": { "kind": "closed_object", "fields": { "provider": "encrypted_file_provider", "envelope_path": "absolute_path", "credential_reference": "credential_reference", "expected_public_key": "public_key_hex" } },
       "service_phase": { "kind": "enum", "values": ["starting", "ready", "degraded", "unready", "stopping", "failed"] },
       "uptime_millis": { "kind": "integer", "minimum": 0, "maximum": 18446744073709551615, "unit": "milliseconds_from_injected_monotonic_clock" },
       "integrity_state": { "kind": "enum", "values": ["verified", "verification_required", "failed"] },
@@ -145,9 +134,6 @@
       "effective_config_v1": { "fields": { "schema": { "type": "rhi_config_schema_literal", "presence": "required" }, "schema_version": { "type": "contract_version_literal", "presence": "required" }, "provenance": { "type": "config_provenance", "presence": "required" }, "redacted_config": { "type": "redacted_config", "presence": "required" }, "config_digest": { "type": "sha256_hex", "presence": "required" }, "policy_digest": { "type": "sha256_hex", "presence": "required" } } },
       "identity_status_query_v1": { "fields": { "role": { "type": "identity_role", "presence": "required" } } },
       "identity_status_v1": { "fields": { "role": { "type": "identity_role", "presence": "required" }, "provider": { "type": "identity_provider_kind", "presence": "required" }, "configured": { "type": "bool", "presence": "required" }, "available": { "type": "bool", "presence": "required" }, "generation": { "type": "u64", "presence": "required" }, "reason_codes": { "type": "reason_codes", "presence": "required" }, "public_key": { "type": "public_key_hex", "presence": "optional" } } },
-      "identity_rekey_request_v1": { "fields": { "role": { "type": "identity_role", "presence": "required" }, "provider": { "type": "encrypted_file_provider", "presence": "required" }, "expected_generation": { "type": "u64", "presence": "required" }, "new_credential_reference": { "type": "credential_reference", "presence": "required" }, "confirmation": { "type": "confirmation", "presence": "required" } } },
-      "identity_replace_request_v1": { "fields": { "role": { "type": "identity_role", "presence": "required" }, "expected_generation": { "type": "u64", "presence": "required" }, "replacement": { "type": "identity_provider_replacement", "presence": "required" }, "confirmation": { "type": "confirmation", "presence": "required" } } },
-      "identity_mutation_receipt_v1": { "fields": { "operation_id": { "type": "operation_id", "presence": "required" }, "role": { "type": "identity_role", "presence": "required" }, "previous_public_key": { "type": "public_key_hex", "presence": "required" }, "current_public_key": { "type": "public_key_hex", "presence": "required" }, "generation": { "type": "u64", "presence": "required" } } },
       "identity_public_query_v1": { "fields": { "role": { "type": "identity_role", "presence": "required" } } },
       "identity_public_v1": { "fields": { "role": { "type": "identity_role", "presence": "required" }, "public_key": { "type": "public_key_hex", "presence": "required" }, "generation": { "type": "u64", "presence": "required" } } },
       "state_status_v1": { "fields": { "schema_version": { "type": "positive_u32", "presence": "required" }, "generation": { "type": "u64", "presence": "required" }, "integrity": { "type": "integrity_state", "presence": "required" }, "writer_lock": { "type": "writer_lock_state", "presence": "required" }, "backup_eligible": { "type": "bool", "presence": "required" }, "reason_codes": { "type": "reason_codes", "presence": "required" } } },
@@ -214,8 +200,6 @@
       "success_visibility": "response_only_after_local_authoritative_commit",
       "relay_submission_or_delivery_required_for_success": false,
       "committed_effects": {
-        "radroots.rhi.identity.rekey.v1": "identity_generation_credential_binding_and_operation_audit",
-        "radroots.rhi.identity.replace.v1": "identity_generation_public_key_binding_and_operation_audit",
         "radroots.rhi.state.backup.create.v1": "verified_snapshot_manifest_digest_and_operation_audit",
         "radroots.rhi.reconciliation.refresh.v1": "generation_fenced_durable_job_schedule_and_operation_audit",
         "radroots.rhi.publication.retry.v1": "same_committed_exact_bytes_existing_target_set_retry_schedule_and_operation_audit",

@@ -4,8 +4,8 @@
   "service": "rhi",
   "shared_transport": "radroots_service_host",
   "final_inventory": {
-    "route_count": 22,
-    "model_count": 36,
+    "route_count": 20,
+    "model_count": 33,
     "source": "operator_contract.v1.json"
   },
   "active_route_count": 20,
@@ -24,7 +24,7 @@
     "radroots.rhi.presence.render.v1",
     "radroots.rhi.presence.refresh.v1"
   ],
-  "deferred_routes": [
+  "removed_live_identity_routes": [
     "radroots.rhi.identity.rekey.v1",
     "radroots.rhi.identity.replace.v1"
   ],

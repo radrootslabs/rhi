@@ -14,8 +14,8 @@ fn common_route_inventory_is_an_exact_ordered_subset() {
     let operator: Value = serde_json::from_str(OPERATOR_CONTRACT).expect("operator contract");
     assert_eq!(common["schema"], "radroots.rhi.admin-common.v1");
     assert_eq!(common["contract_version"], 1);
-    assert_eq!(common["final_inventory"]["route_count"], 22);
-    assert_eq!(common["final_inventory"]["model_count"], 36);
+    assert_eq!(common["final_inventory"]["route_count"], 20);
+    assert_eq!(common["final_inventory"]["model_count"], 33);
 
     let registered = common["registered_routes"]
         .as_array()
@@ -64,10 +64,10 @@ fn common_checkpoint_contract_remains_sealed_bounded_and_partial() {
     assert_eq!(common["effects"]["bind_spawns_task"], false);
     assert_eq!(common["effects"]["tcp_admin"], false);
     assert_eq!(
-        common["deferred_route_groups"],
+        common["historical_deferred_route_groups"],
         serde_json::json!([
             "domain_queries_and_mutations_step_207",
-            "identity_and_sensitive_mutations_step_208"
+            "reserved_identity_mutations_removed_step_208"
         ])
     );
 }

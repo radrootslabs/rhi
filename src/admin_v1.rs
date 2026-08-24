@@ -38,8 +38,6 @@ pub enum RhiAdminRoute {
     Status,
     EffectiveConfig,
     IdentityStatus,
-    IdentityRekey,
-    IdentityReplace,
     IdentityPublic,
     StateStatus,
     StateBackup,
@@ -61,12 +59,10 @@ pub enum RhiAdminRoute {
 
 impl RhiAdminRoute {
     /// Complete final machine-governed route inventory.
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 20] = [
         Self::Status,
         Self::EffectiveConfig,
         Self::IdentityStatus,
-        Self::IdentityRekey,
-        Self::IdentityReplace,
         Self::IdentityPublic,
         Self::StateStatus,
         Self::StateBackup,
@@ -114,29 +110,8 @@ impl RhiAdminRoute {
         Self::PresenceRefresh,
     ];
 
-    /// Routes admitted through Step 207, in final machine-contract order.
-    pub const ACTIVE: [Self; 20] = [
-        Self::Status,
-        Self::EffectiveConfig,
-        Self::IdentityStatus,
-        Self::IdentityPublic,
-        Self::StateStatus,
-        Self::StateBackup,
-        Self::MetricsSnapshot,
-        Self::ReconciliationStatus,
-        Self::ReconciliationJobs,
-        Self::ReconciliationRefresh,
-        Self::Sources,
-        Self::TradeProjection,
-        Self::TradeReportCurrent,
-        Self::TradeReports,
-        Self::PublicationBacklog,
-        Self::PublicationTargets,
-        Self::PublicationRetry,
-        Self::PresenceDesired,
-        Self::PresenceRender,
-        Self::PresenceRefresh,
-    ];
+    /// Routes admitted through Step 208, in final machine-contract order.
+    pub const ACTIVE: [Self; 20] = Self::ALL;
 
     #[must_use]
     pub const fn method(self) -> RhiAdminMethod {
@@ -157,8 +132,6 @@ impl RhiAdminRoute {
             | Self::PublicationTargets
             | Self::PresenceDesired => RhiAdminMethod::Get,
             Self::StateBackup
-            | Self::IdentityRekey
-            | Self::IdentityReplace
             | Self::ReconciliationRefresh
             | Self::PublicationRetry
             | Self::PresenceRender
@@ -172,8 +145,6 @@ impl RhiAdminRoute {
             Self::Status => "/v1/status",
             Self::EffectiveConfig => "/v1/config/effective",
             Self::IdentityStatus => "/v1/identity/status",
-            Self::IdentityRekey => "/v1/identity/rekey",
-            Self::IdentityReplace => "/v1/identity/replace",
             Self::IdentityPublic => "/v1/identity/public",
             Self::StateStatus => "/v1/state/status",
             Self::StateBackup => "/v1/state/backup",
@@ -200,8 +171,6 @@ impl RhiAdminRoute {
             Self::Status => "radroots.rhi.status.get.v1",
             Self::EffectiveConfig => "radroots.rhi.config.effective.get.v1",
             Self::IdentityStatus => "radroots.rhi.identity.status.get.v1",
-            Self::IdentityRekey => "radroots.rhi.identity.rekey.v1",
-            Self::IdentityReplace => "radroots.rhi.identity.replace.v1",
             Self::IdentityPublic => "radroots.rhi.identity.public.get.v1",
             Self::StateStatus => "radroots.rhi.state.status.get.v1",
             Self::StateBackup => "radroots.rhi.state.backup.create.v1",
@@ -234,8 +203,6 @@ impl RhiAdminRoute {
             | Self::TradeReportCurrent
             | Self::PresenceDesired => "empty",
             Self::IdentityStatus => "identity_status_query_v1",
-            Self::IdentityRekey => "identity_rekey_request_v1",
-            Self::IdentityReplace => "identity_replace_request_v1",
             Self::IdentityPublic => "identity_public_query_v1",
             Self::StateBackup => "state_backup_request_v1",
             Self::ReconciliationJobs => "reconciliation_jobs_query_v1",
@@ -256,7 +223,6 @@ impl RhiAdminRoute {
             Self::Status => "service_status_v1",
             Self::EffectiveConfig => "effective_config_v1",
             Self::IdentityStatus => "identity_status_v1",
-            Self::IdentityRekey | Self::IdentityReplace => "identity_mutation_receipt_v1",
             Self::IdentityPublic => "identity_public_v1",
             Self::StateStatus => "state_status_v1",
             Self::StateBackup => "state_backup_receipt_v1",
@@ -532,7 +498,7 @@ impl fmt::Display for RhiAdminRouterError {
 
 impl Error for RhiAdminRouterError {}
 
-/// Opaque RHI v1 router capability through Step 207.
+/// Opaque RHI v1 router capability through Step 208.
 ///
 /// The underlying shared-host router remains an implementation detail. The
 /// later runtime-composition checkpoint consumes this capability without
@@ -661,7 +627,7 @@ impl fmt::Display for RhiAdminServerError {
 
 impl Error for RhiAdminServerError {}
 
-/// Unbound RHI Unix-admin server through Step 207.
+/// Unbound RHI Unix-admin server through Step 208.
 ///
 /// Construction projects only the already-admitted Rhi configuration, seals
 /// the exact route inventory around the supplied domain handler, and uses the
@@ -713,7 +679,7 @@ impl fmt::Debug for RhiAdminServer {
     }
 }
 
-/// Bound RHI Unix-admin server through Step 207.
+/// Bound RHI Unix-admin server through Step 208.
 pub struct RhiBoundAdminServer {
     inner: SharedAdminServer,
     binding: UnixAdminSocketBinding,
@@ -738,9 +704,9 @@ impl fmt::Debug for RhiBoundAdminServer {
     }
 }
 
-/// Registers the seven common and thirteen domain routes owned through Step 207.
+/// Registers the final seven common and thirteen domain routes through Step 208.
 ///
-/// The two sensitive identity mutations remain unregistered until Step 208.
+/// Live identity rekey and replace are absent by final offline-only policy.
 pub fn build_rhi_admin_router<H>(handler: Arc<H>) -> Result<RhiAdminRouter, RhiAdminRouterError>
 where
     H: RhiAdminHandler,
@@ -1065,7 +1031,7 @@ fn operator_route_inventory_is_exact() -> bool {
         return false;
     };
     routes.len() == RhiAdminRoute::ALL.len()
-        && models.len() == 36
+        && models.len() == 33
         && admin
             .pointer("/model_wire_contract/response_body_max_utf8_bytes")
             .and_then(Value::as_u64)
@@ -1771,7 +1737,7 @@ mod tests {
     #[test]
     fn complete_route_and_model_inventory_matches_the_machine_contract() {
         assert!(operator_route_inventory_is_exact());
-        assert_eq!(RhiAdminRoute::ALL.len(), 22);
+        assert_eq!(RhiAdminRoute::ALL.len(), 20);
         assert_eq!(RhiAdminRoute::COMMON.len(), 7);
         assert_eq!(RhiAdminRoute::DOMAIN.len(), 13);
         assert_eq!(RhiAdminRoute::ACTIVE.len(), 20);
@@ -1794,7 +1760,7 @@ mod tests {
             .map(String::as_str)
             .collect::<BTreeSet<_>>();
         assert_eq!(referenced, governed);
-        assert_eq!(governed.len(), 36);
+        assert_eq!(governed.len(), 33);
         assert!(
             RhiAdminRoute::COMMON
                 .into_iter()
@@ -2173,19 +2139,25 @@ mod tests {
                 .expect("trade route target");
             assert!(client.get::<Value>(&invalid_trade).await.is_err());
 
-            let sensitive_target =
-                AdminClientTarget::new("/v1/identity/rekey").expect("deferred sensitive route");
-            assert!(
-                client
-                    .mutate::<_, Value>(
-                        &sensitive_target,
-                        AdminOperationId::new("deferred-identity").expect("operation ID"),
-                        None,
-                        sample_model("identity_rekey_request_v1"),
-                    )
-                    .await
-                    .is_err()
-            );
+            for (index, path) in ["/v1/identity/rekey", "/v1/identity/replace"]
+                .into_iter()
+                .enumerate()
+            {
+                let removed_target =
+                    AdminClientTarget::new(path).expect("removed live identity route");
+                assert!(
+                    client
+                        .mutate::<_, Value>(
+                            &removed_target,
+                            AdminOperationId::new(format!("removed-identity-{index}"))
+                                .expect("operation ID"),
+                            None,
+                            serde_json::json!({}),
+                        )
+                        .await
+                        .is_err()
+                );
+            }
 
             {
                 let calls = handler.calls.lock().expect("calls");
