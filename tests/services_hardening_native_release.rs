@@ -70,7 +70,7 @@ fn native_release_contract_and_manifest_metadata_are_exact() {
             },
             "contract_versions": {
                 "config": 1,
-                "state": 2,
+                "state": 11,
                 "admin": 1,
                 "status": 1,
                 "provider": 1
@@ -163,6 +163,20 @@ fn native_release_contract_and_manifest_metadata_are_exact() {
             binary_name = "rhi"
             version = "0.1.0"
         })
+    );
+    let source_lock: toml::Value = toml::from_str(SOURCE_LOCK).expect("source lock");
+    assert_eq!(
+        contract["contract_versions"]["state"].as_u64(),
+        source_lock["contract_versions"]["state"]
+            .as_integer()
+            .and_then(|value| u64::try_from(value).ok())
+    );
+    assert_eq!(
+        contract["contract_versions"]["state"].as_u64(),
+        manifest["workspace"]["metadata"]["radroots"]["service_source_lock"]
+            ["state_contract_version"]
+            .as_integer()
+            .and_then(|value| u64::try_from(value).ok())
     );
     assert_eq!(
         manifest["profile"]["release"],

@@ -19,6 +19,7 @@ const VERSION: &str = "0.1.0";
 const REPOSITORY: &str = "https://github.com/radrootslabs/rhi";
 const RUST_VERSION: &str = "1.97.1";
 const HOST_FEATURE_PROFILE: &str = "service-host";
+const RADROOTS_DEPENDENCY_COUNT: usize = 12;
 const SOURCE_LOCK: &str = "radroots.service.source-lock.v2.toml";
 const CONFIG_EXAMPLE: &str = "contracts/services_hardening/config.v1.example.toml";
 const CONFIG_SCHEMA: &str = "contracts/services_hardening/config.v1.schema.json";
@@ -695,7 +696,7 @@ fn cargo_dependency_revisions(root: &Path) -> Result<BTreeSet<String>, ReleaseEr
                 .to_owned(),
         );
     }
-    if count != 11 {
+    if count != RADROOTS_DEPENDENCY_COUNT {
         return Err(ReleaseError::InvalidSourceLock);
     }
     Ok(revisions)

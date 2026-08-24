@@ -826,9 +826,9 @@ name/version/source/checksum identity, so they neither disclose a checkout path
 nor vary when the same exact source is built from another directory.
 
 The checked-in systemd instance unit is package material only. Its presence
-does not claim that the current placeholder binary graph is production-ready,
-installed, enabled, or started. Complete service runtime behavior remains with
-the later RHI checkpoints, and promotion remains Step 182 ownership.
+does not claim that the governed daemon is installed, enabled, started, or
+production-activated. Native artifact qualification remains Step 216
+ownership, and promotion remains Step 217 ownership.
 
 Validate the standalone crate through extbuild:
 
