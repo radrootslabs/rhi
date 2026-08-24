@@ -434,6 +434,14 @@
   identity/credential, bind/network policy, required source reachability,
   checkpoint plausibility, leases/backlog, publication invariants, and clock
   skew without leaking protected details.
+- Step 211 freezes the exact fifteen-check doctor inventory, its ordered
+  per-check deadlines and safe remediation codes, the `pass`, `degraded`, and
+  `fail` aggregate meanings, and process exit codes zero through six. A required
+  skipped result is failure; required failure or timeout is exit six; optional
+  non-pass is degraded success. Dropping a timed-out probe future must stop its
+  work or leave cleanup owned synchronously by that future, with no detached
+  probe task. Keep paths, raw errors, arbitrary summaries, and protected values
+  out of the bounded canonical report and process diagnostics.
 - Keep plaintext keys, decrypted identity, wrapping credentials, tokens, raw
   sensitive evidence, private identifiers, paths, upstream errors, and
   equivalent protected material out of config, logs, status, metrics, audit,

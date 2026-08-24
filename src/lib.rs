@@ -6,11 +6,13 @@ mod adapters;
 mod admin_v1;
 mod cli_v1;
 mod config_v1;
+mod doctor_v1;
 mod features;
 mod identity_credential;
 mod identity_envelope;
 mod presence_desired;
 mod presence_publication;
+mod process_result_v1;
 mod publication;
 mod publication_attempt;
 mod publication_execution;
@@ -58,6 +60,13 @@ pub use config_v1::{
     RhiConfigV1Error, RhiConfigV1ErrorKind, RhiConfigValueSource, RhiEffectiveConfigV1,
     RhiRuntimeThreadLimitsV1, parse_rhi_config_v1,
 };
+pub use doctor_v1::{
+    RHI_DOCTOR_CHECK_COUNT, RHI_DOCTOR_CONTRACT_VERSION, RHI_DOCTOR_REPORT_MAX_UTF8_BYTES,
+    RHI_DOCTOR_SUMMARY_MAX_UTF8_BYTES, RhiDoctorAggregateStatus, RhiDoctorCheckDefinition,
+    RhiDoctorCheckId, RhiDoctorCheckResult, RhiDoctorCheckStatus, RhiDoctorError,
+    RhiDoctorErrorKind, RhiDoctorFuture, RhiDoctorObservation, RhiDoctorProbe,
+    RhiDoctorRemediationCode, RhiDoctorReport, rhi_doctor_check_definitions, run_rhi_doctor,
+};
 pub use features::trade_agreement_attestation::{
     RHI_AGREEMENT_ATTESTATION_PROOF_SYSTEM_LOCAL_STATEMENT_HASH,
     RHI_AGREEMENT_ATTESTATION_PROTOCOL_ID, RHI_AGREEMENT_ATTESTATION_REPORT_VERSION,
@@ -96,6 +105,7 @@ pub use presence_publication::{
     RhiSignedPresenceDocument, RhiSignedPresenceDocuments, build_rhi_signed_presence_documents,
     validate_rhi_signed_presence_documents,
 };
+pub use process_result_v1::RhiProcessResult;
 pub use publication::{
     RHI_PUBLICATION_CONTRACT_VERSION, RHI_PUBLICATION_MAX_ATTEMPTS, RHI_PUBLICATION_MAX_TARGETS,
     RhiPublicationAuthority, RhiPublicationError, RhiPublicationErrorKind, RhiPublicationMode,

@@ -4,7 +4,12 @@ const MANIFEST: &str = include_str!("../Cargo.toml");
 const README: &str = include_str!("../README");
 const AGENTS: &str = include_str!("../AGENTS.md");
 const ROOT: &str = include_str!("../src/lib.rs");
+const MAIN: &str = include_str!("../src/main.rs");
 const ADMIN: &str = include_str!("../src/admin_v1.rs");
+const DOCTOR: &str = include_str!("../src/doctor_v1.rs");
+const PROCESS_RESULT: &str = include_str!("../src/process_result_v1.rs");
+const OPERATOR_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/operator_contract.v1.json");
 const ADMIN_IDENTITY_OFFLINE_CONTRACT: &str =
     include_str!("../contracts/services_hardening/admin_identity_offline.v1.json");
 const ADMIN_WAVE_QUALIFICATION_CONTRACT: &str =
@@ -78,11 +83,13 @@ const SOURCES: &[&str] = &[
     include_str!("../src/admin_v1.rs"),
     include_str!("../src/cli_v1.rs"),
     include_str!("../src/config_v1.rs"),
+    include_str!("../src/doctor_v1.rs"),
     include_str!("../src/features/trade_agreement_attestation.rs"),
     include_str!("../src/identity_credential.rs"),
     include_str!("../src/identity_envelope.rs"),
     include_str!("../src/presence_desired.rs"),
     include_str!("../src/presence_publication.rs"),
+    include_str!("../src/process_result_v1.rs"),
     include_str!("../src/publication.rs"),
     include_str!("../src/publication_attempt.rs"),
     include_str!("../src/publication_execution.rs"),
@@ -160,11 +167,13 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "admin_v1",
         "cli_v1",
         "config_v1",
+        "doctor_v1",
         "features",
         "identity_credential",
         "identity_envelope",
         "presence_desired",
         "presence_publication",
+        "process_result_v1",
         "publication",
         "publication_attempt",
         "publication_execution",
@@ -247,6 +256,14 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "RhiCliAdminOperationV1",
         "RhiCliExecutionPlanV1",
         "plan_rhi_cli_v1",
+        "RhiDoctorCheckId",
+        "RhiDoctorCheckDefinition",
+        "RhiDoctorCheckResult",
+        "RhiDoctorReport",
+        "RhiDoctorProbe",
+        "run_rhi_doctor",
+        "rhi_doctor_check_definitions",
+        "RhiProcessResult",
         "RhiPublicationErrorKind",
         "RhiPublicationMode",
         "RhiPublicationRetryPolicy",
@@ -375,6 +392,77 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
     assert!(!PUBLIC_API.contains("rhi::presence_publication::"));
     assert!(!PUBLIC_API.contains("rhi::admin_v1::"));
     assert!(!PUBLIC_API.contains("rhi::cli_v1::"));
+    assert!(!PUBLIC_API.contains("rhi::doctor_v1::"));
+    assert!(!PUBLIC_API.contains("rhi::process_result_v1::"));
+}
+
+#[test]
+fn doctor_and_process_results_are_closed_bounded_and_process_safe() {
+    let contract: serde_json::Value =
+        serde_json::from_str(OPERATOR_CONTRACT).expect("operator contract");
+    assert_eq!(contract["doctor"]["contract_version"], 1);
+    assert_eq!(contract["doctor"]["execution"], "ordered");
+    assert_eq!(contract["doctor"]["checks"].as_array().unwrap().len(), 15);
+    assert_eq!(contract["doctor"]["report_max_utf8_bytes"], 8_192);
+    assert_eq!(contract["doctor"]["required_fail_or_timeout_exit"], 6);
+    assert_eq!(contract["doctor"]["detached_probe_work"], false);
+    assert_eq!(contract["exit_codes"].as_array().unwrap().len(), 7);
+
+    for required in [
+        "pub const RHI_DOCTOR_CHECK_COUNT: usize = 15",
+        "pub const RHI_DOCTOR_REPORT_MAX_UTF8_BYTES: usize = 8_192",
+        "tokio::time::timeout(",
+        "probe.probe(definition)",
+        "Ok(RhiDoctorObservation::Skipped) if !definition.required",
+        "RhiDoctorCheckStatus::Timeout",
+        "canonical_json: Box<[u8]>",
+        ".field(\"canonical_json\", &\"[redacted]\")",
+    ] {
+        assert!(DOCTOR.contains(required), "doctor is missing {required}");
+    }
+    for forbidden in [
+        "std::fs",
+        "std::net",
+        "sqlx::",
+        "tokio::spawn",
+        "thread::spawn",
+        "SystemTime",
+        "serde_json::Value",
+        "pub fn into_inner",
+    ] {
+        assert!(
+            !DOCTOR.contains(forbidden),
+            "doctor orchestrator gained forbidden authority {forbidden}"
+        );
+    }
+    for required in [
+        "pub enum RhiProcessResult",
+        "Self::Success => 0",
+        "Self::DoctorRequiredCheckFailed => 6",
+        "pub const fn code(self) -> &'static str",
+    ] {
+        assert!(
+            PROCESS_RESULT.contains(required),
+            "process result is missing {required}"
+        );
+    }
+    assert!(MAIN.contains("parse_rhi_cli_v1_from(std::env::args_os())"));
+    assert!(MAIN.contains("RhiProcessResult::InputOrConfiguration"));
+    assert!(MAIN.contains("eprintln!(\"RHI command failed: {}\", result.code())"));
+    for forbidden in ["{error}", "{error:?}", "process::exit", "tokio::runtime"] {
+        assert!(
+            !MAIN.contains(forbidden),
+            "binary exposes forbidden process behavior {forbidden}"
+        );
+    }
+    assert!(
+        MANIFEST.contains(
+            "tokio = { version = \"1\", default-features = false, features = [\"time\"] }"
+        )
+    );
+    assert!(MANIFEST.contains(
+        "serde = { version = \"1\", default-features = false, features = [\"derive\"] }"
+    ));
 }
 
 #[test]
@@ -1035,7 +1123,7 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .lines()
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
-    assert_eq!(public_error_count, 35);
+    assert_eq!(public_error_count, 36);
 }
 
 #[test]
@@ -1530,6 +1618,10 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "[`admin_domain.v1.json`](contracts/services_hardening/admin_domain.v1.json)",
         "[`admin_identity_offline.v1.json`](contracts/services_hardening/admin_identity_offline.v1.json)",
         "[`admin_wave_qualification.v1.json`](contracts/services_hardening/admin_wave_qualification.v1.json)",
+        "## Bounded active doctor and stable process results",
+        "governed fifteen checks in exact contract order",
+        "Required failure or timeout returns exit code `6`",
+        "no\ndetached probe work is permitted",
     ] {
         assert!(README.contains(required), "README is missing {required}");
     }
@@ -1558,6 +1650,7 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "Build service-profile and application-handler presence only through the",
         "Preserve the\n  caller's sealed exact-byte capability",
         "Recover an expired stale",
+        "Step 211 freezes the exact fifteen-check doctor inventory",
     ] {
         assert!(AGENTS.contains(required), "AGENTS is missing {required}");
     }

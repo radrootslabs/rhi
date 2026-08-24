@@ -555,6 +555,25 @@ database-path, worker, environment-file, or arbitrary path-leaf flag. Identity
 rekey and replacement are not commands; rotation is a create-new offline
 artifact plus governed configuration apply.
 
+## Bounded active doctor and stable process results
+
+The doctor runs the governed fifteen checks in exact contract order. Each
+check has one fixed deadline, required or optional authority, a closed evidence
+scope, and a safe remediation code. Required checks must pass; required
+failure, timeout, or an invalid skipped result makes the aggregate `fail`.
+Optional non-pass makes the aggregate `degraded`, while every passing check
+makes it `pass`. A timed-out probe is cancelled by dropping its future, and no
+detached probe work is permitted.
+
+The compact canonical JSON report is capped at 8,192 UTF-8 bytes. Its summaries
+come only from the fixed content-free vocabulary and cannot contain paths, raw
+errors, relay text, identifiers, credentials, or other protected material.
+Required failure or timeout returns exit code `6`; the complete process-result
+contract is the closed zero-through-six inventory in
+[`operator_contract.v1.json`](contracts/services_hardening/operator_contract.v1.json).
+The executable emits only the stable result code on stderr and never renders a
+parser, path-resolution, dependency, or internal error.
+
 ## Unix-admin boundary
 
 Step 206 bound the seven common RHI routes for detailed status, redacted

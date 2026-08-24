@@ -192,6 +192,54 @@ pub rhi::RhiCredentialResolutionErrorKind::UnsupportedPlatform
 pub rhi::RhiCredentialResolutionErrorKind::UnsupportedProfile
 impl rhi::RhiCredentialResolutionErrorKind
 pub const fn rhi::RhiCredentialResolutionErrorKind::code(self) -> &'static str
+pub enum rhi::RhiDoctorAggregateStatus
+pub rhi::RhiDoctorAggregateStatus::Degraded
+pub rhi::RhiDoctorAggregateStatus::Fail
+pub rhi::RhiDoctorAggregateStatus::Pass
+pub enum rhi::RhiDoctorCheckId
+pub rhi::RhiDoctorCheckId::AdminBindPolicy
+pub rhi::RhiDoctorCheckId::ClockSkew
+pub rhi::RhiDoctorCheckId::CursorCheckpoint
+pub rhi::RhiDoctorCheckId::IdentityBinding
+pub rhi::RhiDoctorCheckId::NetworkPolicy
+pub rhi::RhiDoctorCheckId::OperationsBindPolicy
+pub rhi::RhiDoctorCheckId::PathsPermissions
+pub rhi::RhiDoctorCheckId::PublicationInvariants
+pub rhi::RhiDoctorCheckId::ReconciliationBacklog
+pub rhi::RhiDoctorCheckId::ReconciliationLeases
+pub rhi::RhiDoctorCheckId::RequiredSources
+pub rhi::RhiDoctorCheckId::SqliteFreeSpace
+pub rhi::RhiDoctorCheckId::SqliteIntegrity
+pub rhi::RhiDoctorCheckId::SqliteSchema
+pub rhi::RhiDoctorCheckId::WriterLock
+pub enum rhi::RhiDoctorCheckStatus
+pub rhi::RhiDoctorCheckStatus::Fail
+pub rhi::RhiDoctorCheckStatus::Pass
+pub rhi::RhiDoctorCheckStatus::Skipped
+pub rhi::RhiDoctorCheckStatus::Timeout
+pub enum rhi::RhiDoctorErrorKind
+pub rhi::RhiDoctorErrorKind::Encoding
+pub rhi::RhiDoctorErrorKind::OutputTooLarge
+pub enum rhi::RhiDoctorObservation
+pub rhi::RhiDoctorObservation::Fail
+pub rhi::RhiDoctorObservation::Pass
+pub rhi::RhiDoctorObservation::Skipped
+pub enum rhi::RhiDoctorRemediationCode
+pub rhi::RhiDoctorRemediationCode::CorrectAdminBindPolicy
+pub rhi::RhiDoctorRemediationCode::CorrectClock
+pub rhi::RhiDoctorRemediationCode::CorrectNetworkPolicy
+pub rhi::RhiDoctorRemediationCode::CorrectOperationsBindPolicy
+pub rhi::RhiDoctorRemediationCode::CorrectPathPolicy
+pub rhi::RhiDoctorRemediationCode::FreeStateDiskSpace
+pub rhi::RhiDoctorRemediationCode::ReduceReconciliationBacklog
+pub rhi::RhiDoctorRemediationCode::ReleaseWriterLock
+pub rhi::RhiDoctorRemediationCode::RepairCursorCheckpoint
+pub rhi::RhiDoctorRemediationCode::RepairPublicationState
+pub rhi::RhiDoctorRemediationCode::RepairReconciliationLeases
+pub rhi::RhiDoctorRemediationCode::RepairSchema
+pub rhi::RhiDoctorRemediationCode::RestoreIdentityBinding
+pub rhi::RhiDoctorRemediationCode::RestoreRequiredSources
+pub rhi::RhiDoctorRemediationCode::RestoreVerifiedState
 pub enum rhi::RhiEncryptedIdentityEnvelopeErrorKind
 pub rhi::RhiEncryptedIdentityEnvelopeErrorKind::AlreadyExists
 pub rhi::RhiEncryptedIdentityEnvelopeErrorKind::IdentityMismatch
@@ -290,6 +338,18 @@ pub rhi::RhiPresenceTargetState::Submitted
 pub rhi::RhiPresenceTargetState::Unknown
 impl rhi::RhiPresenceTargetState
 pub const fn rhi::RhiPresenceTargetState::code(self) -> &'static str
+pub enum rhi::RhiProcessResult
+pub rhi::RhiProcessResult::DoctorRequiredCheckFailed
+pub rhi::RhiProcessResult::InputOrConfiguration
+pub rhi::RhiProcessResult::OperationRejectedOrConflict
+pub rhi::RhiProcessResult::ServiceOrDependencyUnavailable
+pub rhi::RhiProcessResult::StateOrIdentityUnavailable
+pub rhi::RhiProcessResult::Success
+pub rhi::RhiProcessResult::UnexpectedInternal
+impl rhi::RhiProcessResult
+pub const fn rhi::RhiProcessResult::code(self) -> &'static str
+pub fn rhi::RhiProcessResult::exit_code(self) -> std::process::ExitCode
+pub const fn rhi::RhiProcessResult::exit_code_u8(self) -> u8
 pub enum rhi::RhiPublicationAttemptEvidenceErrorKind
 pub rhi::RhiPublicationAttemptEvidenceErrorKind::InvalidAttemptNumber
 pub rhi::RhiPublicationAttemptEvidenceErrorKind::InvalidTargetOrdinal
@@ -863,6 +923,36 @@ pub const fn rhi::RhiDirtyTradeRepository<'_>::descriptor(&self) -> rhi::RhiStat
 pub const fn rhi::RhiDirtyTradeRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
 impl core::fmt::Debug for rhi::RhiDirtyTradeRepository<'_>
 pub fn rhi::RhiDirtyTradeRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiDoctorCheckDefinition
+impl rhi::RhiDoctorCheckDefinition
+pub const fn rhi::RhiDoctorCheckDefinition::deadline_ms(self) -> u64
+pub const fn rhi::RhiDoctorCheckDefinition::id(self) -> rhi::RhiDoctorCheckId
+pub const fn rhi::RhiDoctorCheckDefinition::remediation_code(self) -> rhi::RhiDoctorRemediationCode
+pub const fn rhi::RhiDoctorCheckDefinition::required(self) -> bool
+pub const fn rhi::RhiDoctorCheckDefinition::scope(self) -> &'static [&'static str]
+pub struct rhi::RhiDoctorCheckResult
+impl rhi::RhiDoctorCheckResult
+pub const fn rhi::RhiDoctorCheckResult::definition(self) -> rhi::RhiDoctorCheckDefinition
+pub const fn rhi::RhiDoctorCheckResult::status(self) -> rhi::RhiDoctorCheckStatus
+pub const fn rhi::RhiDoctorCheckResult::summary(self) -> &'static str
+pub struct rhi::RhiDoctorError
+impl rhi::RhiDoctorError
+pub const fn rhi::RhiDoctorError::kind(self) -> rhi::RhiDoctorErrorKind
+impl core::error::Error for rhi::RhiDoctorError
+impl core::fmt::Debug for rhi::RhiDoctorError
+pub fn rhi::RhiDoctorError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiDoctorError
+pub fn rhi::RhiDoctorError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiDoctorReport
+impl rhi::RhiDoctorReport
+pub fn rhi::RhiDoctorReport::canonical_json(&self) -> &[u8]
+pub fn rhi::RhiDoctorReport::checks(&self) -> &[rhi::RhiDoctorCheckResult]
+pub const fn rhi::RhiDoctorReport::exit_code(&self) -> u8
+pub const fn rhi::RhiDoctorReport::instance(&self) -> &radroots_runtime_paths::identifier::InstanceId
+pub const fn rhi::RhiDoctorReport::service(&self) -> &'static str
+pub const fn rhi::RhiDoctorReport::status(&self) -> rhi::RhiDoctorAggregateStatus
+impl core::fmt::Debug for rhi::RhiDoctorReport
+pub fn rhi::RhiDoctorReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiEffectiveConfigV1
 impl rhi::RhiEffectiveConfigV1
 pub fn rhi::RhiEffectiveConfigV1::canonical_json(&self) -> &str
@@ -1948,6 +2038,10 @@ pub const rhi::RHI_CONFIG_DOCUMENT_MAX_UTF8_BYTES: usize
 pub const rhi::RHI_CONFIG_EFFECTIVE_MAX_UTF8_BYTES: usize
 pub const rhi::RHI_CONFIG_SCHEMA: &str
 pub const rhi::RHI_CONFIG_SCHEMA_VERSION: u32
+pub const rhi::RHI_DOCTOR_CHECK_COUNT: usize
+pub const rhi::RHI_DOCTOR_CONTRACT_VERSION: u32
+pub const rhi::RHI_DOCTOR_REPORT_MAX_UTF8_BYTES: usize
+pub const rhi::RHI_DOCTOR_SUMMARY_MAX_UTF8_BYTES: usize
 pub const rhi::RHI_ENCRYPTED_IDENTITY_BACKUP_INCLUDED: bool
 pub const rhi::RHI_ENCRYPTED_IDENTITY_ENVELOPE_CONTRACT_VERSION: u32
 pub const rhi::RHI_ENCRYPTED_IDENTITY_ENVELOPE_MAX_BYTES: usize
@@ -2037,6 +2131,8 @@ pub trait rhi::RhiCredentialAccess: core::marker::Send + core::marker::Sync
 pub fn rhi::RhiCredentialAccess::resolve_existing(&self, &rhi::RhiRuntimeContext, &rhi::RhiIdentityEnvelopeBinding) -> core::result::Result<rhi::RhiWrappingCredential, rhi::RhiCredentialResolutionError>
 impl rhi::RhiCredentialAccess for rhi::CanonicalRhiCredentialAccess
 pub fn rhi::CanonicalRhiCredentialAccess::resolve_existing(&self, &rhi::RhiRuntimeContext, &rhi::RhiIdentityEnvelopeBinding) -> core::result::Result<rhi::RhiWrappingCredential, rhi::RhiCredentialResolutionError>
+pub trait rhi::RhiDoctorProbe: core::marker::Send + core::marker::Sync
+pub fn rhi::RhiDoctorProbe::probe(&self, rhi::RhiDoctorCheckDefinition) -> rhi::RhiDoctorFuture<'_>
 pub trait rhi::RhiExactPresenceSink: core::marker::Send + core::marker::Sync
 pub fn rhi::RhiExactPresenceSink::submit_exact<'a>(&'a self, &'a rhi::RhiPreparedPresenceAttempt) -> radroots_transport::source::BoxFuture<'a, rhi::RhiPresenceAttemptOutcome>
 pub trait rhi::RhiExactPublicationSink: core::marker::Send + core::marker::Sync
@@ -2067,9 +2163,11 @@ pub fn rhi::provision_rhi_encrypted_identity(&rhi::RhiIdentityEnvelopeBinding, &
 pub fn rhi::reduce_rhi_reconciliation_manifest(rhi::RhiReconciliationManifest) -> core::result::Result<rhi::RhiReconciliationProjection, rhi::RhiReconciliationReducerError>
 pub fn rhi::resolve_rhi_runtime_context(&radroots_runtime_paths::roots::RadrootsPathResolver, &rhi::RhiCliInvocationV1) -> core::result::Result<rhi::RhiRuntimeContext, rhi::RhiRuntimeContextError>
 pub fn rhi::resolve_rhi_wrapping_credential(&rhi::RhiRuntimeContext, &rhi::RhiIdentityEnvelopeBinding) -> core::result::Result<rhi::RhiWrappingCredential, rhi::RhiCredentialResolutionError>
+pub const fn rhi::rhi_doctor_check_definitions() -> &'static [rhi::RhiDoctorCheckDefinition; 15]
 pub fn rhi::rhi_migration_catalog() -> core::result::Result<radroots_service_sqlite::migration::MigrationCatalog, rhi::RhiStateCatalogError>
 pub fn rhi::rhi_schema_catalog() -> core::result::Result<radroots_service_sqlite::integrity::catalog::SchemaCatalog, rhi::RhiStateCatalogError>
 pub const fn rhi::rhi_state_repository_descriptors() -> &'static [rhi::RhiStateRepositoryDescriptor; 21]
+pub async fn rhi::run_rhi_doctor(&rhi::RhiRuntimeContext, &impl rhi::RhiDoctorProbe + ?core::marker::Sized) -> core::result::Result<rhi::RhiDoctorReport, rhi::RhiDoctorError>
 pub async fn rhi::stage_rhi_state_restore(&rhi::RhiRuntimeContext, &rhi::RhiStateMetadata, rhi::RhiVerifiedStateBackup) -> core::result::Result<rhi::RhiStagedStateRestore, rhi::RhiStateMaintenanceError>
 pub fn rhi::trade_mutation_subscription_kinds() -> alloc::vec::Vec<u32>
 pub fn rhi::validate_rhi_presence_desired_authority(&rhi::RhiConfigDocumentV1, &rhi::RhiPresenceDesiredAuthority) -> core::result::Result<(), rhi::RhiPresenceDesiredError>
@@ -2077,5 +2175,6 @@ pub fn rhi::validate_rhi_signed_presence_documents(&rhi::RhiSignedPresenceDocume
 pub fn rhi::validate_rhi_state_catalogs(&radroots_service_sqlite::migration::MigrationCatalog, &radroots_service_sqlite::integrity::catalog::SchemaCatalog) -> core::result::Result<(), rhi::RhiStateCatalogError>
 pub fn rhi::verify_rhi_state_backup(&[u8], radroots_service_sqlite::backup::manifest::BackupManifestSha256, &std::path::Path, &rhi::RhiStateMetadata, core::num::nonzero::NonZeroU64) -> core::result::Result<rhi::RhiVerifiedStateBackup, rhi::RhiStateMaintenanceError>
 pub type rhi::RhiAdminFuture<'a> = core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = core::result::Result<rhi::RhiAdminResponseDocument, rhi::RhiAdminHandlerError>> + core::marker::Send + 'a)>>
+pub type rhi::RhiDoctorFuture<'a> = core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = rhi::RhiDoctorObservation> + core::marker::Send + 'a)>>
 pub type rhi::RhiReconciliationCoverage = radroots_trade::evidence::RadrootsTradeEvidenceCoverageV1
 pub type rhi::RhiReconciliationOutcome = radroots_trade::evidence::RadrootsTradeEvidenceOutcomeV1

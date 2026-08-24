@@ -4,33 +4,36 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use rhi::{
-    RadrootsHostEnvironment, RadrootsPathResolver, RadrootsPlatform, parse_rhi_cli_v1_from,
-    plan_rhi_cli_v1, resolve_rhi_runtime_context,
+    RadrootsHostEnvironment, RadrootsPathResolver, RadrootsPlatform, RhiProcessResult,
+    parse_rhi_cli_v1_from, plan_rhi_cli_v1, resolve_rhi_runtime_context,
 };
 
 fn main() -> ExitCode {
     let invocation = match parse_rhi_cli_v1_from(std::env::args_os()) {
         Ok(invocation) => invocation,
-        Err(_) => return ExitCode::FAILURE,
+        Err(_) => return emit_failure(RhiProcessResult::InputOrConfiguration),
     };
     exit_code_from_run(execute(invocation))
 }
 
-fn exit_code_from_run(result: Result<(), ()>) -> ExitCode {
+fn exit_code_from_run(result: Result<(), RhiProcessResult>) -> ExitCode {
     match result {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(_) => {
-            eprintln!("RHI command failed");
-            ExitCode::FAILURE
-        }
+        Ok(()) => RhiProcessResult::Success.exit_code(),
+        Err(result) => emit_failure(result),
     }
 }
 
-fn execute(invocation: rhi::RhiCliInvocationV1) -> Result<(), ()> {
+fn emit_failure(result: RhiProcessResult) -> ExitCode {
+    eprintln!("RHI command failed: {}", result.code());
+    result.exit_code()
+}
+
+fn execute(invocation: rhi::RhiCliInvocationV1) -> Result<(), RhiProcessResult> {
     let _plan = plan_rhi_cli_v1(&invocation);
     let resolver = RadrootsPathResolver::new(RadrootsPlatform::current(), host_environment());
-    let _context = resolve_rhi_runtime_context(&resolver, &invocation).map_err(|_| ())?;
-    Err(())
+    let _context = resolve_rhi_runtime_context(&resolver, &invocation)
+        .map_err(|_| RhiProcessResult::InputOrConfiguration)?;
+    Err(RhiProcessResult::InputOrConfiguration)
 }
 
 fn host_environment() -> RadrootsHostEnvironment {
@@ -54,13 +57,16 @@ fn host_environment() -> RadrootsHostEnvironment {
 #[cfg(test)]
 mod tests {
     use super::{execute, exit_code_from_run};
-    use rhi::parse_rhi_cli_v1_from;
+    use rhi::{RhiProcessResult, parse_rhi_cli_v1_from};
     use std::process::ExitCode;
 
     #[test]
     fn process_result_is_stable() {
         assert_eq!(exit_code_from_run(Ok(())), ExitCode::SUCCESS);
-        assert_eq!(exit_code_from_run(Err(())), ExitCode::FAILURE);
+        assert_eq!(
+            exit_code_from_run(Err(RhiProcessResult::UnexpectedInternal)),
+            ExitCode::FAILURE
+        );
     }
 
     #[test]
@@ -78,7 +84,10 @@ mod tests {
         ])
         .expect("valid invocation");
 
-        assert_eq!(execute(invocation), Err(()));
+        assert_eq!(
+            execute(invocation),
+            Err(RhiProcessResult::InputOrConfiguration)
+        );
         assert_eq!(
             std::fs::read_dir(root.path()).expect("read root").count(),
             0

@@ -309,28 +309,18 @@ fn admin_inventory_is_closed_unique_and_model_complete() {
 fn doctor_exit_and_tcp_contracts_are_exact() {
     let value = contract();
     assert_eq!(
-        value["doctor"],
-        serde_json::json!({
-            "shared_schema": "radroots.service.doctor.v1",
-            "contract_version": 1,
-            "checks": [
-                { "id": "paths_permissions", "required": true },
-                { "id": "writer_lock", "required": true },
-                { "id": "sqlite_schema", "required": true },
-                { "id": "sqlite_integrity", "required": true },
-                { "id": "sqlite_free_space", "required": true },
-                { "id": "identity_binding", "required": true },
-                { "id": "admin_bind_policy", "required": true },
-                { "id": "operations_bind_policy", "required": true },
-                { "id": "network_policy", "required": true },
-                { "id": "required_sources", "required": true },
-                { "id": "cursor_checkpoint", "required": true },
-                { "id": "reconciliation_leases", "required": true },
-                { "id": "reconciliation_backlog", "required": true },
-                { "id": "publication_invariants", "required": true },
-                { "id": "clock_skew", "required": false }
-            ]
-        })
+        value["doctor"]["shared_schema"],
+        "radroots.service.doctor.v1"
+    );
+    assert_eq!(value["doctor"]["contract_version"], 1);
+    assert_eq!(value["doctor"]["execution"], "ordered");
+    assert_eq!(value["doctor"]["pass_requires_all_scope"], true);
+    assert_eq!(
+        value["doctor"]["checks"]
+            .as_array()
+            .expect("doctor checks")
+            .len(),
+        15
     );
     assert_eq!(
         value["exit_codes"],
