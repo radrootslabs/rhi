@@ -1,0 +1,100 @@
+{
+  "schema": "radroots.rhi.reconciliation-outcome",
+  "schema_version": 1,
+  "contract_version": 1,
+  "input": {
+    "projection_authority": "sealed_step_193_projection_only",
+    "claim_authority": "exact_typed_mutation_id",
+    "ownership": "projection_consumed_and_retained_inside_evaluation",
+    "coverage_source": "exact_owned_manifest_coverage",
+    "shared_projection_source": "private_step_193_projection"
+  },
+  "coverage": [
+    "missing",
+    "partial",
+    "scope_satisfied",
+    "unsupported"
+  ],
+  "outcome": [
+    "valid",
+    "invalid",
+    "indeterminate"
+  ],
+  "precedence": [
+    "manifest_coverage",
+    "projection_digest_availability",
+    "shared_evidence_state",
+    "reducer_issue_or_claim_ambiguity",
+    "claim_presence",
+    "clean_active_claim",
+    "clean_cancelled_claim",
+    "unresolved_claim"
+  ],
+  "decision": {
+    "missing": ["indeterminate", "required_evidence_missing"],
+    "partial": ["indeterminate", "required_source_incomplete"],
+    "unsupported": ["indeterminate", "required_source_unsupported"],
+    "projection_digest_unavailable": ["indeterminate", "projection_digest_unavailable"],
+    "shared_evidence_missing": ["indeterminate", "required_evidence_missing"],
+    "shared_evidence_partial": ["indeterminate", "required_source_incomplete"],
+    "shared_schema_unsupported": ["indeterminate", "governing_schema_unsupported"],
+    "reducer_issue_or_claim_ambiguity": ["indeterminate", "reducer_issue_unresolved"],
+    "claim_missing": ["indeterminate", "agreement_claim_missing"],
+    "clean_active_claim": ["valid", "scope_satisfied"],
+    "clean_cancelled_claim": ["invalid", "agreement_claim_cancelled"],
+    "claim_unresolved": ["indeterminate", "agreement_claim_unresolved"]
+  },
+  "reason_inventory": {
+    "cardinality": 1,
+    "closed": true,
+    "ordering": "single_primary_reason",
+    "codes": [
+      "required_evidence_missing",
+      "required_source_incomplete",
+      "required_source_unsupported",
+      "projection_digest_unavailable",
+      "governing_schema_unsupported",
+      "reducer_issue_unresolved",
+      "agreement_claim_missing",
+      "agreement_claim_unresolved",
+      "scope_satisfied",
+      "agreement_claim_cancelled"
+    ],
+    "raw_source_errors": false
+  },
+  "result": {
+    "sealed": true,
+    "caller_forgeable": false,
+    "retains_projection": true,
+    "retains_claim": true,
+    "debug": "coverage_outcome_reason_only",
+    "error": "none_total_over_sealed_projection"
+  },
+  "effects": {
+    "sqlite": false,
+    "filesystem": false,
+    "source_or_relay": false,
+    "network": false,
+    "task_spawn": false,
+    "ambient_clock": false,
+    "ambient_entropy": false
+  },
+  "forbidden": [
+    "caller_supplied_coverage",
+    "caller_supplied_outcome",
+    "caller_supplied_reason",
+    "evidence_absence_as_invalid",
+    "valid_or_invalid_without_scope_satisfied",
+    "raw_source_error_reason",
+    "report_or_attestation_construction",
+    "persistence_or_job_finalization"
+  ],
+  "deferred": [
+    "generation_fenced_commit",
+    "report_and_attestation",
+    "manifest_projection_and_report_persistence",
+    "publication",
+    "job_finalization",
+    "integration_wave_qualification"
+  ]
+}

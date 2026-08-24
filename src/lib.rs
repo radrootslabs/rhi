@@ -96,8 +96,10 @@ pub use reconciliation_manifest::{
     RhiReconciliationScopePrerequisites,
 };
 pub use reconciliation_reducer::{
-    RHI_RECONCILIATION_REDUCER_CONTRACT_VERSION, RhiReconciliationProjection,
-    RhiReconciliationReducerError, RhiReconciliationReducerErrorKind,
+    RHI_RECONCILIATION_OUTCOME_CONTRACT_VERSION, RHI_RECONCILIATION_REDUCER_CONTRACT_VERSION,
+    RhiReconciliationCoverage, RhiReconciliationEvaluation, RhiReconciliationOutcome,
+    RhiReconciliationProjection, RhiReconciliationReasonCode, RhiReconciliationReducerError,
+    RhiReconciliationReducerErrorKind, evaluate_rhi_reconciliation_claim,
     reduce_rhi_reconciliation_manifest,
 };
 pub use reconciliation_replay::{

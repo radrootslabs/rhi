@@ -78,11 +78,21 @@ fn machine_contract_freezes_the_complete_step_191_boundary() {
         contract["private_reducer_material"]["maximum_canonical_content_bytes"],
         134_217_728
     );
+    assert_eq!(
+        contract["private_reducer_material"]["outcome_owner"],
+        "reconciliation_outcome.v1.json"
+    );
     assert!(
         !contract["deferred"]
             .as_array()
             .expect("deferred inventory")
             .contains(&json!("lineage_reducer"))
+    );
+    assert!(
+        !contract["deferred"]
+            .as_array()
+            .expect("deferred inventory")
+            .contains(&json!("coverage_and_outcome_projection"))
     );
 }
 

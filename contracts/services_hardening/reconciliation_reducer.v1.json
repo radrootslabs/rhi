@@ -45,8 +45,9 @@
     "retains_manifest": true,
     "shared_projection_public_access": false,
     "shared_projection_retained_for_later_steps": true,
-    "shared_projection_digest_available": true,
-    "rhi_projection_digest_available": true,
+    "shared_projection_digest_available": "optional_fail_closed_for_outcome",
+    "rhi_projection_digest_available": "optional_fail_closed_for_outcome",
+    "outcome_owner": "reconciliation_outcome.v1.json",
     "debug": "counts_only_redacted",
     "errors": "crate_owned_source_free_redacted"
   },
@@ -66,12 +67,11 @@
     "source_or_relay_lookup",
     "arrival_order_selected_truth",
     "unbound_projection_digest",
-    "final_coverage_or_outcome_authority",
+    "caller_supplied_coverage_or_outcome",
     "projection_persistence",
     "report_or_attestation_construction"
   ],
   "deferred": [
-    "final_coverage_and_outcome",
     "generation_fenced_commit",
     "report_and_attestation",
     "manifest_and_projection_persistence",

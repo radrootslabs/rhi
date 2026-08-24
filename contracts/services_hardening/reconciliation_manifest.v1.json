@@ -83,7 +83,8 @@
     "storage": "immutable_reference_counted_bytes",
     "canonical_manifest_wire_changed": false,
     "public_raw_access": false,
-    "reducer_owner": "reconciliation_reducer.v1.json"
+    "reducer_owner": "reconciliation_reducer.v1.json",
+    "outcome_owner": "reconciliation_outcome.v1.json"
   },
   "effects": {
     "sqlite": false,
@@ -101,11 +102,10 @@
     "arrival_order_selected_truth",
     "event_authored_time_relabelled_as_observation_time",
     "manifest_persistence",
-    "reducer_or_final_outcome_authority"
+    "manifest_direct_reducer_or_outcome_authority"
   ],
   "deferred": [
     "wave_qualification",
-    "coverage_and_outcome_projection",
     "manifest_persistence",
     "attestation",
     "publication",

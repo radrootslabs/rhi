@@ -262,9 +262,19 @@ RHI digest. The projection retains the canonical shared result privately for
 later checkpoints while exposing only bounded identity, digest, and count
 evidence.
 Reduction performs no SQLite, filesystem, source, relay, network, task, clock,
-or entropy operation. Final four-state coverage, three-state outcome,
-generation-fenced persistence, reports, attestations, and publication retain
-their later checkpoint owners.
+or entropy operation. Generation-fenced persistence, reports, attestations,
+and publication retain their later checkpoint owners.
+
+[`reconciliation_outcome.v1.json`](contracts/services_hardening/reconciliation_outcome.v1.json)
+derives one claim-specific evaluation from that sealed projection.
+Coverage is exactly `Missing`, `Partial`, `ScopeSatisfied`, or `Unsupported`;
+outcome is
+exactly `Valid`, `Invalid`, or `Indeterminate`. Missing, partial, unsupported,
+digest-unavailable, unresolved, ambiguous, or absent-claim evidence is always
+indeterminate. Only a clean active agreement claim is valid, and only a clean
+cancelled agreement claim is decisively invalid. Every evaluation retains its
+projection and exposes exactly one closed stable primary reason code without
+adding I/O or ambient authority.
 
 ## Existing-state runtime foundation
 

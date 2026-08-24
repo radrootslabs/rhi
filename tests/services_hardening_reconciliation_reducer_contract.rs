@@ -57,6 +57,18 @@ fn machine_contract_freezes_the_complete_step_193_boundary() {
     assert_eq!(contract["effects"]["source_or_relay"], false);
     assert_eq!(contract["effects"]["ambient_clock"], false);
     assert_eq!(contract["effects"]["ambient_entropy"], false);
+    assert_eq!(
+        contract["result"]["shared_projection_digest_available"],
+        "optional_fail_closed_for_outcome"
+    );
+    assert_eq!(
+        contract["result"]["rhi_projection_digest_available"],
+        "optional_fail_closed_for_outcome"
+    );
+    assert_eq!(
+        contract["result"]["outcome_owner"],
+        "reconciliation_outcome.v1.json"
+    );
 }
 
 #[test]

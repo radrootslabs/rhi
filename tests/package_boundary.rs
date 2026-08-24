@@ -27,6 +27,8 @@ const RECONCILIATION_MANIFEST_CONTRACT: &str =
     include_str!("../contracts/services_hardening/reconciliation_manifest.v1.json");
 const RECONCILIATION_REDUCER_CONTRACT: &str =
     include_str!("../contracts/services_hardening/reconciliation_reducer.v1.json");
+const RECONCILIATION_OUTCOME_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/reconciliation_outcome.v1.json");
 const RUNTIME_FOUNDATION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/runtime_foundation.v1.json");
 const TRADE_INGEST_CONTRACT: &str =
@@ -166,7 +168,13 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "RhiReconciliationManifestErrorKind",
         "RhiReconciliationScopePrerequisites",
         "RhiReconciliationProjection",
+        "RhiReconciliationEvaluation",
+        "RhiReconciliationCoverage",
+        "RhiReconciliationOutcome",
+        "RhiReconciliationReasonCode",
+        "RHI_RECONCILIATION_OUTCOME_CONTRACT_VERSION",
         "RhiReconciliationReducerErrorKind",
+        "evaluate_rhi_reconciliation_claim",
         "reduce_rhi_reconciliation_manifest",
         "RhiReconciliationSourceReplayPlan",
         "RhiReconciliationSourceReplay",
@@ -320,6 +328,46 @@ fn reconciliation_reducer_is_manifest_bound_sealed_and_effect_free() {
     assert!(!ROOT.contains("pub mod reconciliation_reducer"));
     assert!(!PUBLIC_API.contains("rhi::reconciliation_reducer::"));
     assert!(!PUBLIC_API.contains("RhiReconciliationProjection::shared_projection(&self)"));
+}
+
+#[test]
+fn reconciliation_outcome_is_projection_bound_total_and_effect_free() {
+    let contract: serde_json::Value = serde_json::from_str(RECONCILIATION_OUTCOME_CONTRACT)
+        .expect("reconciliation-outcome contract");
+    assert_eq!(contract["schema"], "radroots.rhi.reconciliation-outcome");
+    assert_eq!(contract["contract_version"], 1);
+    assert_eq!(contract["coverage"].as_array().expect("coverage").len(), 4);
+    assert_eq!(contract["outcome"].as_array().expect("outcome").len(), 3);
+    assert_eq!(contract["reason_inventory"]["cardinality"], 1);
+    assert_eq!(contract["effects"]["sqlite"], false);
+    for required in [
+        "pub fn evaluate_rhi_reconciliation_claim(",
+        "RhiReconciliationEvaluation",
+        "RhiReconciliationReasonCode",
+        "classify_evaluation(facts)",
+        "projection: RhiReconciliationProjection",
+        "claim_mutation_id: MutationId",
+    ] {
+        assert!(
+            RECONCILIATION_REDUCER.contains(required),
+            "reconciliation outcome is missing {required}"
+        );
+    }
+    for forbidden in [
+        "sqlx::",
+        "std::fs",
+        "std::net",
+        "tokio::",
+        "SystemTime",
+        "caller_supplied_outcome",
+    ] {
+        assert!(
+            !RECONCILIATION_REDUCER.contains(forbidden),
+            "reconciliation outcome gained forbidden authority {forbidden}"
+        );
+    }
+    assert!(!PUBLIC_API.contains("rhi::reconciliation_reducer::"));
+    assert!(!PUBLIC_API.contains("RhiReconciliationEvaluation {"));
 }
 
 #[test]
@@ -777,7 +825,9 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "## Pure reconciliation reducer",
         "[`reconciliation_reducer.v1.json`](contracts/services_hardening/reconciliation_reducer.v1.json)",
         "binds the promoted shared `radroots.trade.reducer.v1`",
-        "Final four-state coverage, three-state outcome",
+        "[`reconciliation_outcome.v1.json`](contracts/services_hardening/reconciliation_outcome.v1.json)",
+        "Coverage is exactly `Missing`, `Partial`, `ScopeSatisfied`, or `Unsupported`",
+        "Missing, partial, unsupported,",
         "The Step 192 integration-wave qualification proves that concurrent exact",
         "lost-success retry converges after close/reopen",
         "inventory terminates at configured source count plus one before mutation",

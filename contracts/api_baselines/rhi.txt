@@ -183,6 +183,19 @@ pub rhi::RhiReconciliationManifestErrorKind::InvalidCommittedInventory
 pub rhi::RhiReconciliationManifestErrorKind::InvalidObservationTime
 impl rhi::RhiReconciliationManifestErrorKind
 pub const fn rhi::RhiReconciliationManifestErrorKind::code(self) -> &'static str
+pub enum rhi::RhiReconciliationReasonCode
+pub rhi::RhiReconciliationReasonCode::AgreementClaimCancelled
+pub rhi::RhiReconciliationReasonCode::AgreementClaimMissing
+pub rhi::RhiReconciliationReasonCode::AgreementClaimUnresolved
+pub rhi::RhiReconciliationReasonCode::GoverningSchemaUnsupported
+pub rhi::RhiReconciliationReasonCode::ProjectionDigestUnavailable
+pub rhi::RhiReconciliationReasonCode::ReducerIssueUnresolved
+pub rhi::RhiReconciliationReasonCode::RequiredEvidenceMissing
+pub rhi::RhiReconciliationReasonCode::RequiredSourceIncomplete
+pub rhi::RhiReconciliationReasonCode::RequiredSourceUnsupported
+pub rhi::RhiReconciliationReasonCode::ScopeSatisfied
+impl rhi::RhiReconciliationReasonCode
+pub const fn rhi::RhiReconciliationReasonCode::code(self) -> &'static str
 pub enum rhi::RhiReconciliationReducerErrorKind
 pub rhi::RhiReconciliationReducerErrorKind::InvalidManifest
 pub rhi::RhiReconciliationReducerErrorKind::ProjectionUnavailable
@@ -661,6 +674,16 @@ impl core::fmt::Debug for rhi::RhiReconciliationCommitError
 pub fn rhi::RhiReconciliationCommitError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for rhi::RhiReconciliationCommitError
 pub fn rhi::RhiReconciliationCommitError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationEvaluation
+impl rhi::RhiReconciliationEvaluation
+pub const fn rhi::RhiReconciliationEvaluation::claim_mutation_id(&self) -> &radroots_event::id::MutationId
+pub const fn rhi::RhiReconciliationEvaluation::contract_version(&self) -> u32
+pub const fn rhi::RhiReconciliationEvaluation::coverage(&self) -> rhi::RhiReconciliationCoverage
+pub const fn rhi::RhiReconciliationEvaluation::outcome(&self) -> rhi::RhiReconciliationOutcome
+pub const fn rhi::RhiReconciliationEvaluation::projection(&self) -> &rhi::RhiReconciliationProjection
+pub const fn rhi::RhiReconciliationEvaluation::reason_codes(&self) -> &[rhi::RhiReconciliationReasonCode]
+impl core::fmt::Debug for rhi::RhiReconciliationEvaluation
+pub fn rhi::RhiReconciliationEvaluation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiReconciliationJob
 impl rhi::RhiReconciliationJob
 pub const fn rhi::RhiReconciliationJob::attempt_count(self) -> u16
@@ -750,11 +773,11 @@ pub fn rhi::RhiReconciliationManifestError::fmt(&self, &mut core::fmt::Formatter
 pub struct rhi::RhiReconciliationProjection
 impl rhi::RhiReconciliationProjection
 pub const fn rhi::RhiReconciliationProjection::contract_version(&self) -> u32
-pub const fn rhi::RhiReconciliationProjection::digest(&self) -> [u8; 32]
+pub const fn rhi::RhiReconciliationProjection::digest(&self) -> core::option::Option<[u8; 32]>
 pub fn rhi::RhiReconciliationProjection::issue_count(&self) -> usize
 pub const fn rhi::RhiReconciliationProjection::manifest(&self) -> &rhi::RhiReconciliationManifest
 pub const fn rhi::RhiReconciliationProjection::root_mutation_id(&self) -> core::option::Option<&radroots_event::id::MutationId>
-pub const fn rhi::RhiReconciliationProjection::shared_projection_digest(&self) -> [u8; 32]
+pub const fn rhi::RhiReconciliationProjection::shared_projection_digest(&self) -> core::option::Option<[u8; 32]>
 pub const fn rhi::RhiReconciliationProjection::shared_reducer_contract_id(&self) -> &'static str
 pub const fn rhi::RhiReconciliationProjection::shared_reducer_contract_version(&self) -> u16
 pub const fn rhi::RhiReconciliationProjection::trade_id(&self) -> &radroots_event::id::TradeId
@@ -1252,6 +1275,7 @@ pub const rhi::RHI_RECONCILIATION_COMMIT_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_JOB_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_JOB_MAX_ACTIVE: u32
 pub const rhi::RHI_RECONCILIATION_MANIFEST_CONTRACT_VERSION: u32
+pub const rhi::RHI_RECONCILIATION_OUTCOME_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_REDUCER_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_REPLAY_CONTRACT_VERSION: u32
 pub const rhi::RHI_RUNTIME_ADAPTER_CONTRACT_VERSION: u32
@@ -1305,6 +1329,7 @@ pub fn rhi::CanonicalRhiIdentityAccess::open_existing(&self, &rhi::RhiIdentityEn
 pub fn rhi::admit_rhi_trade_mutation_event(rhi::RhiTradeMutationAdmissionLimits, &[u8], rhi::RhiTradeMutationObservedAtUnixSeconds, rhi::RhiTradeMutationAuthoredTimePolicy) -> core::result::Result<rhi::RhiAdmittedTradeMutationEvent, rhi::RhiTradeMutationAdmissionError>
 pub async fn rhi::apply_rhi_configuration(&rhi::RhiRuntimeContext, &rhi::RhiConfigDocumentV1, &rhi::RhiConfigDocumentV1, radroots_service_sqlite::migration::MigrationAppliedAtUnixSeconds, &radroots_service_sqlite::migration::MigrationBuildIdentity) -> core::result::Result<rhi::RhiConfigApplyOutcome, rhi::RhiConfigApplyError>
 pub fn rhi::attest_projection_claim(&radroots_trade::trade_contract_v1::RadrootsTradeProjectionV1, &radroots_event::id::MutationId, &rhi::TradeAgreementAttestationPolicy) -> core::result::Result<rhi::TradeAgreementAttestationReportV1, rhi::TradeAgreementAttestationError>
+pub fn rhi::evaluate_rhi_reconciliation_claim(rhi::RhiReconciliationProjection, radroots_event::id::MutationId) -> rhi::RhiReconciliationEvaluation
 pub async fn rhi::finalize_rhi_state_restore(rhi::RhiStagedStateRestore) -> core::result::Result<(), rhi::RhiStateMaintenanceError>
 pub async fn rhi::ingest_rhi_trade_source(&rhi::RhiStateRepositories<'_>, &rhi::RhiTransportAdapters, &rhi::RhiConfigDocumentV1, &str, radroots_event::id::TradeId, rhi::RhiTradeSourceAttempt) -> core::result::Result<rhi::RhiTradeSourceIngestOutcome, rhi::RhiTradeSourceIngestError>
 pub async fn rhi::initialize_rhi_state(&rhi::RhiRuntimeContext, &rhi::RhiStateMetadata, radroots_service_sqlite::migration::MigrationAppliedAtUnixSeconds, &radroots_service_sqlite::migration::MigrationBuildIdentity) -> core::result::Result<(), rhi::RhiStateHostError>
@@ -1326,3 +1351,5 @@ pub async fn rhi::stage_rhi_state_restore(&rhi::RhiRuntimeContext, &rhi::RhiStat
 pub fn rhi::trade_mutation_subscription_kinds() -> alloc::vec::Vec<u32>
 pub fn rhi::validate_rhi_state_catalogs(&radroots_service_sqlite::migration::MigrationCatalog, &radroots_service_sqlite::integrity::catalog::SchemaCatalog) -> core::result::Result<(), rhi::RhiStateCatalogError>
 pub fn rhi::verify_rhi_state_backup(&[u8], radroots_service_sqlite::backup::manifest::BackupManifestSha256, &std::path::Path, &rhi::RhiStateMetadata, core::num::nonzero::NonZeroU64) -> core::result::Result<rhi::RhiVerifiedStateBackup, rhi::RhiStateMaintenanceError>
+pub type rhi::RhiReconciliationCoverage = radroots_trade::evidence::RadrootsTradeEvidenceCoverageV1
+pub type rhi::RhiReconciliationOutcome = radroots_trade::evidence::RadrootsTradeEvidenceOutcomeV1

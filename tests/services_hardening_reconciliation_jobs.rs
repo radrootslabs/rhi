@@ -1065,20 +1065,43 @@ async fn source_replay_commit_is_atomic_idempotent_and_mints_durable_cursor_evid
     assert_eq!(projection.issue_count(), 0);
     assert_eq!(
         projection.shared_projection_digest(),
-        [
+        Some([
             0x21, 0xd5, 0xd5, 0xe6, 0x06, 0x7a, 0x13, 0x68, 0xd0, 0xd5, 0x25, 0xa3, 0xec, 0xd1,
             0xb5, 0xcc, 0x99, 0xcb, 0x03, 0xd7, 0xf8, 0x06, 0xe6, 0xba, 0x47, 0xd3, 0xb9, 0x29,
             0x99, 0xa7, 0xe9, 0x61,
-        ]
+        ])
     );
     assert_eq!(
         projection.digest(),
-        [
+        Some([
             0xd1, 0x33, 0xa7, 0x72, 0xd2, 0x87, 0xa2, 0x56, 0x4a, 0xb3, 0xb3, 0xb2, 0xca, 0xb6,
             0xdc, 0xa6, 0xe5, 0xc5, 0xa0, 0x7f, 0x30, 0x8f, 0x67, 0xc5, 0xee, 0x77, 0x38, 0x06,
             0x40, 0x7a, 0x03, 0x71,
-        ]
+        ])
     );
+    let claim = *projection.root_mutation_id().expect("root proposal");
+    let evaluation = rhi::evaluate_rhi_reconciliation_claim(projection, claim);
+    assert_eq!(evaluation.contract_version(), 1);
+    assert_eq!(
+        evaluation.coverage(),
+        rhi::RhiReconciliationCoverage::ScopeSatisfied
+    );
+    assert_eq!(
+        evaluation.outcome(),
+        rhi::RhiReconciliationOutcome::Indeterminate
+    );
+    assert_eq!(
+        evaluation.reason_codes(),
+        [rhi::RhiReconciliationReasonCode::AgreementClaimMissing]
+    );
+    assert_eq!(evaluation.claim_mutation_id(), &claim);
+    assert_eq!(
+        evaluation.projection().trade_id(),
+        &TradeId::from_bytes([0x11; 16])
+    );
+    let evaluation_debug = format!("{evaluation:?}");
+    assert!(!evaluation_debug.contains(&format!("{claim:?}")));
+    assert!(!evaluation_debug.contains("d133a772"));
     host.close()
         .await
         .expect("close before lost-success replay");

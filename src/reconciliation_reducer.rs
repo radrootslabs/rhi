@@ -9,10 +9,10 @@ use radroots_event::{
 };
 use radroots_trade::{
     evidence::{
-        RadrootsTradeEvidenceCoverageV1, RadrootsTradeEvidenceStateV1,
-        RadrootsTradeMutationRecordV1,
+        RadrootsTradeEvidenceCoverageV1, RadrootsTradeEvidenceOutcomeV1,
+        RadrootsTradeEvidenceStateV1, RadrootsTradeMutationRecordV1,
     },
-    model::RadrootsTradeProjectionV1,
+    model::{RadrootsTradeAgreementStateV1, RadrootsTradeProjectionV1},
     reducer::{
         RADROOTS_TRADE_REDUCER_CONTRACT_ID, RADROOTS_TRADE_REDUCER_VERSION,
         RadrootsTradeReductionInputV1, reduce_trade_records,
@@ -30,6 +30,13 @@ use crate::{
 
 /// Exact version of the RHI reconciliation-reducer binding.
 pub const RHI_RECONCILIATION_REDUCER_CONTRACT_VERSION: u32 = 1;
+/// Exact version of the RHI reconciliation coverage/outcome binding.
+pub const RHI_RECONCILIATION_OUTCOME_CONTRACT_VERSION: u32 = 1;
+
+/// Exact shared four-state reconciliation coverage vocabulary.
+pub type RhiReconciliationCoverage = RadrootsTradeEvidenceCoverageV1;
+/// Exact shared three-state reconciliation outcome vocabulary.
+pub type RhiReconciliationOutcome = RadrootsTradeEvidenceOutcomeV1;
 
 const PROJECTION_DIGEST_DOMAIN: &[u8] = b"radroots.rhi.reconciliation_projection.v1\0";
 
@@ -107,8 +114,8 @@ impl Error for RhiReconciliationReducerError {}
 pub struct RhiReconciliationProjection {
     manifest: RhiReconciliationManifest,
     shared: RadrootsTradeProjectionV1,
-    shared_projection_digest: [u8; 32],
-    digest: [u8; 32],
+    shared_projection_digest: Option<[u8; 32]>,
+    digest: Option<[u8; 32]>,
 }
 
 impl RhiReconciliationProjection {
@@ -144,13 +151,13 @@ impl RhiReconciliationProjection {
 
     /// Returns the exact shared projection digest decoded from lowercase hex.
     #[must_use]
-    pub const fn shared_projection_digest(&self) -> [u8; 32] {
+    pub const fn shared_projection_digest(&self) -> Option<[u8; 32]> {
         self.shared_projection_digest
     }
 
     /// Returns the domain-separated RHI projection digest.
     #[must_use]
-    pub const fn digest(&self) -> [u8; 32] {
+    pub const fn digest(&self) -> Option<[u8; 32]> {
         self.digest
     }
 
@@ -164,6 +171,106 @@ impl RhiReconciliationProjection {
     #[must_use]
     pub const fn root_mutation_id(&self) -> Option<&MutationId> {
         self.shared.root_mutation_id()
+    }
+}
+
+/// Stable closed reason for one claim-specific reconciliation outcome.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RhiReconciliationReasonCode {
+    RequiredEvidenceMissing,
+    RequiredSourceIncomplete,
+    RequiredSourceUnsupported,
+    ProjectionDigestUnavailable,
+    GoverningSchemaUnsupported,
+    ReducerIssueUnresolved,
+    AgreementClaimMissing,
+    AgreementClaimUnresolved,
+    ScopeSatisfied,
+    AgreementClaimCancelled,
+}
+
+impl RhiReconciliationReasonCode {
+    /// Returns the exact stable lowercase report reason code.
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::RequiredEvidenceMissing => "required_evidence_missing",
+            Self::RequiredSourceIncomplete => "required_source_incomplete",
+            Self::RequiredSourceUnsupported => "required_source_unsupported",
+            Self::ProjectionDigestUnavailable => "projection_digest_unavailable",
+            Self::GoverningSchemaUnsupported => "governing_schema_unsupported",
+            Self::ReducerIssueUnresolved => "reducer_issue_unresolved",
+            Self::AgreementClaimMissing => "agreement_claim_missing",
+            Self::AgreementClaimUnresolved => "agreement_claim_unresolved",
+            Self::ScopeSatisfied => "scope_satisfied",
+            Self::AgreementClaimCancelled => "agreement_claim_cancelled",
+        }
+    }
+}
+
+/// Sealed claim-specific coverage and outcome derived from one projection.
+///
+/// Callers cannot construct or relabel an evaluation.
+///
+/// ```compile_fail
+/// use rhi::RhiReconciliationEvaluation;
+///
+/// let _forged = RhiReconciliationEvaluation {};
+/// ```
+pub struct RhiReconciliationEvaluation {
+    projection: RhiReconciliationProjection,
+    claim_mutation_id: MutationId,
+    coverage: RhiReconciliationCoverage,
+    outcome: RhiReconciliationOutcome,
+    reason_codes: [RhiReconciliationReasonCode; 1],
+}
+
+impl RhiReconciliationEvaluation {
+    /// Returns the exact coverage/outcome contract version.
+    #[must_use]
+    pub const fn contract_version(&self) -> u32 {
+        RHI_RECONCILIATION_OUTCOME_CONTRACT_VERSION
+    }
+
+    /// Returns the sealed projection evaluated for this claim.
+    #[must_use]
+    pub const fn projection(&self) -> &RhiReconciliationProjection {
+        &self.projection
+    }
+
+    /// Returns the exact typed claim selected by the evaluation.
+    #[must_use]
+    pub const fn claim_mutation_id(&self) -> &MutationId {
+        &self.claim_mutation_id
+    }
+
+    /// Returns the exact four-state evidence coverage.
+    #[must_use]
+    pub const fn coverage(&self) -> RhiReconciliationCoverage {
+        self.coverage
+    }
+
+    /// Returns the exact three-state claim outcome.
+    #[must_use]
+    pub const fn outcome(&self) -> RhiReconciliationOutcome {
+        self.outcome
+    }
+
+    /// Returns the exact bounded stable reason-code inventory.
+    #[must_use]
+    pub const fn reason_codes(&self) -> &[RhiReconciliationReasonCode] {
+        &self.reason_codes
+    }
+}
+
+impl fmt::Debug for RhiReconciliationEvaluation {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RhiReconciliationEvaluation")
+            .field("coverage", &self.coverage)
+            .field("outcome", &self.outcome)
+            .field("reason_codes", &self.reason_codes)
+            .finish_non_exhaustive()
     }
 }
 
@@ -233,16 +340,113 @@ pub fn reduce_rhi_reconciliation_manifest(
             RhiReconciliationReducerErrorKind::ProjectionUnavailable,
         ));
     }
-    let shared_projection_digest = decode_lower_hex_32(shared.projection_digest())
-        .ok_or_else(|| failure(RhiReconciliationReducerErrorKind::ProjectionUnavailable))?;
-    let digest = projection_digest(&manifest, shared_projection_digest)
-        .ok_or_else(|| failure(RhiReconciliationReducerErrorKind::ProjectionUnavailable))?;
+    let shared_projection_digest = decode_lower_hex_32(shared.projection_digest());
+    let digest = shared_projection_digest.and_then(|shared_projection_digest| {
+        projection_digest(&manifest, shared_projection_digest)
+    });
     Ok(RhiReconciliationProjection {
         manifest,
         shared,
         shared_projection_digest,
         digest,
     })
+}
+
+/// Evaluates one exact typed agreement claim against a sealed projection.
+pub fn evaluate_rhi_reconciliation_claim(
+    projection: RhiReconciliationProjection,
+    claim_mutation_id: MutationId,
+) -> RhiReconciliationEvaluation {
+    let shared = &projection.shared;
+    let facts = EvaluationFacts {
+        coverage: projection.manifest.inner().coverage(),
+        shared_evidence: shared.evidence_state(),
+        projection_digest_available: projection.digest.is_some(),
+        reducer_issue_present: !shared.issues().is_empty(),
+        claim_present: shared
+            .agreement_claims()
+            .iter()
+            .any(|claim| claim.claim_mutation_id() == &claim_mutation_id),
+        claim_active: shared
+            .active_agreement_claim_ids()
+            .contains(&claim_mutation_id),
+        claim_contested: shared.contested_claim_ids().contains(&claim_mutation_id),
+        claim_cancelled: shared.cancelled_claim_ids().contains(&claim_mutation_id),
+        agreement_agreed: shared.agreement_state() == RadrootsTradeAgreementStateV1::Agreed,
+    };
+    let (outcome, reason) = classify_evaluation(facts);
+    RhiReconciliationEvaluation {
+        projection,
+        claim_mutation_id,
+        coverage: facts.coverage,
+        outcome,
+        reason_codes: [reason],
+    }
+}
+
+#[derive(Clone, Copy)]
+struct EvaluationFacts {
+    coverage: RhiReconciliationCoverage,
+    shared_evidence: RadrootsTradeEvidenceStateV1,
+    projection_digest_available: bool,
+    reducer_issue_present: bool,
+    claim_present: bool,
+    claim_active: bool,
+    claim_contested: bool,
+    claim_cancelled: bool,
+    agreement_agreed: bool,
+}
+
+fn classify_evaluation(
+    facts: EvaluationFacts,
+) -> (RhiReconciliationOutcome, RhiReconciliationReasonCode) {
+    use RadrootsTradeEvidenceOutcomeV1::{Indeterminate, Invalid, Valid};
+    use RhiReconciliationReasonCode::{
+        AgreementClaimCancelled, AgreementClaimMissing, AgreementClaimUnresolved,
+        GoverningSchemaUnsupported, ProjectionDigestUnavailable, ReducerIssueUnresolved,
+        RequiredEvidenceMissing, RequiredSourceIncomplete, RequiredSourceUnsupported,
+        ScopeSatisfied,
+    };
+
+    match facts.coverage {
+        RhiReconciliationCoverage::Missing => return (Indeterminate, RequiredEvidenceMissing),
+        RhiReconciliationCoverage::Partial => return (Indeterminate, RequiredSourceIncomplete),
+        RhiReconciliationCoverage::Unsupported => {
+            return (Indeterminate, RequiredSourceUnsupported);
+        }
+        RhiReconciliationCoverage::ScopeSatisfied => {}
+    }
+    if !facts.projection_digest_available {
+        return (Indeterminate, ProjectionDigestUnavailable);
+    }
+    match facts.shared_evidence {
+        RadrootsTradeEvidenceStateV1::Missing => {
+            return (Indeterminate, RequiredEvidenceMissing);
+        }
+        RadrootsTradeEvidenceStateV1::QueryPartial => {
+            return (Indeterminate, RequiredSourceIncomplete);
+        }
+        RadrootsTradeEvidenceStateV1::UnsupportedVersion => {
+            return (Indeterminate, GoverningSchemaUnsupported);
+        }
+        RadrootsTradeEvidenceStateV1::Complete => {}
+    }
+    if facts.reducer_issue_present
+        || facts.claim_contested
+        || (facts.claim_active && facts.claim_cancelled)
+    {
+        return (Indeterminate, ReducerIssueUnresolved);
+    }
+    if !facts.claim_present {
+        return (Indeterminate, AgreementClaimMissing);
+    }
+    if facts.claim_active && facts.agreement_agreed {
+        return (Valid, ScopeSatisfied);
+    }
+    if facts.claim_cancelled && !facts.claim_active {
+        return (Invalid, AgreementClaimCancelled);
+    }
+    (Indeterminate, AgreementClaimUnresolved)
 }
 
 fn mutation_material_within_bounds(materials: &[RhiReducerMutationMaterial]) -> bool {
@@ -323,6 +527,20 @@ const fn failure(kind: RhiReconciliationReducerErrorKind) -> RhiReconciliationRe
 mod tests {
     use super::*;
 
+    fn scope_satisfied_facts() -> EvaluationFacts {
+        EvaluationFacts {
+            coverage: RhiReconciliationCoverage::ScopeSatisfied,
+            shared_evidence: RadrootsTradeEvidenceStateV1::Complete,
+            projection_digest_available: true,
+            reducer_issue_present: false,
+            claim_present: true,
+            claim_active: true,
+            claim_contested: false,
+            claim_cancelled: false,
+            agreement_agreed: true,
+        }
+    }
+
     #[test]
     fn diagnostics_and_digest_decoder_are_closed() {
         for kind in [
@@ -354,5 +572,193 @@ mod tests {
             core::iter::empty()
         ));
         assert!(!material_lengths_within_bounds(1, [usize::MAX, 1]));
+    }
+
+    #[test]
+    fn coverage_and_claim_state_matrix_is_total_and_fail_closed() {
+        use RadrootsTradeEvidenceCoverageV1::{Missing, Partial, ScopeSatisfied, Unsupported};
+        use RadrootsTradeEvidenceOutcomeV1::{Indeterminate, Invalid, Valid};
+        use RhiReconciliationReasonCode::{
+            AgreementClaimCancelled, AgreementClaimMissing, RequiredEvidenceMissing,
+            RequiredSourceIncomplete, RequiredSourceUnsupported, ScopeSatisfied as ScopeReason,
+        };
+
+        for (coverage, incomplete_reason) in [
+            (Missing, RequiredEvidenceMissing),
+            (Partial, RequiredSourceIncomplete),
+            (Unsupported, RequiredSourceUnsupported),
+        ] {
+            for (present, active, cancelled) in [
+                (false, false, false),
+                (true, true, false),
+                (true, false, true),
+            ] {
+                let actual = classify_evaluation(EvaluationFacts {
+                    coverage,
+                    claim_present: present,
+                    claim_active: active,
+                    claim_cancelled: cancelled,
+                    ..scope_satisfied_facts()
+                });
+                assert_eq!(actual, (Indeterminate, incomplete_reason));
+                assert!(coverage.permits(actual.0));
+            }
+        }
+
+        for (present, active, cancelled, expected) in [
+            (false, false, false, (Indeterminate, AgreementClaimMissing)),
+            (true, true, false, (Valid, ScopeReason)),
+            (true, false, true, (Invalid, AgreementClaimCancelled)),
+        ] {
+            let actual = classify_evaluation(EvaluationFacts {
+                coverage: ScopeSatisfied,
+                claim_present: present,
+                claim_active: active,
+                claim_cancelled: cancelled,
+                ..scope_satisfied_facts()
+            });
+            assert_eq!(actual, expected);
+            assert!(ScopeSatisfied.permits(actual.0));
+        }
+    }
+
+    #[test]
+    fn fail_closed_precedence_covers_every_unavailable_or_ambiguous_fact() {
+        use RadrootsTradeEvidenceOutcomeV1::Indeterminate;
+        use RhiReconciliationReasonCode::{
+            AgreementClaimUnresolved, GoverningSchemaUnsupported, ProjectionDigestUnavailable,
+            ReducerIssueUnresolved, RequiredEvidenceMissing, RequiredSourceIncomplete,
+        };
+
+        let cases = [
+            (
+                EvaluationFacts {
+                    projection_digest_available: false,
+                    ..scope_satisfied_facts()
+                },
+                ProjectionDigestUnavailable,
+            ),
+            (
+                EvaluationFacts {
+                    shared_evidence: RadrootsTradeEvidenceStateV1::Missing,
+                    ..scope_satisfied_facts()
+                },
+                RequiredEvidenceMissing,
+            ),
+            (
+                EvaluationFacts {
+                    shared_evidence: RadrootsTradeEvidenceStateV1::QueryPartial,
+                    ..scope_satisfied_facts()
+                },
+                RequiredSourceIncomplete,
+            ),
+            (
+                EvaluationFacts {
+                    shared_evidence: RadrootsTradeEvidenceStateV1::UnsupportedVersion,
+                    ..scope_satisfied_facts()
+                },
+                GoverningSchemaUnsupported,
+            ),
+            (
+                EvaluationFacts {
+                    reducer_issue_present: true,
+                    ..scope_satisfied_facts()
+                },
+                ReducerIssueUnresolved,
+            ),
+            (
+                EvaluationFacts {
+                    claim_contested: true,
+                    ..scope_satisfied_facts()
+                },
+                ReducerIssueUnresolved,
+            ),
+            (
+                EvaluationFacts {
+                    claim_cancelled: true,
+                    ..scope_satisfied_facts()
+                },
+                ReducerIssueUnresolved,
+            ),
+            (
+                EvaluationFacts {
+                    agreement_agreed: false,
+                    ..scope_satisfied_facts()
+                },
+                AgreementClaimUnresolved,
+            ),
+            (
+                EvaluationFacts {
+                    claim_active: false,
+                    claim_cancelled: false,
+                    ..scope_satisfied_facts()
+                },
+                AgreementClaimUnresolved,
+            ),
+        ];
+        for (facts, reason) in cases {
+            assert_eq!(classify_evaluation(facts), (Indeterminate, reason));
+        }
+
+        let precedence = classify_evaluation(EvaluationFacts {
+            coverage: RhiReconciliationCoverage::Missing,
+            projection_digest_available: false,
+            shared_evidence: RadrootsTradeEvidenceStateV1::UnsupportedVersion,
+            reducer_issue_present: true,
+            claim_present: false,
+            ..scope_satisfied_facts()
+        });
+        assert_eq!(precedence, (Indeterminate, RequiredEvidenceMissing));
+    }
+
+    #[test]
+    fn reason_codes_are_closed_stable_and_source_free() {
+        let inventory = [
+            (
+                RhiReconciliationReasonCode::RequiredEvidenceMissing,
+                "required_evidence_missing",
+            ),
+            (
+                RhiReconciliationReasonCode::RequiredSourceIncomplete,
+                "required_source_incomplete",
+            ),
+            (
+                RhiReconciliationReasonCode::RequiredSourceUnsupported,
+                "required_source_unsupported",
+            ),
+            (
+                RhiReconciliationReasonCode::ProjectionDigestUnavailable,
+                "projection_digest_unavailable",
+            ),
+            (
+                RhiReconciliationReasonCode::GoverningSchemaUnsupported,
+                "governing_schema_unsupported",
+            ),
+            (
+                RhiReconciliationReasonCode::ReducerIssueUnresolved,
+                "reducer_issue_unresolved",
+            ),
+            (
+                RhiReconciliationReasonCode::AgreementClaimMissing,
+                "agreement_claim_missing",
+            ),
+            (
+                RhiReconciliationReasonCode::AgreementClaimUnresolved,
+                "agreement_claim_unresolved",
+            ),
+            (
+                RhiReconciliationReasonCode::ScopeSatisfied,
+                "scope_satisfied",
+            ),
+            (
+                RhiReconciliationReasonCode::AgreementClaimCancelled,
+                "agreement_claim_cancelled",
+            ),
+        ];
+        assert_eq!(inventory.len(), 10);
+        for (reason, code) in inventory {
+            assert_eq!(reason.code(), code);
+            assert!(!code.contains("source://"));
+        }
     }
 }

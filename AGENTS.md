@@ -141,14 +141,19 @@
   bind each observation to the exact canonical signed-event and first-source
   provenance. Do not expose a raw manifest constructor or parser from RHI.
 - Keep Step 191 manifest materialization pure and in memory. Step 199 alone
-  owns durable manifest persistence; reducers, final coverage/outcome,
-  attestation, publication, and job finalization retain their ordered owners.
+  owns durable manifest persistence; reducers, coverage/outcome, attestation,
+  publication, and job finalization retain their ordered owners.
 - Reduce only the sealed owned reconciliation manifest. Retain its bounded
   canonical mutation material privately from the confirmed Step 190 commit,
   map its already-governed evidence coverage into the shared reducer input,
   and bind the canonical shared projection digest to the exact manifest and
   evidence-policy digests. Do not accept caller mutation material or add
   SQLite, filesystem, source, relay, task, clock, entropy, or network access.
+- Derive claim-specific coverage and outcome only from that sealed projection.
+  Missing, partial, unsupported, unavailable, ambiguous, unresolved, or absent
+  evidence is `Indeterminate`; evidence absence never becomes `Invalid`.
+  Permit `Valid` only for one clean active agreement claim and `Invalid` only
+  for one clean cancelled claim. Emit only the fixed stable reason vocabulary.
 - Coverage is exactly `Missing`, `Partial`, `ScopeSatisfied`, or `Unsupported`.
   ScopeSatisfied means only that the configured policy was satisfied; optional
   evidence never substitutes for required-source completion.
