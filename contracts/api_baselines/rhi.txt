@@ -141,6 +141,25 @@ pub enum rhi::RhiReconciliationCommandV1
 pub rhi::RhiReconciliationCommandV1::Jobs
 pub rhi::RhiReconciliationCommandV1::Refresh
 pub rhi::RhiReconciliationCommandV1::Status
+pub enum rhi::RhiReconciliationJobErrorKind
+pub rhi::RhiReconciliationJobErrorKind::CommitOutcomeUnknown
+pub rhi::RhiReconciliationJobErrorKind::DirtyGenerationConflict
+pub rhi::RhiReconciliationJobErrorKind::InvalidInput
+pub rhi::RhiReconciliationJobErrorKind::InvalidMode
+pub rhi::RhiReconciliationJobErrorKind::LeaseLost
+pub rhi::RhiReconciliationJobErrorKind::NotReady
+pub rhi::RhiReconciliationJobErrorKind::QueueFull
+pub rhi::RhiReconciliationJobErrorKind::Storage
+impl rhi::RhiReconciliationJobErrorKind
+pub const fn rhi::RhiReconciliationJobErrorKind::code(self) -> &'static str
+pub enum rhi::RhiReconciliationJobState
+pub rhi::RhiReconciliationJobState::Completed
+pub rhi::RhiReconciliationJobState::Exhausted
+pub rhi::RhiReconciliationJobState::Leased
+pub rhi::RhiReconciliationJobState::Ready
+pub rhi::RhiReconciliationJobState::Superseded
+impl rhi::RhiReconciliationJobState
+pub const fn rhi::RhiReconciliationJobState::code(self) -> &'static str
 pub enum rhi::RhiRuntimeAdapterErrorKind
 pub rhi::RhiRuntimeAdapterErrorKind::CredentialAccess
 pub rhi::RhiRuntimeAdapterErrorKind::EntropyUnavailable
@@ -558,12 +577,81 @@ pub const fn rhi::RhiReconciliationAttemptRepository<'_>::descriptor(&self) -> r
 pub const fn rhi::RhiReconciliationAttemptRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
 impl core::fmt::Debug for rhi::RhiReconciliationAttemptRepository<'_>
 pub fn rhi::RhiReconciliationAttemptRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationJob
+impl rhi::RhiReconciliationJob
+pub const fn rhi::RhiReconciliationJob::attempt_count(self) -> u16
+pub const fn rhi::RhiReconciliationJob::created_at(self) -> rhi::RhiReconciliationUnixMilliseconds
+pub const fn rhi::RhiReconciliationJob::evidence_policy_digest(self) -> rhi::RhiEvidencePolicyDigest
+pub const fn rhi::RhiReconciliationJob::failure_count(self) -> u16
+pub const fn rhi::RhiReconciliationJob::id(self) -> rhi::RhiReconciliationJobId
+pub const fn rhi::RhiReconciliationJob::input_generation(self) -> u64
+pub const fn rhi::RhiReconciliationJob::next_attempt(self) -> core::option::Option<rhi::RhiReconciliationUnixMilliseconds>
+pub const fn rhi::RhiReconciliationJob::revision(self) -> u64
+pub const fn rhi::RhiReconciliationJob::state(self) -> rhi::RhiReconciliationJobState
+pub const fn rhi::RhiReconciliationJob::trade_id(self) -> radroots_event::id::TradeId
+pub const fn rhi::RhiReconciliationJob::updated_at(self) -> rhi::RhiReconciliationUnixMilliseconds
+impl core::fmt::Debug for rhi::RhiReconciliationJob
+pub fn rhi::RhiReconciliationJob::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationJobError
+impl rhi::RhiReconciliationJobError
+pub const fn rhi::RhiReconciliationJobError::code(self) -> &'static str
+pub const fn rhi::RhiReconciliationJobError::kind(self) -> rhi::RhiReconciliationJobErrorKind
+impl core::error::Error for rhi::RhiReconciliationJobError
+impl core::fmt::Debug for rhi::RhiReconciliationJobError
+pub fn rhi::RhiReconciliationJobError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiReconciliationJobError
+pub fn rhi::RhiReconciliationJobError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationJobId(_)
+impl rhi::RhiReconciliationJobId
+pub const fn rhi::RhiReconciliationJobId::as_bytes(&self) -> &[u8; 32]
+impl core::fmt::Debug for rhi::RhiReconciliationJobId
+pub fn rhi::RhiReconciliationJobId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationJobPolicy
+impl rhi::RhiReconciliationJobPolicy
+pub fn rhi::RhiReconciliationJobPolicy::from_configuration(&rhi::RhiConfigDocumentV1) -> core::result::Result<Self, rhi::RhiReconciliationJobError>
+pub const fn rhi::RhiReconciliationJobPolicy::initial_backoff_milliseconds(self) -> u64
+pub const fn rhi::RhiReconciliationJobPolicy::lease_duration_milliseconds(self) -> u64
+pub const fn rhi::RhiReconciliationJobPolicy::lease_renewal_milliseconds(self) -> u64
+pub const fn rhi::RhiReconciliationJobPolicy::max_attempts(self) -> u16
+pub const fn rhi::RhiReconciliationJobPolicy::maximum_backoff_milliseconds(self) -> u64
+pub fn rhi::RhiReconciliationJobPolicy::new(u32, u64, u64, u16, u64, u64) -> core::result::Result<Self, rhi::RhiReconciliationJobError>
+pub const fn rhi::RhiReconciliationJobPolicy::queue_capacity(self) -> u32
 pub struct rhi::RhiReconciliationJobRepository<'host>
+impl rhi::RhiReconciliationJobRepository<'_>
+pub async fn rhi::RhiReconciliationJobRepository<'_>::claim_next(&self, rhi::RhiReconciliationLeaseOwner, rhi::RhiReconciliationUnixMilliseconds) -> core::result::Result<core::option::Option<rhi::RhiReconciliationLease>, rhi::RhiReconciliationJobError>
+pub async fn rhi::RhiReconciliationJobRepository<'_>::record_failure(&self, rhi::RhiReconciliationLease, rhi::RhiReconciliationUnixMilliseconds, rhi::RhiReconciliationRetryDelayMilliseconds) -> core::result::Result<rhi::RhiReconciliationJob, rhi::RhiReconciliationJobError>
+pub async fn rhi::RhiReconciliationJobRepository<'_>::renew(&self, rhi::RhiReconciliationLease, rhi::RhiReconciliationUnixMilliseconds) -> core::result::Result<rhi::RhiReconciliationLease, rhi::RhiReconciliationJobError>
+pub async fn rhi::RhiReconciliationJobRepository<'_>::schedule_trade(&self, radroots_event::id::TradeId, rhi::RhiReconciliationJobPolicy, rhi::RhiReconciliationUnixMilliseconds) -> core::result::Result<rhi::RhiReconciliationScheduleOutcome, rhi::RhiReconciliationJobError>
 impl rhi::RhiReconciliationJobRepository<'_>
 pub const fn rhi::RhiReconciliationJobRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
 pub const fn rhi::RhiReconciliationJobRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
 impl core::fmt::Debug for rhi::RhiReconciliationJobRepository<'_>
 pub fn rhi::RhiReconciliationJobRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationLease
+impl rhi::RhiReconciliationLease
+pub const fn rhi::RhiReconciliationLease::job(self) -> rhi::RhiReconciliationJob
+pub const fn rhi::RhiReconciliationLease::lease_expires(self) -> rhi::RhiReconciliationUnixMilliseconds
+pub fn rhi::RhiReconciliationLease::renewal_due(self) -> rhi::RhiReconciliationUnixMilliseconds
+pub fn rhi::RhiReconciliationLease::retry_delay_upper_bound(self) -> u64
+impl core::fmt::Debug for rhi::RhiReconciliationLease
+pub fn rhi::RhiReconciliationLease::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationLeaseOwner(_)
+impl rhi::RhiReconciliationLeaseOwner
+pub fn rhi::RhiReconciliationLeaseOwner::from_bytes([u8; 16]) -> core::result::Result<Self, rhi::RhiReconciliationJobError>
+impl core::fmt::Debug for rhi::RhiReconciliationLeaseOwner
+pub fn rhi::RhiReconciliationLeaseOwner::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationRetryDelayMilliseconds(_)
+impl rhi::RhiReconciliationRetryDelayMilliseconds
+pub const fn rhi::RhiReconciliationRetryDelayMilliseconds::get(self) -> u64
+pub fn rhi::RhiReconciliationRetryDelayMilliseconds::new(u64) -> core::result::Result<Self, rhi::RhiReconciliationJobError>
+pub struct rhi::RhiReconciliationScheduleOutcome
+impl rhi::RhiReconciliationScheduleOutcome
+pub const fn rhi::RhiReconciliationScheduleOutcome::created(self) -> bool
+pub const fn rhi::RhiReconciliationScheduleOutcome::job(self) -> rhi::RhiReconciliationJob
+pub struct rhi::RhiReconciliationUnixMilliseconds(_)
+impl rhi::RhiReconciliationUnixMilliseconds
+pub const fn rhi::RhiReconciliationUnixMilliseconds::get(self) -> u64
+pub fn rhi::RhiReconciliationUnixMilliseconds::new(u64) -> core::result::Result<Self, rhi::RhiReconciliationJobError>
 pub struct rhi::RhiReportRepository<'host>
 impl rhi::RhiReportRepository<'_>
 pub const fn rhi::RhiReportRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
@@ -941,6 +1029,8 @@ pub const rhi::RHI_ENCRYPTED_IDENTITY_ENVELOPE_CONTRACT_VERSION: u32
 pub const rhi::RHI_ENCRYPTED_IDENTITY_ENVELOPE_MAX_BYTES: usize
 pub const rhi::RHI_MIGRATION_CATALOG_SHA256: [u8; 32]
 pub const rhi::RHI_PROVIDER_CONTRACT_VERSION: u32
+pub const rhi::RHI_RECONCILIATION_JOB_CONTRACT_VERSION: u32
+pub const rhi::RHI_RECONCILIATION_JOB_MAX_ACTIVE: u32
 pub const rhi::RHI_RUNTIME_ADAPTER_CONTRACT_VERSION: u32
 pub const rhi::RHI_RUNTIME_FOUNDATION_CONTRACT_VERSION: u32
 pub const rhi::RHI_RUNTIME_JITTER_MAX_ENTROPY_DRAWS: usize
@@ -962,6 +1052,9 @@ pub const rhi::RHI_STATE_SCHEMA_VERSION_3_SHA256: [u8; 32]
 pub const rhi::RHI_STATE_SCHEMA_VERSION_4_MIGRATION_SHA256: [u8; 32]
 pub const rhi::RHI_STATE_SCHEMA_VERSION_4_OBJECT_COUNT: u32
 pub const rhi::RHI_STATE_SCHEMA_VERSION_4_SHA256: [u8; 32]
+pub const rhi::RHI_STATE_SCHEMA_VERSION_5_MIGRATION_SHA256: [u8; 32]
+pub const rhi::RHI_STATE_SCHEMA_VERSION_5_OBJECT_COUNT: u32
+pub const rhi::RHI_STATE_SCHEMA_VERSION_5_SHA256: [u8; 32]
 pub const rhi::RHI_STATUS_CONTRACT_VERSION: u32
 pub const rhi::RHI_TRADE_EVENT_EXTRA_FIELD_MAX_COUNT: usize
 pub const rhi::RHI_TRADE_EVENT_EXTRA_JSON_MAX_BYTES: usize

@@ -26,8 +26,8 @@
     { "kind": "desired_presence", "backing_table": "presence_desired_state", "write_class": "compare_and_swap" }
   ],
   "deferred_behavior": [
-    "schema_migration_and_verification",
-    "repository_crud",
+    "later_schema_migrations",
+    "non_job_repository_crud",
     "backup_restore_and_recovery",
     "network_io",
     "task_supervision"

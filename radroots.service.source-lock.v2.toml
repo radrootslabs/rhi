@@ -16,7 +16,7 @@ material = "absent"
 
 [contract_versions]
 config = 1
-state = 4
+state = 5
 admin = 1
 status = 1
 provider = 1

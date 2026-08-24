@@ -27,8 +27,8 @@ fn machine_contract_and_typed_descriptor_inventory_are_exact() {
     assert_eq!(
         contract["deferred_behavior"],
         json!([
-            "schema_migration_and_verification",
-            "repository_crud",
+            "later_schema_migrations",
+            "non_job_repository_crud",
             "backup_restore_and_recovery",
             "network_io",
             "task_supervision"

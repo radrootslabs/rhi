@@ -1,0 +1,66 @@
+{
+  "schema": "radroots.rhi.reconciliation-jobs",
+  "schema_version": 1,
+  "contract_version": 1,
+  "state_schema_version": 5,
+  "backing_table": "reconciliation_jobs",
+  "job_identity": {
+    "algorithm": "sha256",
+    "domain": "radroots.rhi.reconciliation_job.v1\\0",
+    "preimage": ["trade_id_16_bytes", "input_generation_u64_be", "evidence_policy_sha256_32_bytes"]
+  },
+  "active_job_bound": {
+    "absolute_maximum": 65536,
+    "configured_field": "reconciliation.queue_capacity",
+    "one_active_per_trade": true
+  },
+  "states": ["ready", "leased", "exhausted", "superseded", "completed"],
+  "claim": {
+    "ordering": ["eligible_at_unix_ms", "created_at_unix_ms", "job_id"],
+    "compare_and_swap": ["job_id", "revision", "state", "eligibility"],
+    "attempt_count_increment": "exactly_once_per_successful_claim_or_reclaim",
+    "source_io_inside_transaction": false
+  },
+  "lease": {
+    "owner_bytes": 16,
+    "duration_ms": { "minimum": 1000, "maximum": 300000 },
+    "renewal_ms": { "minimum": 100, "maximum": 150000 },
+    "renewal_requires_unexpired_current_revision": true,
+    "expired_claims_are_reclaimable": true,
+    "expired_final_attempt_becomes_exhausted": true
+  },
+  "retry": {
+    "max_attempts": { "minimum": 1, "maximum": 100 },
+    "initial_backoff_ms": { "minimum": 1, "maximum": 60000 },
+    "maximum_backoff_ms": { "minimum": 1, "maximum": 3600000 },
+    "strategy": "caller_injected_full_jitter_with_governed_exponential_upper_bound",
+    "next_attempt_persisted_as": "integer_unix_milliseconds"
+  },
+  "durability": {
+    "schedule_is_idempotent_for_exact_job_identity": true,
+    "newer_dirty_generation_supersedes_prior_active_job_atomically": true,
+    "jobs_are_not_deleted": true,
+    "restart_recovers_persisted_schedule_and_lease_expiry": true
+  },
+  "injected_authority": ["wall_time_unix_ms", "lease_owner", "retry_jitter_ms"],
+  "forbidden": [
+    "ambient_clock",
+    "ambient_entropy",
+    "network_io",
+    "source_query_inside_transaction",
+    "unbounded_queue",
+    "raw_sqlite_handle",
+    "caller_selected_job_id",
+    "caller_selected_next_attempt_timestamp",
+    "delete_job"
+  ],
+  "deferred": [
+    "per_source_attempt_inventory",
+    "source_execution",
+    "source_completion_commit",
+    "manifest",
+    "reducer",
+    "attestation",
+    "publication"
+  ]
+}

@@ -205,8 +205,9 @@
   boundary and offline state operations must prove that no daemon writer exists.
 - Create-new state begins at the shared schema-v1 baseline and applies the
   governed RHI schema-v2 configuration-binding migration, schema-v3
-  immutable trade-evidence migration, and schema-v4 source-checkpoint and
-  dirty-generation migration. Retain at most 1,024 consecutive
+  immutable trade-evidence migration, schema-v4 source-checkpoint and
+  dirty-generation migration, and schema-v5 bounded reconciliation-job
+  migration. Retain at most 1,024 consecutive
   immutable configuration generations containing only normalized
   config/evidence-policy digests, public identity, exact contract versions,
   injected apply time, and bounded build identity. Persist each canonical

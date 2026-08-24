@@ -119,6 +119,26 @@ observation, and operational retry do not. Source fetching never occurs inside
 a database transaction. The exact machine contract is
 [`trade_source_ingest.v1.json`](contracts/services_hardening/trade_source_ingest.v1.json).
 
+## Durable reconciliation jobs
+
+`RhiReconciliationJobRepository` schedules at most one active job per trade
+against the exact durable dirty generation and evidence-policy digest. Job IDs
+are deterministic domain-separated SHA-256 identities, exact scheduling is
+idempotent, a newer dirty generation atomically supersedes the prior active
+job, and the configured queue capacity is enforced beneath a fixed 65,536-job
+hard ceiling.
+
+Claims and renewals are compare-and-swap transitions over an immutable job
+identity and monotonic revision. Leases use caller-injected 16-byte owner
+tokens and integer UTC milliseconds; expired leases can be reclaimed, while
+an expired final attempt becomes exhausted. Failed attempts persist their next
+eligible time using caller-injected full jitter bounded by the job's governed
+exponential backoff. No ambient clock or entropy is read, and no source or
+network work occurs inside a database transaction. Per-source attempt
+inventory and source execution remain with the next ordered checkpoint. The
+exact machine contract is
+[`reconciliation_jobs.v1.json`](contracts/services_hardening/reconciliation_jobs.v1.json).
+
 ## Existing-state runtime foundation
 
 `open_rhi_runtime_foundation` opens only an already initialized database from
@@ -216,8 +236,9 @@ Path resolution performs no directory creation or filesystem I/O.
 RHI owns one `state.sqlite` per service instance. Create-new initialization
 starts from the shared schema-v1 baseline and immediately applies the pinned
 schema-v2 configuration migration, schema-v3 immutable trade-evidence
-migration, and schema-v4 source-checkpoint and dirty-generation migration.
-Version four contains the six shared immutable service-metadata and
+migration, schema-v4 source-checkpoint and dirty-generation migration, and
+schema-v5 bounded reconciliation-job migration.
+Version five contains the six shared immutable service-metadata and
 migration-ledger objects, the bounded append-only `rhi_config_bindings` table,
 separate immutable tables for canonical mutations, signed Nostr events, and
 accepted source observations, and generation-guarded relay checkpoints and

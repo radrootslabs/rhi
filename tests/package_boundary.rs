@@ -11,6 +11,7 @@ const RUNTIME_ADAPTERS: &str = include_str!("../src/runtime_adapters.rs");
 const RUNTIME_ADAPTER_CONTRACT: &str =
     include_str!("../contracts/services_hardening/runtime_adapters.v1.json");
 const RUNTIME_FOUNDATION: &str = include_str!("../src/runtime_foundation.rs");
+const RECONCILIATION_JOBS: &str = include_str!("../src/reconciliation_job.rs");
 const RUNTIME_FOUNDATION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/runtime_foundation.v1.json");
 const TRADE_INGEST_CONTRACT: &str =
@@ -27,6 +28,7 @@ const SOURCES: &[&str] = &[
     include_str!("../src/features/trade_agreement_attestation.rs"),
     include_str!("../src/identity_credential.rs"),
     include_str!("../src/identity_envelope.rs"),
+    include_str!("../src/reconciliation_job.rs"),
     include_str!("../src/runtime_context.rs"),
     include_str!("../src/runtime_adapters.rs"),
     include_str!("../src/runtime_foundation.rs"),
@@ -93,6 +95,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "features",
         "identity_credential",
         "identity_envelope",
+        "reconciliation_job",
         "runtime_context",
         "runtime_adapters",
         "runtime_foundation",
@@ -128,6 +131,8 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "validate_rhi_state_catalogs",
         "RhiStateCatalogError",
         "RhiRuntimeAdapters",
+        "RhiReconciliationJobPolicy",
+        "RhiReconciliationLease",
         "RhiTimeEntropyAdapters",
         "RhiTransportAdapters",
         "RhiCredentialAccess",
@@ -213,7 +218,7 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .lines()
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
-    assert_eq!(public_error_count, 16);
+    assert_eq!(public_error_count, 17);
 }
 
 #[test]
@@ -517,10 +522,14 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "[`trade_evidence_persistence.v1.json`](contracts/services_hardening/trade_evidence_persistence.v1.json)",
         "## Bounded relay-source ingestion",
         "[`trade_source_ingest.v1.json`](contracts/services_hardening/trade_source_ingest.v1.json)",
+        "## Durable reconciliation jobs",
+        "[`reconciliation_jobs.v1.json`](contracts/services_hardening/reconciliation_jobs.v1.json)",
+        "configured queue capacity is enforced beneath a fixed 65,536-job",
+        "No ambient clock or entropy is read",
         "Only exact-target EOSE before the deadline is complete",
         "4,096 distinct signed-event identities (event ID plus signature) and 8 MiB",
         "observation, and operational retry do not",
-        "schema-v4 source-checkpoint and dirty-generation migration",
+        "schema-v5 bounded reconciliation-job migration",
         "one canonical mutation",
         "every distinct valid signed",
         "does not advance reconciliation checkpoints or dirty generation",
@@ -541,6 +550,17 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "never stores raw TOML, paths, relay URLs, credential",
     ] {
         assert!(README.contains(required), "README is missing {required}");
+    }
+    for forbidden in [
+        "SystemTime",
+        "thread_rng",
+        "OsRng",
+        "pub mod reconciliation_job",
+    ] {
+        assert!(
+            !RECONCILIATION_JOBS.contains(forbidden),
+            "reconciliation jobs expose forbidden authority {forbidden}"
+        );
     }
     for required in [
         "Keep every implementation module private",

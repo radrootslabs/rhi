@@ -8,6 +8,7 @@ mod config_v1;
 mod features;
 mod identity_credential;
 mod identity_envelope;
+mod reconciliation_job;
 mod runtime_adapters;
 mod runtime_context;
 mod runtime_foundation;
@@ -66,6 +67,13 @@ pub use radroots_service_host::{
     EntropyError, EntropySource, MonotonicClock, MonotonicClockError, MonotonicDeadline,
     MonotonicTime, UnixTimeSeconds, WallClock, WallClockError,
 };
+pub use reconciliation_job::{
+    RHI_RECONCILIATION_JOB_CONTRACT_VERSION, RHI_RECONCILIATION_JOB_MAX_ACTIVE,
+    RhiReconciliationJob, RhiReconciliationJobError, RhiReconciliationJobErrorKind,
+    RhiReconciliationJobId, RhiReconciliationJobPolicy, RhiReconciliationJobState,
+    RhiReconciliationLease, RhiReconciliationLeaseOwner, RhiReconciliationRetryDelayMilliseconds,
+    RhiReconciliationScheduleOutcome, RhiReconciliationUnixMilliseconds,
+};
 pub use runtime_adapters::{
     CanonicalRhiCredentialAccess, CanonicalRhiIdentityAccess, RHI_RUNTIME_ADAPTER_CONTRACT_VERSION,
     RHI_RUNTIME_JITTER_MAX_ENTROPY_DRAWS, RHI_RUNTIME_JITTER_MAX_MILLISECONDS, RhiCredentialAccess,
@@ -96,8 +104,9 @@ pub use state_catalog::{
     RHI_STATE_SCHEMA_VERSION_3_MIGRATION_SHA256, RHI_STATE_SCHEMA_VERSION_3_OBJECT_COUNT,
     RHI_STATE_SCHEMA_VERSION_3_SHA256, RHI_STATE_SCHEMA_VERSION_4_MIGRATION_SHA256,
     RHI_STATE_SCHEMA_VERSION_4_OBJECT_COUNT, RHI_STATE_SCHEMA_VERSION_4_SHA256,
-    RhiStateCatalogError, RhiStateCatalogErrorKind, rhi_migration_catalog, rhi_schema_catalog,
-    validate_rhi_state_catalogs,
+    RHI_STATE_SCHEMA_VERSION_5_MIGRATION_SHA256, RHI_STATE_SCHEMA_VERSION_5_OBJECT_COUNT,
+    RHI_STATE_SCHEMA_VERSION_5_SHA256, RhiStateCatalogError, RhiStateCatalogErrorKind,
+    rhi_migration_catalog, rhi_schema_catalog, validate_rhi_state_catalogs,
 };
 pub use state_config::{
     RHI_CONFIG_BINDING_MAX_GENERATIONS, RhiConfigApplyError, RhiConfigApplyErrorKind,

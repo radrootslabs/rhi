@@ -461,6 +461,12 @@ repository_handle!(RhiPublicationTargetRepository, PublicationTarget);
 repository_handle!(RhiPublicationAttemptRepository, PublicationAttempt);
 repository_handle!(RhiDesiredPresenceRepository, DesiredPresence);
 
+impl<'host> RhiReconciliationJobRepository<'host> {
+    pub(crate) const fn host(&self) -> &'host RhiStateHost {
+        self.host
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

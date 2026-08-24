@@ -163,7 +163,10 @@ async fn existing_intent_and_offline_apply_bind_exact_append_only_evidence() {
     for row in &rows {
         assert_eq!(row.try_get::<i64, _>("config_bytes").unwrap(), 32);
         assert_eq!(row.try_get::<i64, _>("policy_bytes").unwrap(), 32);
-        assert_eq!(row.try_get::<i64, _>("state_contract_version").unwrap(), 4);
+        assert_eq!(
+            row.try_get::<i64, _>("state_contract_version").unwrap(),
+            i64::from(rhi::RHI_STATE_SCHEMA_VERSION)
+        );
         assert_eq!(
             row.try_get::<String, _>("service_public_key")
                 .unwrap()

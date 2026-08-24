@@ -12,7 +12,7 @@ use radroots_service_sqlite::{
 pub const RHI_STATE_BASE_SCHEMA_VERSION: u32 = 1;
 
 /// The newest governed RHI state schema understood by this binary.
-pub const RHI_STATE_SCHEMA_VERSION: u32 = 4;
+pub const RHI_STATE_SCHEMA_VERSION: u32 = 5;
 
 /// The shared metadata and migration-ledger objects present at schema v1.
 pub const RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT: u32 = 6;
@@ -26,10 +26,13 @@ pub const RHI_STATE_SCHEMA_VERSION_3_OBJECT_COUNT: u32 = 22;
 /// The shared objects, immutable trade evidence, source cursors, and dirty generations.
 pub const RHI_STATE_SCHEMA_VERSION_4_OBJECT_COUNT: u32 = 28;
 
+/// The shared objects, canonical evidence, cursors, generations, and durable jobs.
+pub const RHI_STATE_SCHEMA_VERSION_5_OBJECT_COUNT: u32 = 33;
+
 /// SHA-256 identity of the ordered migration catalog rooted at schema v1.
 pub const RHI_MIGRATION_CATALOG_SHA256: [u8; 32] = [
-    0x29, 0x5f, 0xf5, 0xe9, 0xac, 0x0e, 0xad, 0xc1, 0xf2, 0xc2, 0xd8, 0xc2, 0x58, 0xc2, 0xea, 0xa8,
-    0x16, 0xf9, 0x46, 0x56, 0x0b, 0x68, 0x9d, 0xcb, 0x43, 0x2f, 0xdc, 0x99, 0xe7, 0x9e, 0xc3, 0x53,
+    0x4e, 0xd3, 0x2a, 0x5a, 0x71, 0xf5, 0xbf, 0x45, 0x42, 0x62, 0xa9, 0x08, 0x2a, 0xd7, 0x4d, 0x0d,
+    0x6a, 0x13, 0xa5, 0x56, 0x05, 0x46, 0x59, 0xac, 0x7b, 0x9d, 0x87, 0x72, 0x59, 0xb8, 0x16, 0xd8,
 ];
 
 /// SHA-256 identity of the exact schema-v1 object snapshot.
@@ -74,10 +77,22 @@ pub const RHI_STATE_SCHEMA_VERSION_4_SHA256: [u8; 32] = [
     0x6c, 0xdd, 0xe0, 0x7c, 0x40, 0x42, 0x9d, 0xff, 0xe9, 0x1c, 0xb8, 0x3c, 0x2a, 0x42, 0x5c, 0xea,
 ];
 
+/// SHA-256 identity of the schema-v5 reconciliation-job migration.
+pub const RHI_STATE_SCHEMA_VERSION_5_MIGRATION_SHA256: [u8; 32] = [
+    0x82, 0x75, 0xff, 0xb3, 0xd5, 0xc9, 0xfa, 0x0c, 0x76, 0x48, 0xf8, 0x9e, 0x8b, 0xfb, 0x92, 0x87,
+    0x7b, 0x0d, 0xcd, 0x5e, 0xf3, 0xbf, 0x0b, 0x52, 0x54, 0xb7, 0xff, 0xd2, 0x58, 0x0b, 0xd4, 0x5d,
+];
+
+/// SHA-256 identity of the exact schema-v5 object snapshot.
+pub const RHI_STATE_SCHEMA_VERSION_5_SHA256: [u8; 32] = [
+    0xee, 0xf6, 0x7b, 0x48, 0x40, 0x0d, 0xee, 0x23, 0x4f, 0x6c, 0x36, 0xd4, 0x22, 0x55, 0x1c, 0x7e,
+    0x99, 0x83, 0x15, 0x0b, 0x88, 0x7f, 0x26, 0x42, 0x50, 0xf9, 0xc8, 0x7a, 0x1a, 0x31, 0x3e, 0x60,
+];
+
 /// SHA-256 identity of the schema catalog bound to the migration catalog.
 pub const RHI_STATE_SCHEMA_CATALOG_SHA256: [u8; 32] = [
-    0x58, 0x78, 0x9c, 0x1d, 0x39, 0x65, 0x14, 0xce, 0x19, 0xa5, 0x60, 0xb6, 0x7b, 0xf7, 0x60, 0x65,
-    0x0b, 0x9d, 0x6f, 0xa3, 0x78, 0xbc, 0x82, 0x34, 0xc1, 0xf6, 0xa3, 0x9a, 0xd2, 0xf5, 0x56, 0xe6,
+    0x0d, 0x2c, 0x59, 0x5a, 0x3c, 0xa3, 0xfb, 0xc9, 0xb3, 0xbf, 0x6b, 0xfc, 0x61, 0x68, 0xa1, 0x94,
+    0xac, 0x78, 0x8d, 0x49, 0x31, 0xc4, 0x62, 0x00, 0xe2, 0xf1, 0x37, 0x9e, 0xbb, 0x52, 0x3e, 0xce,
 ];
 
 macro_rules! rhi_config_bindings_table_sql {
@@ -472,6 +487,147 @@ const CREATE_SOURCE_CHECKPOINT_MIGRATION_SQL: &str = concat!(
     ";",
 );
 
+macro_rules! reconciliation_jobs_table_sql {
+    () => {
+        r#"CREATE TABLE reconciliation_jobs (
+    job_id BLOB NOT NULL PRIMARY KEY CHECK (length(job_id) = 32),
+    trade_id BLOB NOT NULL CHECK (length(trade_id) = 16),
+    input_generation INTEGER NOT NULL
+        CHECK (input_generation BETWEEN 1 AND 9223372036854775807),
+    evidence_policy_sha256 BLOB NOT NULL CHECK (length(evidence_policy_sha256) = 32),
+    state TEXT NOT NULL
+        CHECK (state IN ('ready', 'leased', 'exhausted', 'superseded', 'completed')),
+    revision INTEGER NOT NULL CHECK (revision BETWEEN 1 AND 9223372036854775807),
+    attempt_count INTEGER NOT NULL CHECK (attempt_count BETWEEN 0 AND 100),
+    failure_count INTEGER NOT NULL CHECK (failure_count BETWEEN 0 AND attempt_count),
+    max_attempts INTEGER NOT NULL CHECK (max_attempts BETWEEN 1 AND 100),
+    lease_duration_ms INTEGER NOT NULL CHECK (lease_duration_ms BETWEEN 1000 AND 300000),
+    lease_renewal_ms INTEGER NOT NULL CHECK (lease_renewal_ms BETWEEN 100 AND 150000),
+    initial_backoff_ms INTEGER NOT NULL CHECK (initial_backoff_ms BETWEEN 1 AND 60000),
+    maximum_backoff_ms INTEGER NOT NULL CHECK (maximum_backoff_ms BETWEEN 1 AND 3600000),
+    next_attempt_unix_ms INTEGER,
+    lease_owner BLOB,
+    lease_expires_unix_ms INTEGER,
+    created_at_unix_ms INTEGER NOT NULL
+        CHECK (created_at_unix_ms BETWEEN 0 AND 9223372036854775807),
+    updated_at_unix_ms INTEGER NOT NULL
+        CHECK (updated_at_unix_ms BETWEEN created_at_unix_ms AND 9223372036854775807),
+    FOREIGN KEY (trade_id) REFERENCES trade_dirty_generations (trade_id),
+    CHECK (lease_renewal_ms < lease_duration_ms),
+    CHECK (initial_backoff_ms <= maximum_backoff_ms),
+    CHECK (
+        (state = 'ready'
+            AND attempt_count < max_attempts
+            AND next_attempt_unix_ms BETWEEN 0 AND 9223372036854775807
+            AND lease_owner IS NULL
+            AND lease_expires_unix_ms IS NULL)
+        OR (state = 'leased'
+            AND attempt_count BETWEEN 1 AND max_attempts
+            AND next_attempt_unix_ms IS NULL
+            AND length(lease_owner) = 16
+            AND lease_expires_unix_ms BETWEEN 1 AND 9223372036854775807)
+        OR (state IN ('exhausted', 'superseded', 'completed')
+            AND next_attempt_unix_ms IS NULL
+            AND lease_owner IS NULL
+            AND lease_expires_unix_ms IS NULL)
+    )
+) STRICT"#
+    };
+}
+
+macro_rules! reconciliation_jobs_one_active_sql {
+    () => {
+        r#"CREATE UNIQUE INDEX reconciliation_jobs_one_active_per_trade
+ON reconciliation_jobs (trade_id)
+WHERE state IN ('ready', 'leased')"#
+    };
+}
+
+macro_rules! reconciliation_jobs_schedule_sql {
+    () => {
+        r#"CREATE INDEX reconciliation_jobs_by_schedule
+ON reconciliation_jobs (
+    state, next_attempt_unix_ms, lease_expires_unix_ms,
+    created_at_unix_ms, job_id
+)"#
+    };
+}
+
+macro_rules! reconciliation_jobs_guard_update_sql {
+    () => {
+        r#"CREATE TRIGGER reconciliation_jobs_guard_update
+BEFORE UPDATE ON reconciliation_jobs
+WHEN NEW.job_id != OLD.job_id
+    OR NEW.trade_id != OLD.trade_id
+    OR NEW.input_generation != OLD.input_generation
+    OR NEW.evidence_policy_sha256 != OLD.evidence_policy_sha256
+    OR NEW.max_attempts != OLD.max_attempts
+    OR NEW.lease_duration_ms != OLD.lease_duration_ms
+    OR NEW.lease_renewal_ms != OLD.lease_renewal_ms
+    OR NEW.initial_backoff_ms != OLD.initial_backoff_ms
+    OR NEW.maximum_backoff_ms != OLD.maximum_backoff_ms
+    OR NEW.created_at_unix_ms != OLD.created_at_unix_ms
+    OR NEW.revision != OLD.revision + 1
+    OR NEW.updated_at_unix_ms < OLD.updated_at_unix_ms
+    OR NOT (
+        (OLD.state = 'ready' AND NEW.state IN ('leased', 'superseded'))
+        OR (OLD.state = 'leased'
+            AND NEW.state IN ('leased', 'ready', 'exhausted', 'superseded', 'completed'))
+        OR (OLD.state = 'exhausted' AND NEW.state = 'superseded')
+    )
+BEGIN
+    SELECT RAISE(ABORT, 'reconciliation job transition is invalid');
+END"#
+    };
+}
+
+pub(crate) const CREATE_RECONCILIATION_JOBS_TABLE_SQL: &str = reconciliation_jobs_table_sql!();
+const CREATE_RECONCILIATION_JOBS_ONE_ACTIVE_SQL: &str = reconciliation_jobs_one_active_sql!();
+const CREATE_RECONCILIATION_JOBS_SCHEDULE_SQL: &str = reconciliation_jobs_schedule_sql!();
+const CREATE_RECONCILIATION_JOBS_GUARD_UPDATE_SQL: &str = reconciliation_jobs_guard_update_sql!();
+const CREATE_RECONCILIATION_JOBS_NO_DELETE_SQL: &str = immutable_no_delete_sql!(
+    "reconciliation_jobs_no_delete",
+    "reconciliation_jobs",
+    "reconciliation jobs are retained"
+);
+const CREATE_RECONCILIATION_JOBS_MIGRATION_SQL: &str = concat!(
+    reconciliation_jobs_table_sql!(),
+    ";\n",
+    reconciliation_jobs_one_active_sql!(),
+    ";\n",
+    reconciliation_jobs_schedule_sql!(),
+    ";\n",
+    reconciliation_jobs_guard_update_sql!(),
+    ";\n",
+    immutable_no_delete_sql!(
+        "reconciliation_jobs_no_delete",
+        "reconciliation_jobs",
+        "reconciliation jobs are retained"
+    ),
+    ";",
+);
+
+const RECONCILIATION_JOBS_TABLE_SHA256: [u8; 32] = [
+    0xe7, 0x0b, 0x5c, 0xb7, 0x26, 0x91, 0x9d, 0x02, 0xef, 0xb3, 0xa6, 0x21, 0x58, 0x48, 0xce, 0x92,
+    0x30, 0x88, 0x17, 0x2b, 0x3f, 0xe0, 0xc1, 0x40, 0xee, 0x4a, 0xc7, 0x1b, 0xd0, 0x3c, 0x66, 0xa7,
+];
+const RECONCILIATION_JOBS_ONE_ACTIVE_SHA256: [u8; 32] = [
+    0xf9, 0xbe, 0x78, 0xc6, 0x46, 0x7a, 0x76, 0x2d, 0x38, 0xf4, 0xe0, 0xb4, 0x80, 0xd4, 0x1b, 0x37,
+    0x6f, 0x66, 0x8c, 0x21, 0xd2, 0x96, 0xfd, 0x72, 0x12, 0x11, 0x9d, 0x2b, 0x9e, 0x3a, 0x14, 0x3f,
+];
+const RECONCILIATION_JOBS_SCHEDULE_SHA256: [u8; 32] = [
+    0x31, 0xd9, 0xf7, 0x38, 0x3b, 0x87, 0x8d, 0xd8, 0x00, 0xda, 0xe6, 0x1f, 0x40, 0x54, 0xd8, 0xd2,
+    0x99, 0xca, 0x93, 0xef, 0x38, 0xbe, 0x5b, 0x63, 0x63, 0x0e, 0x1c, 0x3f, 0x57, 0x2a, 0x1e, 0x75,
+];
+const RECONCILIATION_JOBS_GUARD_UPDATE_SHA256: [u8; 32] = [
+    0xe4, 0x6a, 0x3a, 0xf2, 0x7e, 0xe1, 0xce, 0xe2, 0x4e, 0x29, 0x13, 0x56, 0x51, 0x6c, 0x72, 0x6d,
+    0xf0, 0xd1, 0x11, 0x29, 0x01, 0x22, 0x97, 0x5e, 0xe1, 0x79, 0x76, 0xe3, 0x6a, 0x74, 0x13, 0x1b,
+];
+const RECONCILIATION_JOBS_NO_DELETE_SHA256: [u8; 32] = [
+    0x1a, 0x86, 0xb1, 0x70, 0x05, 0x05, 0x4c, 0x27, 0x1b, 0xa4, 0x9a, 0xf2, 0x1a, 0x44, 0x9c, 0x9d,
+    0xdc, 0xfb, 0xbc, 0xd9, 0x13, 0xfa, 0x2a, 0x8e, 0x64, 0x6d, 0x5a, 0x6d, 0x22, 0x69, 0x59, 0xa2,
+];
+
 const RHI_CONFIG_BINDINGS_TABLE_SHA256: [u8; 32] = [
     0x4d, 0x6e, 0x8f, 0xff, 0xda, 0x43, 0xe6, 0xf5, 0x3e, 0x23, 0x77, 0xd2, 0x77, 0xa4, 0x52, 0x9e,
     0x63, 0x3e, 0xaf, 0xb6, 0xea, 0xa2, 0xad, 0xd7, 0x56, 0xde, 0x0d, 0xc9, 0x24, 0xc5, 0x77, 0xeb,
@@ -653,10 +809,22 @@ pub fn rhi_migration_catalog() -> Result<MigrationCatalog, RhiStateCatalogError>
         MigrationChecksum::from_bytes(RHI_STATE_SCHEMA_VERSION_4_MIGRATION_SHA256),
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::MigrationCatalog))?;
-    let catalog = MigrationCatalog::new([configuration, trade_evidence, source_checkpoints])
-        .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::MigrationCatalog))?;
+    let reconciliation_jobs = MigrationDescriptor::sql(
+        5,
+        "create_reconciliation_jobs",
+        CREATE_RECONCILIATION_JOBS_MIGRATION_SQL,
+        MigrationChecksum::from_bytes(RHI_STATE_SCHEMA_VERSION_5_MIGRATION_SHA256),
+    )
+    .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::MigrationCatalog))?;
+    let catalog = MigrationCatalog::new([
+        configuration,
+        trade_evidence,
+        source_checkpoints,
+        reconciliation_jobs,
+    ])
+    .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::MigrationCatalog))?;
     if catalog.current_version() != RHI_STATE_SCHEMA_VERSION
-        || catalog.descriptors().len() != 3
+        || catalog.descriptors().len() != 4
         || catalog.digest().as_bytes() != &RHI_MIGRATION_CATALOG_SHA256
     {
         return Err(RhiStateCatalogError::new(
@@ -688,14 +856,26 @@ pub fn rhi_schema_catalog() -> Result<SchemaCatalog, RhiStateCatalogError> {
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
     let version_four = SchemaVersionCatalog::new(
-        RHI_STATE_SCHEMA_VERSION,
+        4,
         rhi_schema_version_four_objects()?,
         SchemaDigest::from_bytes(RHI_STATE_SCHEMA_VERSION_4_SHA256),
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
+    let version_five = SchemaVersionCatalog::new(
+        RHI_STATE_SCHEMA_VERSION,
+        rhi_schema_version_five_objects()?,
+        SchemaDigest::from_bytes(RHI_STATE_SCHEMA_VERSION_5_SHA256),
+    )
+    .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
     let catalog = SchemaCatalog::new(
         &migrations,
-        [version_one, version_two, version_three, version_four],
+        [
+            version_one,
+            version_two,
+            version_three,
+            version_four,
+            version_five,
+        ],
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
     validate_rhi_state_catalogs(&migrations, &catalog)?;
@@ -709,10 +889,10 @@ pub fn validate_rhi_state_catalogs(
 ) -> Result<(), RhiStateCatalogError> {
     let versions = schema.versions();
     let valid = migrations.current_version() == RHI_STATE_SCHEMA_VERSION
-        && migrations.descriptors().len() == 3
+        && migrations.descriptors().len() == 4
         && migrations.digest().as_bytes() == &RHI_MIGRATION_CATALOG_SHA256
         && schema.migration_catalog_digest() == migrations.digest()
-        && versions.len() == 4
+        && versions.len() == 5
         && versions[0].version() == RHI_STATE_BASE_SCHEMA_VERSION
         && versions[0].object_count() == RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT
         && versions[0].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_1_SHA256
@@ -722,9 +902,12 @@ pub fn validate_rhi_state_catalogs(
         && versions[2].version() == 3
         && versions[2].object_count() == RHI_STATE_SCHEMA_VERSION_3_OBJECT_COUNT
         && versions[2].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_3_SHA256
-        && versions[3].version() == RHI_STATE_SCHEMA_VERSION
+        && versions[3].version() == 4
         && versions[3].object_count() == RHI_STATE_SCHEMA_VERSION_4_OBJECT_COUNT
         && versions[3].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_4_SHA256
+        && versions[4].version() == RHI_STATE_SCHEMA_VERSION
+        && versions[4].object_count() == RHI_STATE_SCHEMA_VERSION_5_OBJECT_COUNT
+        && versions[4].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_5_SHA256
         && schema.digest().as_bytes() == &RHI_STATE_SCHEMA_CATALOG_SHA256;
     if valid {
         Ok(())
@@ -782,6 +965,62 @@ fn rhi_schema_version_four_objects() -> Result<Vec<SchemaObject>, RhiStateCatalo
     let mut objects = rhi_schema_version_three_objects()?;
     objects.extend(rhi_source_checkpoint_objects()?);
     Ok(objects)
+}
+
+fn rhi_schema_version_five_objects() -> Result<Vec<SchemaObject>, RhiStateCatalogError> {
+    let mut objects = rhi_schema_version_four_objects()?;
+    objects.extend(rhi_reconciliation_job_objects()?);
+    Ok(objects)
+}
+
+fn rhi_reconciliation_job_objects() -> Result<[SchemaObject; 5], RhiStateCatalogError> {
+    let object = |kind, name, table_name, sql, digest| {
+        SchemaObject::new(
+            kind,
+            name,
+            table_name,
+            sql,
+            SchemaDigest::from_bytes(digest),
+        )
+        .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))
+    };
+    Ok([
+        object(
+            SchemaObjectKind::Table,
+            "reconciliation_jobs",
+            "reconciliation_jobs",
+            CREATE_RECONCILIATION_JOBS_TABLE_SQL,
+            RECONCILIATION_JOBS_TABLE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Index,
+            "reconciliation_jobs_one_active_per_trade",
+            "reconciliation_jobs",
+            CREATE_RECONCILIATION_JOBS_ONE_ACTIVE_SQL,
+            RECONCILIATION_JOBS_ONE_ACTIVE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Index,
+            "reconciliation_jobs_by_schedule",
+            "reconciliation_jobs",
+            CREATE_RECONCILIATION_JOBS_SCHEDULE_SQL,
+            RECONCILIATION_JOBS_SCHEDULE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "reconciliation_jobs_guard_update",
+            "reconciliation_jobs",
+            CREATE_RECONCILIATION_JOBS_GUARD_UPDATE_SQL,
+            RECONCILIATION_JOBS_GUARD_UPDATE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "reconciliation_jobs_no_delete",
+            "reconciliation_jobs",
+            CREATE_RECONCILIATION_JOBS_NO_DELETE_SQL,
+            RECONCILIATION_JOBS_NO_DELETE_SHA256,
+        )?,
+    ])
 }
 
 fn rhi_source_checkpoint_objects() -> Result<[SchemaObject; 6], RhiStateCatalogError> {
