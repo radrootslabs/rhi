@@ -424,6 +424,11 @@
 - Optional TCP operations expose only cached `/livez`, `/readyz`, and
   `/metrics`; requests must not perform SQLite, source, relay, DNS, identity,
   evidence, or credential probes.
+- Step 212 owns the one-latest passive lifecycle/status cache and the optional
+  TCP adapter. Detailed status remains permissioned Unix-admin-only. The TCP
+  surface is exactly cached `/livez`, `/readyz`, and `/metrics`, with two fixed
+  RHI metric families and no route-registration extension, active probe, or
+  high-cardinality label authority.
 - Keep logs as safe structured stderr output. Keep result data on stdout and
   diagnostics on stderr. Use stable bounded public codes/messages, bounded
   metric labels, explicit redaction, and no trade/mutation/event/report IDs or

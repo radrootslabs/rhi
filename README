@@ -499,6 +499,29 @@ no signals, runtime, logger, or process-exit policy and does not claim the final
 supervised task graph. Its exact machine contract is
 [`runtime_foundation.v1.json`](contracts/services_hardening/runtime_foundation.v1.json).
 
+## Passive lifecycle status and TCP operations
+
+`rhi_status_cache` retains exactly one latest immutable RHI lifecycle and
+detailed-status publication behind a single non-cloneable publisher. Each
+publication is bounded and validated before it replaces the prior snapshot.
+Readers clone only passive cache authority; they perform no SQLite,
+filesystem, evidence-source, relay, DNS, identity, credential, clock, or fresh
+probe operation. Detailed JSON is reserved for the permissioned Unix-admin
+surface and contains only the closed service identity, evidence transport,
+reconciliation, publication, presence, persistence, configuration, build, and
+stable reason vocabularies. Its exact contract is
+[`status_cache.v1.json`](contracts/services_hardening/status_cache.v1.json).
+
+When the validated operations block is enabled, `RhiOperationsServer` exposes
+exactly HTTP/1.1 `GET /livez`, `GET /readyz`, and `GET /metrics` on its admitted
+TCP address. Requests read only the latest cached lifecycle/readiness and two
+fixed bounded metric families; they cannot register another route or reach
+detailed status. Requests perform no SQLite, filesystem, evidence-source,
+relay, DNS, identity, credential, clock, or active health probe. The listener
+is disabled by default and remains a supervisor-owned optional adapter. Its
+exact contract is
+[`tcp_operations.v1.json`](contracts/services_hardening/tcp_operations.v1.json).
+
 ## Hardened v1 configuration contract
 
 The target service configuration is frozen by

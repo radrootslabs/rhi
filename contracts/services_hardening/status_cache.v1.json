@@ -1,0 +1,48 @@
+{
+  "schema": "radroots.rhi.status-cache.v1",
+  "contract_version": 1,
+  "step": 212,
+  "shared_cache": "radroots_service_host::cached_service_state",
+  "publication": {
+    "authority": "single_non_clone_publisher",
+    "capacity": "one_latest_immutable_arc",
+    "replacement": "atomic",
+    "phase_transition": "shared_service_operational_state",
+    "failed_publication": "previous_snapshot_retained"
+  },
+  "read": {
+    "kind": "passive_cached_snapshot",
+    "await_required": false,
+    "sqlite": false,
+    "provider": false,
+    "evidence_source": false,
+    "relay": false,
+    "credential": false,
+    "dns": false,
+    "clock": false,
+    "fresh_probe": false,
+    "task_spawn": false
+  },
+  "detailed_status": {
+    "model": "service_status_v1",
+    "service": "rhi",
+    "local_transport": "permissioned_unix_admin_only",
+    "construction": "bounded_encode_before_atomic_publication",
+    "maximum_utf8_bytes": 1048576,
+    "identity_roles": ["service"],
+    "transport_count_keys": ["configured_source_count", "reachable_source_count"],
+    "reconciliation_count_keys": ["pending", "leased", "exhausted"],
+    "publication_count_keys": ["pending", "unknown"],
+    "presence_count_keys": ["pending", "unknown"],
+    "reason_codes": ["identity_unavailable", "database_schema_mismatch", "database_read_only", "database_low_disk", "source_unavailable", "subscription_inactive", "recovery_incomplete", "publication_recovery_incomplete", "presence_state_unavailable", "reconciliation_backlog_exceeded", "admin_listener_failed", "operations_listener_failed", "shutdown_in_progress"],
+    "oldest_pending_time": "optional_nonnegative_i64_range_unix_seconds_for_reconciliation_and_publication",
+    "protected_material": false,
+    "filesystem_paths": false,
+    "raw_errors": false
+  },
+  "deferred": [
+    "unix_admin_handler_binding",
+    "final_runtime_task_graph",
+    "signal_handling"
+  ]
+}

@@ -7,9 +7,14 @@ const ROOT: &str = include_str!("../src/lib.rs");
 const MAIN: &str = include_str!("../src/main.rs");
 const ADMIN: &str = include_str!("../src/admin_v1.rs");
 const DOCTOR: &str = include_str!("../src/doctor_v1.rs");
+const OPERATIONS: &str = include_str!("../src/operations_v1.rs");
+const STATUS: &str = include_str!("../src/status_v1.rs");
 const PROCESS_RESULT: &str = include_str!("../src/process_result_v1.rs");
 const OPERATOR_CONTRACT: &str =
     include_str!("../contracts/services_hardening/operator_contract.v1.json");
+const STATUS_CONTRACT: &str = include_str!("../contracts/services_hardening/status_cache.v1.json");
+const OPERATIONS_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/tcp_operations.v1.json");
 const ADMIN_IDENTITY_OFFLINE_CONTRACT: &str =
     include_str!("../contracts/services_hardening/admin_identity_offline.v1.json");
 const ADMIN_WAVE_QUALIFICATION_CONTRACT: &str =
@@ -87,6 +92,7 @@ const SOURCES: &[&str] = &[
     include_str!("../src/features/trade_agreement_attestation.rs"),
     include_str!("../src/identity_credential.rs"),
     include_str!("../src/identity_envelope.rs"),
+    include_str!("../src/operations_v1.rs"),
     include_str!("../src/presence_desired.rs"),
     include_str!("../src/presence_publication.rs"),
     include_str!("../src/process_result_v1.rs"),
@@ -114,6 +120,7 @@ const SOURCES: &[&str] = &[
     include_str!("../src/state_metadata.rs"),
     include_str!("../src/state_repository.rs"),
     include_str!("../src/state_trade.rs"),
+    include_str!("../src/status_v1.rs"),
     include_str!("../src/trade_ingest.rs"),
 ];
 
@@ -171,6 +178,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "features",
         "identity_credential",
         "identity_envelope",
+        "operations_v1",
         "presence_desired",
         "presence_publication",
         "process_result_v1",
@@ -198,6 +206,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "state_metadata",
         "state_repository",
         "state_trade",
+        "status_v1",
         "trade_ingest",
     ] {
         assert!(
@@ -264,6 +273,20 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "run_rhi_doctor",
         "rhi_doctor_check_definitions",
         "RhiProcessResult",
+        "RhiStatusPublisher",
+        "RhiStatusReader",
+        "RhiStatusSnapshot",
+        "RhiStatusObservationV1",
+        "RhiProviderStatusV1",
+        "RhiEvidenceTransportStatusV1",
+        "RhiReconciliationStatusV1",
+        "RhiPublicationStatusV1",
+        "RhiPresenceStatusV1",
+        "rhi_status_cache",
+        "RhiOperationsServer",
+        "RhiBoundOperationsServer",
+        "RhiOperationsCancellationToken",
+        "RhiOperationsErrorKind",
         "RhiPublicationErrorKind",
         "RhiPublicationMode",
         "RhiPublicationRetryPolicy",
@@ -393,7 +416,93 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
     assert!(!PUBLIC_API.contains("rhi::admin_v1::"));
     assert!(!PUBLIC_API.contains("rhi::cli_v1::"));
     assert!(!PUBLIC_API.contains("rhi::doctor_v1::"));
+    assert!(!PUBLIC_API.contains("rhi::operations_v1::"));
     assert!(!PUBLIC_API.contains("rhi::process_result_v1::"));
+    assert!(!PUBLIC_API.contains("rhi::status_v1::"));
+}
+
+#[test]
+fn step212_status_and_tcp_operations_are_passive_closed_and_dependency_neutral() {
+    let status_contract: serde_json::Value =
+        serde_json::from_str(STATUS_CONTRACT).expect("status contract");
+    let operations_contract: serde_json::Value =
+        serde_json::from_str(OPERATIONS_CONTRACT).expect("operations contract");
+    assert_eq!(status_contract["schema"], "radroots.rhi.status-cache.v1");
+    assert_eq!(status_contract["step"], 212);
+    assert_eq!(status_contract["read"]["fresh_probe"], false);
+    assert_eq!(
+        operations_contract["schema"],
+        "radroots.rhi.tcp-operations.v1"
+    );
+    assert_eq!(operations_contract["step"], 212);
+    assert_eq!(operations_contract["route_registration_extension"], false);
+
+    for required in [
+        "CachedServiceStatePublisher<RhiCachedStatus>",
+        "pub struct RhiStatusPublisher",
+        "pub struct RhiStatusReader",
+        "pub struct RhiStatusSnapshot",
+        "pub fn rhi_status_cache(",
+        "status.to_bounded_json()",
+        "reconciliation: RhiReconciliationStatusV1",
+        "publication: RhiPublicationStatusV1",
+        "presence: RhiPresenceStatusV1",
+        "RHI_STATUS_REASON_CODE_COUNT: usize = 13",
+        "radroots_rhi_service_phase",
+        "radroots_rhi_service_ready",
+    ] {
+        assert!(STATUS.contains(required), "status is missing {required}");
+    }
+    for required in [
+        "HostOperationsServer::new(listener, status.operations_cache())",
+        "RhiOperationsCancellationToken",
+        "HostOperationsTransportLimits::new(values)",
+        "HeaderLimitBelowParserFloor",
+    ] {
+        assert!(
+            OPERATIONS.contains(required),
+            "operations is missing {required}"
+        );
+    }
+    for forbidden in [
+        "sqlx::",
+        "std::fs::",
+        "tokio::spawn",
+        "spawn_blocking",
+        "SystemTime",
+        "std::env::",
+        "provider.execute",
+        "source.fetch",
+        "relay.connect",
+        "route(",
+        "Router",
+    ] {
+        assert!(!STATUS.contains(forbidden), "status gained {forbidden}");
+        assert!(
+            !OPERATIONS.contains(forbidden),
+            "operations gained {forbidden}"
+        );
+    }
+    assert!(PUBLIC_API.contains("impl core::clone::Clone for rhi::RhiStatusReader"));
+    assert!(!PUBLIC_API.contains("impl core::clone::Clone for rhi::RhiStatusPublisher"));
+    assert!(!PUBLIC_API.contains("impl core::clone::Clone for rhi::RhiStatusSnapshot"));
+    for forbidden in [
+        "radroots_service_host::OperationsServer",
+        "radroots_service_host::BoundOperationsServer",
+        "radroots_service_host::CachedServiceState",
+        "radroots_service_host::BoundedMetricsSnapshot",
+    ] {
+        assert!(!PUBLIC_API.contains(forbidden));
+    }
+    for required in [
+        "## Passive lifecycle status and TCP operations",
+        "exactly HTTP/1.1 `GET /livez`, `GET /readyz`, and `GET /metrics`",
+        "Requests perform no SQLite",
+        "status_cache.v1.json",
+        "tcp_operations.v1.json",
+    ] {
+        assert!(README.contains(required), "README is missing {required}");
+    }
 }
 
 #[test]
@@ -1123,7 +1232,7 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .lines()
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
-    assert_eq!(public_error_count, 36);
+    assert_eq!(public_error_count, 38);
 }
 
 #[test]

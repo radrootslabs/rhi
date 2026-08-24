@@ -10,6 +10,7 @@ mod doctor_v1;
 mod features;
 mod identity_credential;
 mod identity_envelope;
+mod operations_v1;
 mod presence_desired;
 mod presence_publication;
 mod process_result_v1;
@@ -37,6 +38,7 @@ mod state_maintenance;
 mod state_metadata;
 mod state_repository;
 mod state_trade;
+mod status_v1;
 mod trade_ingest;
 
 pub use adapters::nostr::event::NostrEventAdapter;
@@ -88,6 +90,11 @@ pub use identity_envelope::{
     RhiEncryptedIdentityProvisioningMaterial, RhiIdentityEnvelopeBinding, RhiIdentityProviderKind,
     RhiIdentityRole, RhiWrappingCredential, open_rhi_encrypted_identity,
     provision_rhi_encrypted_identity,
+};
+pub use operations_v1::{
+    RHI_LIVEZ_PATH, RHI_METRICS_PATH, RHI_OPERATIONS_CONTRACT_VERSION, RHI_READYZ_PATH,
+    RhiBoundOperationsServer, RhiOperationsCancellationToken, RhiOperationsError,
+    RhiOperationsErrorKind, RhiOperationsServer,
 };
 pub use presence_desired::{
     RHI_PRESENCE_DESIRED_CONTRACT_VERSION, RHI_PRESENCE_DESIRED_MAX_TARGETS,
@@ -268,6 +275,17 @@ pub use state_trade::{
     RHI_TRADE_EVIDENCE_PERSISTENCE_CONTRACT_VERSION, RhiTradeEvidencePersistenceError,
     RhiTradeEvidencePersistenceErrorKind, RhiTradeEvidencePersistenceOutcome,
     RhiTradeSourceObservation,
+};
+pub use status_v1::{
+    RHI_DETAILED_STATUS_MAX_UTF8_BYTES, RHI_STATUS_CACHE_CONTRACT_VERSION,
+    RHI_STATUS_REASON_CODE_COUNT, RhiEvidenceTransportStatusV1, RhiIdentityHealthV1,
+    RhiIntegrityStateV1, RhiPersistenceHealthV1, RhiPersistenceStatusV1, RhiPresenceStatusV1,
+    RhiProviderHealthV1, RhiProviderStatusV1, RhiPublicationStatusV1, RhiReconciliationStatusV1,
+    RhiServicePhase, RhiStatusBuildInfoV1, RhiStatusBuildMode, RhiStatusCommonV1,
+    RhiStatusConfigurationIdentityV1, RhiStatusConfigurationSource, RhiStatusError,
+    RhiStatusErrorKind, RhiStatusObservationV1, RhiStatusPublisher, RhiStatusReader,
+    RhiStatusReasonCode, RhiStatusReasonCodes, RhiStatusSnapshot, RhiStatusUnixSeconds,
+    RhiTransportHealthV1, rhi_status_cache,
 };
 pub use trade_ingest::{
     RHI_TRADE_EVENT_EXTRA_FIELD_MAX_COUNT, RHI_TRADE_EVENT_EXTRA_JSON_MAX_BYTES,

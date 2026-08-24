@@ -81,7 +81,7 @@ url = "2"
 zeroize = { version = "1" }
 
 [dev-dependencies]
-tokio = { version = "1", default-features = false, features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", default-features = false, features = ["io-util", "macros", "net", "rt-multi-thread"] }
 
 [profile.release]
 lto = "thin"
