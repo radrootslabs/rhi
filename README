@@ -550,9 +550,9 @@ database-path, worker, environment-file, or arbitrary path-leaf flag. Identity
 rekey and replacement are not commands; rotation is a create-new offline
 artifact plus governed configuration apply.
 
-## Common Unix-admin boundary
+## Unix-admin boundary
 
-Step 206 binds the seven common RHI routes for detailed status, redacted
+Step 206 bound the seven common RHI routes for detailed status, redacted
 effective configuration, service-identity status and public export, state
 status, online backup, and a bounded metrics snapshot to the shared
 `radroots_service_host` HTTP/1.1-over-Unix server. The public RHI route and
@@ -566,10 +566,22 @@ shared writer authority before binding, and uses the shared server's system
 entropy for absent correlation IDs. Construction does no I/O; binding does not
 spawn; serving remains a later supervised runtime responsibility. Raw shared
 routers, listeners, JSON values, and caller-selected socket paths never cross
-the public RHI boundary. Domain and sensitive routes remain deliberately
-unregistered until Steps 207 and 208, before Step 209 closes the complete
-22-route/36-model inventory. The partial machine contract is
+the public RHI boundary. Its historical partial machine contract is
 [`admin_common.v1.json`](contracts/services_hardening/admin_common.v1.json).
+
+Step 207 cumulatively activates the thirteen reconciliation, job, source,
+trade projection/report, publication target/backlog, retry, and presence
+domain routes. Page sizes stop at 200; query names and duplicates are closed;
+cursors use canonical base64url without padding and remain authenticated and
+bound by the handler to the same route, filters, and snapshot. Every decoded
+`{trade_id}` is exactly 32 lowercase hexadecimal characters. Mutations retain
+stable operation-ID exact replay and conflicting-reuse rejection, and success
+still means the handler's contract-defined local effect is durably committed,
+not relay delivery. The adapter performs no SQLite or relay I/O itself. The
+two identity-sensitive mutations remain unregistered for Step 208, before
+Step 209 qualifies the complete 22-route/36-model inventory. The cumulative
+domain contract is
+[`admin_domain.v1.json`](contracts/services_hardening/admin_domain.v1.json).
 
 ## Sealed service-instance paths
 

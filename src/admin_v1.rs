@@ -10,7 +10,8 @@ use std::{
 use radroots_service_host::{
     AdminCorrelationId, AdminError, AdminErrorCode, AdminErrorMessage, AdminHttpMethod,
     AdminMutationRequest, AdminOperationId, AdminRequest, AdminRouteFailure,
-    AdminRouteFailureStatus, AdminRouteOutcome, AdminRouter, AdminServer, AdminServerError,
+    AdminRouteFailureStatus, AdminRouteOutcome, AdminRouter as SharedAdminRouter,
+    AdminServer as SharedAdminServer, AdminServerError as SharedAdminServerError,
     AdminTransportLimitValues, AdminTransportLimits, CancellationToken, UnixAdminSocketBinding,
     UnixAdminSocketWriterAuthority,
 };
@@ -94,6 +95,47 @@ impl RhiAdminRoute {
         Self::StateStatus,
         Self::StateBackup,
         Self::MetricsSnapshot,
+    ];
+
+    /// Domain routes admitted by the Step 207 control surface.
+    pub const DOMAIN: [Self; 13] = [
+        Self::ReconciliationStatus,
+        Self::ReconciliationJobs,
+        Self::ReconciliationRefresh,
+        Self::Sources,
+        Self::TradeProjection,
+        Self::TradeReportCurrent,
+        Self::TradeReports,
+        Self::PublicationBacklog,
+        Self::PublicationTargets,
+        Self::PublicationRetry,
+        Self::PresenceDesired,
+        Self::PresenceRender,
+        Self::PresenceRefresh,
+    ];
+
+    /// Routes admitted through Step 207, in final machine-contract order.
+    pub const ACTIVE: [Self; 20] = [
+        Self::Status,
+        Self::EffectiveConfig,
+        Self::IdentityStatus,
+        Self::IdentityPublic,
+        Self::StateStatus,
+        Self::StateBackup,
+        Self::MetricsSnapshot,
+        Self::ReconciliationStatus,
+        Self::ReconciliationJobs,
+        Self::ReconciliationRefresh,
+        Self::Sources,
+        Self::TradeProjection,
+        Self::TradeReportCurrent,
+        Self::TradeReports,
+        Self::PublicationBacklog,
+        Self::PublicationTargets,
+        Self::PublicationRetry,
+        Self::PresenceDesired,
+        Self::PresenceRender,
+        Self::PresenceRefresh,
     ];
 
     #[must_use]
@@ -490,31 +532,31 @@ impl fmt::Display for RhiAdminRouterError {
 
 impl Error for RhiAdminRouterError {}
 
-/// Opaque Step 206 common-route RHI v1 router capability.
+/// Opaque RHI v1 router capability through Step 207.
 ///
 /// The underlying shared-host router remains an implementation detail. The
 /// later runtime-composition checkpoint consumes this capability without
 /// exposing raw listener or transport authority.
 ///
 /// ```compile_fail
-/// use rhi::RhiCommonAdminRouter;
+/// use rhi::RhiAdminRouter;
 ///
-/// let _ = RhiCommonAdminRouter { inner: todo!() };
+/// let _ = RhiAdminRouter { inner: todo!() };
 /// ```
-pub struct RhiCommonAdminRouter {
-    inner: AdminRouter,
+pub struct RhiAdminRouter {
+    inner: SharedAdminRouter,
 }
 
-impl fmt::Debug for RhiCommonAdminRouter {
+impl fmt::Debug for RhiAdminRouter {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self { inner } = self;
         let _ = inner;
-        formatter.write_str("RhiCommonAdminRouter")
+        formatter.write_str("RhiAdminRouter")
     }
 }
 
-impl RhiCommonAdminRouter {
-    fn into_inner(self) -> AdminRouter {
+impl RhiAdminRouter {
+    fn into_inner(self) -> SharedAdminRouter {
         self.inner
     }
 }
@@ -619,17 +661,17 @@ impl fmt::Display for RhiAdminServerError {
 
 impl Error for RhiAdminServerError {}
 
-/// Unbound Step 206 common-route RHI Unix-admin server.
+/// Unbound RHI Unix-admin server through Step 207.
 ///
 /// Construction projects only the already-admitted Rhi configuration, seals
 /// the exact route inventory around the supplied domain handler, and uses the
 /// shared host's system entropy. The raw shared router and server never cross
 /// this boundary.
-pub struct RhiCommonAdminServer {
-    inner: AdminServer,
+pub struct RhiAdminServer {
+    inner: SharedAdminServer,
 }
 
-impl RhiCommonAdminServer {
+impl RhiAdminServer {
     pub fn new<H>(
         configuration: &crate::RhiConfigDocumentV1,
         handler: Arc<H>,
@@ -638,9 +680,9 @@ impl RhiCommonAdminServer {
         H: RhiAdminHandler,
     {
         let limits = admin_transport_limits(configuration)?;
-        let router = build_rhi_common_admin_router(handler)
+        let router = build_rhi_admin_router(handler)
             .map_err(|_| RhiAdminServerError::new(RhiAdminServerErrorKind::Router))?;
-        let inner = AdminServer::with_system_entropy(router.into_inner(), limits)
+        let inner = SharedAdminServer::with_system_entropy(router.into_inner(), limits)
             .map_err(|_| RhiAdminServerError::new(RhiAdminServerErrorKind::ServerConfiguration))?;
         Ok(Self { inner })
     }
@@ -652,32 +694,32 @@ impl RhiCommonAdminServer {
     pub async fn bind(
         self,
         runtime: &crate::RhiRuntimeContext,
-    ) -> Result<RhiBoundCommonAdminServer, RhiAdminServerError> {
+    ) -> Result<RhiBoundAdminServer, RhiAdminServerError> {
         let authority = UnixAdminSocketWriterAuthority::acquire(runtime.context().paths().run())
             .map_err(|_| RhiAdminServerError::new(RhiAdminServerErrorKind::WriterAuthority))?;
         let binding = UnixAdminSocketBinding::bind(authority, runtime.artifacts().admin_socket())
             .await
             .map_err(|_| RhiAdminServerError::new(RhiAdminServerErrorKind::Bind))?;
-        Ok(RhiBoundCommonAdminServer {
+        Ok(RhiBoundAdminServer {
             inner: self.inner,
             binding,
         })
     }
 }
 
-impl fmt::Debug for RhiCommonAdminServer {
+impl fmt::Debug for RhiAdminServer {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("RhiCommonAdminServer([sealed])")
+        formatter.write_str("RhiAdminServer([sealed])")
     }
 }
 
-/// Bound Step 206 common-route RHI Unix-admin server.
-pub struct RhiBoundCommonAdminServer {
-    inner: AdminServer,
+/// Bound RHI Unix-admin server through Step 207.
+pub struct RhiBoundAdminServer {
+    inner: SharedAdminServer,
     binding: UnixAdminSocketBinding,
 }
 
-impl RhiBoundCommonAdminServer {
+impl RhiBoundAdminServer {
     /// Serves until supervisor cancellation and then drains bounded connection work.
     pub async fn serve(
         self,
@@ -690,26 +732,24 @@ impl RhiBoundCommonAdminServer {
     }
 }
 
-impl fmt::Debug for RhiBoundCommonAdminServer {
+impl fmt::Debug for RhiBoundAdminServer {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("RhiBoundCommonAdminServer([sealed])")
+        formatter.write_str("RhiBoundAdminServer([sealed])")
     }
 }
 
-/// Registers only the seven common Step 206 routes on the hardened Lib router.
+/// Registers the seven common and thirteen domain routes owned through Step 207.
 ///
-/// Domain and sensitive routes remain unregistered until their ordered owners.
-pub fn build_rhi_common_admin_router<H>(
-    handler: Arc<H>,
-) -> Result<RhiCommonAdminRouter, RhiAdminRouterError>
+/// The two sensitive identity mutations remain unregistered until Step 208.
+pub fn build_rhi_admin_router<H>(handler: Arc<H>) -> Result<RhiAdminRouter, RhiAdminRouterError>
 where
     H: RhiAdminHandler,
 {
     if !operator_route_inventory_is_exact() {
         return Err(RhiAdminRouterError);
     }
-    let mut router = AdminRouter::new();
-    for route in RhiAdminRoute::COMMON {
+    let mut router = SharedAdminRouter::new();
+    for route in RhiAdminRoute::ACTIVE {
         let handler = Arc::clone(&handler);
         router
             .route(route.host_method(), route.path(), move |request| {
@@ -718,7 +758,7 @@ where
             })
             .map_err(|_| RhiAdminRouterError)?;
     }
-    Ok(RhiCommonAdminRouter { inner: router })
+    Ok(RhiAdminRouter { inner: router })
 }
 
 pub(crate) fn admin_transport_limits(
@@ -756,13 +796,14 @@ const fn invalid_admin_configuration() -> RhiAdminServerError {
     RhiAdminServerError::new(RhiAdminServerErrorKind::InvalidConfiguration)
 }
 
-const fn map_admin_server_error(error: AdminServerError) -> RhiAdminServerError {
+const fn map_admin_server_error(error: SharedAdminServerError) -> RhiAdminServerError {
     let kind = match error {
-        AdminServerError::ListenerClone { .. } | AdminServerError::ListenerRegistration { .. } => {
-            RhiAdminServerErrorKind::Listener
+        SharedAdminServerError::ListenerClone { .. }
+        | SharedAdminServerError::ListenerRegistration { .. } => RhiAdminServerErrorKind::Listener,
+        SharedAdminServerError::Accept { .. } => RhiAdminServerErrorKind::Accept,
+        SharedAdminServerError::ConnectionTaskPanicked => {
+            RhiAdminServerErrorKind::ConnectionTaskPanicked
         }
-        AdminServerError::Accept { .. } => RhiAdminServerErrorKind::Accept,
-        AdminServerError::ConnectionTaskPanicked => RhiAdminServerErrorKind::ConnectionTaskPanicked,
     };
     RhiAdminServerError::new(kind)
 }
@@ -1732,6 +1773,16 @@ mod tests {
         assert!(operator_route_inventory_is_exact());
         assert_eq!(RhiAdminRoute::ALL.len(), 22);
         assert_eq!(RhiAdminRoute::COMMON.len(), 7);
+        assert_eq!(RhiAdminRoute::DOMAIN.len(), 13);
+        assert_eq!(RhiAdminRoute::ACTIVE.len(), 20);
+        assert_eq!(
+            RhiAdminRoute::ACTIVE,
+            RhiAdminRoute::COMMON
+                .into_iter()
+                .chain(RhiAdminRoute::DOMAIN)
+                .collect::<Vec<_>>()
+                .as_slice()
+        );
         let referenced = RhiAdminRoute::ALL
             .into_iter()
             .flat_map(|route| [route.request_model(), route.response_model()])
@@ -1913,7 +1964,7 @@ mod tests {
 
         const CONFIG: &str = include_str!("../contracts/services_hardening/config.v1.example.toml");
 
-        type FixtureCall = (RhiAdminRoute, Option<String>, Box<[u8]>);
+        type FixtureCall = (RhiAdminRoute, Option<String>, Option<String>, Box<[u8]>);
 
         struct FixtureHandler {
             calls: Mutex<Vec<FixtureCall>>,
@@ -1935,9 +1986,19 @@ mod tests {
                             RhiAdminHandlerErrorKind::OperationIdConflict,
                         ));
                     }
+                    if request
+                        .model_bytes()
+                        .windows(15)
+                        .any(|bytes| bytes == b"\"cursor\":\"AAAA\"")
+                    {
+                        return Err(RhiAdminHandlerError::new(
+                            RhiAdminHandlerErrorKind::InvalidCursor,
+                        ));
+                    }
                     self.calls.lock().expect("calls").push((
                         request.route(),
                         request.operation_id().map(str::to_owned),
+                        request.parameter("trade_id").map(str::to_owned),
                         request.model_bytes().into(),
                     ));
                     Ok(response_document(request.route()))
@@ -2020,11 +2081,11 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn seven_common_routes_round_trip_over_the_hardened_unix_boundary() {
+        async fn twenty_active_routes_round_trip_over_the_hardened_unix_boundary() {
             let (_root, runtime, configuration) = runtime_context();
             let socket = runtime.artifacts().admin_socket().to_path_buf();
             let handler = Arc::new(FixtureHandler::new());
-            let server = RhiCommonAdminServer::new(&configuration, Arc::clone(&handler))
+            let server = RhiAdminServer::new(&configuration, Arc::clone(&handler))
                 .expect("production admin server")
                 .bind(&runtime)
                 .await
@@ -2040,7 +2101,7 @@ mod tests {
             let client =
                 AdminClient::new(&socket, AdminTransportLimits::DEFAULT).expect("admin client");
 
-            for (index, route) in RhiAdminRoute::COMMON.into_iter().enumerate() {
+            for (index, route) in RhiAdminRoute::ACTIVE.into_iter().enumerate() {
                 let request = sample_model(route.request_model());
                 let target = target_for(route, &request);
                 let response = match route.method() {
@@ -2087,9 +2148,30 @@ mod tests {
                 assert!(response.starts_with("HTTP/1.1 400 "), "{response}");
             }
 
-            let domain_target =
-                AdminClientTarget::new("/v1/reconciliation/status").expect("deferred domain route");
+            let domain_target = AdminClientTarget::new("/v1/reconciliation/jobs?limit=201")
+                .expect("bounded domain route");
             assert!(client.get::<Value>(&domain_target).await.is_err());
+
+            let invalid_cursor_target =
+                AdminClientTarget::new("/v1/reconciliation/jobs?cursor=AAAA&limit=1")
+                    .expect("authenticated cursor route");
+            let invalid_cursor = client
+                .get::<Value>(&invalid_cursor_target)
+                .await
+                .expect_err("domain handler rejects unbound cursor");
+            assert_eq!(
+                invalid_cursor
+                    .failure()
+                    .expect("failure envelope")
+                    .error()
+                    .code()
+                    .as_str(),
+                "invalid_cursor"
+            );
+
+            let invalid_trade = AdminClientTarget::new("/v1/trades/not-hex/projection")
+                .expect("trade route target");
+            assert!(client.get::<Value>(&invalid_trade).await.is_err());
 
             let sensitive_target =
                 AdminClientTarget::new("/v1/identity/rekey").expect("deferred sensitive route");
@@ -2107,10 +2189,19 @@ mod tests {
 
             {
                 let calls = handler.calls.lock().expect("calls");
-                assert_eq!(calls.len(), 7);
-                for (index, (route, operation_id, request)) in calls.iter().enumerate() {
-                    assert_eq!(*route, RhiAdminRoute::COMMON[index]);
+                assert_eq!(calls.len(), 20);
+                for (index, (route, operation_id, parameter, request)) in calls.iter().enumerate() {
+                    assert_eq!(*route, RhiAdminRoute::ACTIVE[index]);
                     assert_eq!(operation_id.is_some(), route.is_mutation());
+                    assert_eq!(
+                        parameter.is_some(),
+                        matches!(
+                            route,
+                            RhiAdminRoute::TradeProjection
+                                | RhiAdminRoute::TradeReportCurrent
+                                | RhiAdminRoute::TradeReports
+                        )
+                    );
                     validate_model(
                         route.request_model(),
                         &serde_json::from_slice(request).expect("retained request model"),

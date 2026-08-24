@@ -60,8 +60,10 @@ pub rhi::RhiAdminRoute::TradeProjection
 pub rhi::RhiAdminRoute::TradeReportCurrent
 pub rhi::RhiAdminRoute::TradeReports
 impl rhi::RhiAdminRoute
+pub const rhi::RhiAdminRoute::ACTIVE: [Self; 20]
 pub const rhi::RhiAdminRoute::ALL: [Self; 22]
 pub const rhi::RhiAdminRoute::COMMON: [Self; 7]
+pub const rhi::RhiAdminRoute::DOMAIN: [Self; 13]
 pub const fn rhi::RhiAdminRoute::is_mutation(self) -> bool
 pub const fn rhi::RhiAdminRoute::method(self) -> rhi::RhiAdminMethod
 pub const fn rhi::RhiAdminRoute::operation_id(self) -> &'static str
@@ -697,10 +699,19 @@ pub fn rhi::RhiAdminResponseDocument::from_canonical_bytes(rhi::RhiAdminRoute, &
 pub const fn rhi::RhiAdminResponseDocument::route(&self) -> rhi::RhiAdminRoute
 impl core::fmt::Debug for rhi::RhiAdminResponseDocument
 pub fn rhi::RhiAdminResponseDocument::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiAdminRouter
+impl core::fmt::Debug for rhi::RhiAdminRouter
+pub fn rhi::RhiAdminRouter::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiAdminRouterError
 impl core::error::Error for rhi::RhiAdminRouterError
 impl core::fmt::Display for rhi::RhiAdminRouterError
 pub fn rhi::RhiAdminRouterError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiAdminServer
+impl rhi::RhiAdminServer
+pub async fn rhi::RhiAdminServer::bind(self, &rhi::RhiRuntimeContext) -> core::result::Result<rhi::RhiBoundAdminServer, rhi::RhiAdminServerError>
+pub fn rhi::RhiAdminServer::new<H>(&rhi::RhiConfigDocumentV1, alloc::sync::Arc<H>) -> core::result::Result<Self, rhi::RhiAdminServerError> where H: rhi::RhiAdminHandler
+impl core::fmt::Debug for rhi::RhiAdminServer
+pub fn rhi::RhiAdminServer::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiAdminServerError
 impl rhi::RhiAdminServerError
 pub const fn rhi::RhiAdminServerError::code(self) -> &'static str
@@ -721,11 +732,11 @@ pub const fn rhi::RhiAdmittedTradeMutationEvent::observed_at_unix_seconds(&self)
 pub fn rhi::RhiAdmittedTradeMutationEvent::original_bytes(&self) -> &[u8]
 impl core::fmt::Debug for rhi::RhiAdmittedTradeMutationEvent
 pub fn rhi::RhiAdmittedTradeMutationEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub struct rhi::RhiBoundCommonAdminServer
-impl rhi::RhiBoundCommonAdminServer
-pub async fn rhi::RhiBoundCommonAdminServer::serve(self, rhi::RhiAdminCancellationToken) -> core::result::Result<(), rhi::RhiAdminServerError>
-impl core::fmt::Debug for rhi::RhiBoundCommonAdminServer
-pub fn rhi::RhiBoundCommonAdminServer::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiBoundAdminServer
+impl rhi::RhiBoundAdminServer
+pub async fn rhi::RhiBoundAdminServer::serve(self, rhi::RhiAdminCancellationToken) -> core::result::Result<(), rhi::RhiAdminServerError>
+impl core::fmt::Debug for rhi::RhiBoundAdminServer
+pub fn rhi::RhiBoundAdminServer::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiCliInvocationV1
 impl rhi::RhiCliInvocationV1
 pub const fn rhi::RhiCliInvocationV1::command(&self) -> rhi::RhiCommandV1
@@ -752,15 +763,6 @@ pub const fn rhi::RhiCommittedPublication::exact_signed_event_bytes(&self) -> &[
 pub const fn rhi::RhiCommittedPublication::outbox_id(&self) -> rhi::RhiPublicationOutboxId
 impl core::fmt::Debug for rhi::RhiCommittedPublication
 pub fn rhi::RhiCommittedPublication::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub struct rhi::RhiCommonAdminRouter
-impl core::fmt::Debug for rhi::RhiCommonAdminRouter
-pub fn rhi::RhiCommonAdminRouter::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub struct rhi::RhiCommonAdminServer
-impl rhi::RhiCommonAdminServer
-pub async fn rhi::RhiCommonAdminServer::bind(self, &rhi::RhiRuntimeContext) -> core::result::Result<rhi::RhiBoundCommonAdminServer, rhi::RhiAdminServerError>
-pub fn rhi::RhiCommonAdminServer::new<H>(&rhi::RhiConfigDocumentV1, alloc::sync::Arc<H>) -> core::result::Result<Self, rhi::RhiAdminServerError> where H: rhi::RhiAdminHandler
-impl core::fmt::Debug for rhi::RhiCommonAdminServer
-pub fn rhi::RhiCommonAdminServer::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiConfigApplyError
 impl rhi::RhiConfigApplyError
 pub const fn rhi::RhiConfigApplyError::code(self) -> &'static str
@@ -2009,7 +2011,7 @@ pub fn rhi::CanonicalRhiIdentityAccess::open_existing(&self, &rhi::RhiIdentityEn
 pub fn rhi::admit_rhi_trade_mutation_event(rhi::RhiTradeMutationAdmissionLimits, &[u8], rhi::RhiTradeMutationObservedAtUnixSeconds, rhi::RhiTradeMutationAuthoredTimePolicy) -> core::result::Result<rhi::RhiAdmittedTradeMutationEvent, rhi::RhiTradeMutationAdmissionError>
 pub async fn rhi::apply_rhi_configuration(&rhi::RhiRuntimeContext, &rhi::RhiConfigDocumentV1, &rhi::RhiConfigDocumentV1, radroots_service_sqlite::migration::MigrationAppliedAtUnixSeconds, &radroots_service_sqlite::migration::MigrationBuildIdentity) -> core::result::Result<rhi::RhiConfigApplyOutcome, rhi::RhiConfigApplyError>
 pub fn rhi::attest_projection_claim(&radroots_trade::trade_contract_v1::RadrootsTradeProjectionV1, &radroots_event::id::MutationId, &rhi::TradeAgreementAttestationPolicy) -> core::result::Result<rhi::TradeAgreementAttestationReportV1, rhi::TradeAgreementAttestationError>
-pub fn rhi::build_rhi_common_admin_router<H>(alloc::sync::Arc<H>) -> core::result::Result<rhi::RhiCommonAdminRouter, rhi::RhiAdminRouterError> where H: rhi::RhiAdminHandler
+pub fn rhi::build_rhi_admin_router<H>(alloc::sync::Arc<H>) -> core::result::Result<rhi::RhiAdminRouter, rhi::RhiAdminRouterError> where H: rhi::RhiAdminHandler
 pub fn rhi::build_rhi_signed_evidence_attestation(rhi::RhiReconciliationFinalizationFence, &rhi::RhiDecryptedIdentity, radroots_service_host::time::UnixTimeSeconds, &dyn radroots_service_host::entropy::EntropySource, core::option::Option<rhi::RhiEvidenceAttestationSupersession>) -> core::result::Result<rhi::RhiSignedEvidenceAttestation, rhi::RhiReconciliationAttestationError>
 pub fn rhi::build_rhi_signed_presence_documents(rhi::RhiPresenceDesiredCommitOutcome, &rhi::RhiPresenceDesiredAuthority, &rhi::RhiDecryptedIdentity, radroots_service_host::time::UnixTimeSeconds, &dyn radroots_service_host::entropy::EntropySource) -> core::result::Result<rhi::RhiSignedPresenceDocuments, rhi::RhiPresencePublicationError>
 pub fn rhi::evaluate_rhi_reconciliation_claim(rhi::RhiReconciliationProjection, radroots_event::id::MutationId) -> rhi::RhiReconciliationEvaluation

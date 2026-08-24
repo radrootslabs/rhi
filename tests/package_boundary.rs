@@ -234,9 +234,10 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "RhiAdminRequestDocument",
         "RhiAdminResponseDocument",
         "RhiAdminHandler",
-        "RhiCommonAdminServer",
-        "RhiBoundCommonAdminServer",
-        "build_rhi_common_admin_router",
+        "RhiAdminRouter",
+        "RhiAdminServer",
+        "RhiBoundAdminServer",
+        "build_rhi_admin_router",
         "RhiPublicationErrorKind",
         "RhiPublicationMode",
         "RhiPublicationRetryPolicy",
@@ -363,13 +364,15 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
 }
 
 #[test]
-fn common_admin_boundary_hides_shared_transport_authority() {
+fn active_admin_boundary_hides_shared_transport_authority() {
     for required in [
-        "pub struct RhiCommonAdminRouter",
-        "pub struct RhiCommonAdminServer",
-        "pub struct RhiBoundCommonAdminServer",
+        "pub struct RhiAdminRouter",
+        "pub struct RhiAdminServer",
+        "pub struct RhiBoundAdminServer",
         "pub trait RhiAdminHandler",
         "pub const COMMON: [Self; 7]",
+        "pub const DOMAIN: [Self; 13]",
+        "pub const ACTIVE: [Self; 20]",
     ] {
         assert!(
             ADMIN.contains(required),
@@ -1487,11 +1490,14 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "[`runtime_foundation.v1.json`](contracts/services_hardening/runtime_foundation.v1.json)",
         "at most 1,024 consecutive generations",
         "never stores raw TOML, paths, relay URLs, credential",
-        "## Common Unix-admin boundary",
+        "## Unix-admin boundary",
         "seven common RHI routes",
-        "Domain and sensitive routes remain deliberately",
+        "thirteen reconciliation, job, source",
+        "cursors use canonical base64url without padding",
+        "two identity-sensitive mutations remain unregistered",
         "22-route/36-model inventory",
         "[`admin_common.v1.json`](contracts/services_hardening/admin_common.v1.json)",
+        "[`admin_domain.v1.json`](contracts/services_hardening/admin_domain.v1.json)",
     ] {
         assert!(README.contains(required), "README is missing {required}");
     }

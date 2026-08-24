@@ -7,7 +7,6 @@ use serde_json::Value;
 const COMMON_CONTRACT: &str = include_str!("../contracts/services_hardening/admin_common.v1.json");
 const OPERATOR_CONTRACT: &str =
     include_str!("../contracts/services_hardening/operator_contract.v1.json");
-const ADMIN_SOURCE: &str = include_str!("../src/admin_v1.rs");
 
 #[test]
 fn common_route_inventory_is_an_exact_ordered_subset() {
@@ -51,7 +50,7 @@ fn common_route_inventory_is_an_exact_ordered_subset() {
 }
 
 #[test]
-fn common_adapter_is_sealed_bounded_and_partial_by_construction() {
+fn common_checkpoint_contract_remains_sealed_bounded_and_partial() {
     let common: Value = serde_json::from_str(COMMON_CONTRACT).expect("common admin contract");
     assert_eq!(common["shared_transport"], "radroots_service_host");
     assert_eq!(common["authority"]["raw_shared_router_public"], false);
@@ -64,29 +63,11 @@ fn common_adapter_is_sealed_bounded_and_partial_by_construction() {
     assert_eq!(common["effects"]["router_construction_performs_io"], false);
     assert_eq!(common["effects"]["bind_spawns_task"], false);
     assert_eq!(common["effects"]["tcp_admin"], false);
-
-    for required in [
-        "pub const COMMON: [Self; 7]",
-        "for route in RhiAdminRoute::COMMON",
-        "AdminServer::with_system_entropy(router.into_inner(), limits)",
-        "UnixAdminSocketWriterAuthority::acquire(runtime.context().paths().run())",
-        "seven_common_routes_round_trip_over_the_hardened_unix_boundary",
-    ] {
-        assert!(
-            ADMIN_SOURCE.contains(required),
-            "missing boundary `{required}`"
-        );
-    }
-    for forbidden in [
-        "for route in RhiAdminRoute::ALL",
-        "pub fn into_inner",
-        "pub fn router",
-        "TcpListener",
-        "Cors",
-    ] {
-        assert!(
-            !ADMIN_SOURCE.contains(forbidden),
-            "forbidden boundary `{forbidden}`"
-        );
-    }
+    assert_eq!(
+        common["deferred_route_groups"],
+        serde_json::json!([
+            "domain_queries_and_mutations_step_207",
+            "identity_and_sensitive_mutations_step_208"
+        ])
+    );
 }

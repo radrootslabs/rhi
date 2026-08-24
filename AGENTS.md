@@ -404,6 +404,11 @@
   owns sensitive routes, and Step 209 alone may claim the complete 22-route
   surface. Never expose the shared raw router, listener, JSON handler, or a
   caller-selected socket path.
+- Through Step 207, the active set is exactly seven common plus thirteen
+  domain routes. Pagination is bounded to 200 items, query fields are closed,
+  authenticated cursors remain bound by the handler to route/filter/snapshot,
+  and decoded trade parameters use the exact lowercase-hex trade-ID type. The
+  two identity-sensitive mutations remain unregistered until Step 208.
 - Optional TCP operations expose only cached `/livez`, `/readyz`, and
   `/metrics`; requests must not perform SQLite, source, relay, DNS, identity,
   evidence, or credential probes.

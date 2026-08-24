@@ -1,0 +1,63 @@
+{
+  "schema": "radroots.rhi.admin-domain.v1",
+  "contract_version": 1,
+  "service": "rhi",
+  "shared_transport": "radroots_service_host",
+  "final_inventory": {
+    "route_count": 22,
+    "model_count": 36,
+    "source": "operator_contract.v1.json"
+  },
+  "active_route_count": 20,
+  "newly_registered_routes": [
+    "radroots.rhi.reconciliation.status.get.v1",
+    "radroots.rhi.reconciliation.jobs.list.v1",
+    "radroots.rhi.reconciliation.refresh.v1",
+    "radroots.rhi.sources.list.v1",
+    "radroots.rhi.trade.projection.get.v1",
+    "radroots.rhi.trade.report.current.get.v1",
+    "radroots.rhi.trade.reports.list.v1",
+    "radroots.rhi.publication.backlog.list.v1",
+    "radroots.rhi.publication.targets.list.v1",
+    "radroots.rhi.publication.retry.v1",
+    "radroots.rhi.presence.desired.get.v1",
+    "radroots.rhi.presence.render.v1",
+    "radroots.rhi.presence.refresh.v1"
+  ],
+  "deferred_routes": [
+    "radroots.rhi.identity.rekey.v1",
+    "radroots.rhi.identity.replace.v1"
+  ],
+  "pagination": {
+    "maximum_page_items": 200,
+    "cursor_encoding": "canonical_base64url_no_padding",
+    "cursor_integrity": "server_authenticated",
+    "cursor_binding": ["route", "filters", "snapshot"],
+    "duplicate_query_items": "reject",
+    "unknown_query_items": "reject"
+  },
+  "path_parameters": {
+    "trade_id": {
+      "utf8_bytes": 32,
+      "encoding": "lowercase_hex"
+    }
+  },
+  "authority": {
+    "handler_required": true,
+    "mutation_success_after_authoritative_commit": true,
+    "operation_id_replay_exact": true,
+    "operation_id_conflicting_reuse": "reject",
+    "invalid_cursor_error": "invalid_cursor",
+    "raw_shared_router_public": false,
+    "raw_json_handler_public": false
+  },
+  "effects": {
+    "adapter_performs_sqlite": false,
+    "adapter_performs_relay_io": false,
+    "adapter_spawns_tasks": false,
+    "tcp_admin": false,
+    "identity_mutation": false,
+    "nix": false,
+    "oci": false
+  }
+}

@@ -41,9 +41,9 @@ pub use adapters::nostr::event::NostrEventAdapter;
 pub use admin_v1::{
     RhiAdminCancellationToken, RhiAdminDocumentError, RhiAdminDocumentErrorKind, RhiAdminFuture,
     RhiAdminHandler, RhiAdminHandlerError, RhiAdminHandlerErrorKind, RhiAdminMethod,
-    RhiAdminRequestDocument, RhiAdminResponseDocument, RhiAdminRoute, RhiAdminRouterError,
-    RhiAdminServerError, RhiAdminServerErrorKind, RhiBoundCommonAdminServer, RhiCommonAdminRouter,
-    RhiCommonAdminServer, build_rhi_common_admin_router,
+    RhiAdminRequestDocument, RhiAdminResponseDocument, RhiAdminRoute, RhiAdminRouter,
+    RhiAdminRouterError, RhiAdminServer, RhiAdminServerError, RhiAdminServerErrorKind,
+    RhiBoundAdminServer, build_rhi_admin_router,
 };
 pub use cli_v1::{
     RhiBootstrapProfileV1, RhiCliInvocationV1, RhiCliOutputModeV1, RhiCliV1Error,
