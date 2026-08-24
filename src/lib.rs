@@ -17,6 +17,7 @@ mod state_host;
 mod state_maintenance;
 mod state_metadata;
 mod state_repository;
+mod trade_ingest;
 
 pub use adapters::nostr::event::NostrEventAdapter;
 pub use cli_v1::{
@@ -117,4 +118,13 @@ pub use state_repository::{
     RhiSourceRepository, RhiStateRepositories, RhiStateRepositoryDescriptor,
     RhiStateRepositoryKind, RhiStateRepositoryWriteClass, RhiSupersessionRepository,
     rhi_state_repository_descriptors,
+};
+pub use trade_ingest::{
+    RHI_TRADE_EVENT_EXTRA_FIELD_MAX_COUNT, RHI_TRADE_EVENT_EXTRA_JSON_MAX_BYTES,
+    RHI_TRADE_EVENT_ID_MAX_BYTES, RHI_TRADE_EVENT_PUBLIC_KEY_MAX_BYTES,
+    RHI_TRADE_EVENT_SIGNATURE_MAX_BYTES, RHI_TRADE_INGEST_CONTRACT_VERSION,
+    RhiAdmittedTradeMutationEvent, RhiTradeMutationAdmissionError,
+    RhiTradeMutationAdmissionErrorKind, RhiTradeMutationAdmissionLimits,
+    RhiTradeMutationAuthoredTimePolicy, RhiTradeMutationObservedAtUnixSeconds,
+    admit_rhi_trade_mutation_event,
 };

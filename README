@@ -57,6 +57,26 @@ no signal handler, Tokio runtime, logger, or process-exit policy; the final
 binary checkpoint owns those authorities. The exact machine contract is
 [`runtime_adapters.v1.json`](contracts/services_hardening/runtime_adapters.v1.json).
 
+## Canonical trade-event admission
+
+`admit_rhi_trade_mutation_event` is the sole accepted-ingest boundary for
+signed trade mutations. It caps the original UTF-8 event before parsing,
+measures decoded content, tags, tag elements, aggregate tag bytes, identifiers,
+and non-authoritative outer extensions before the canonical decoder allocates
+them, then independently verifies the NIP-01 identifier and Schnorr signature.
+The promoted Lib contract performs the exact registered-kind, author,
+canonical content and mutation-ID, and ordered structural-tag validation.
+
+Observation time is injected. Future skew is an explicit caller-supplied
+inclusive policy with no implicit default, while old events remain admissible
+for lineage reconstruction. The sealed accepted value retains the exact
+bounded input bytes plus the verified event and canonical typed mutation;
+ordinary Debug output reveals only sizes, kind, authored time, and a redacted
+identity marker. This pure boundary performs no clock read, network operation,
+SQLite access, checkpoint update, or dirty-generation change. Its exact
+machine contract is
+[`trade_ingest.v1.json`](contracts/services_hardening/trade_ingest.v1.json).
+
 ## Existing-state runtime foundation
 
 `open_rhi_runtime_foundation` opens only an already initialized database from

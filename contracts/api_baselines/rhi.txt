@@ -271,6 +271,30 @@ pub enum rhi::RhiTradeCommandV1
 pub rhi::RhiTradeCommandV1::Projection
 pub rhi::RhiTradeCommandV1::ReportCurrent
 pub rhi::RhiTradeCommandV1::Reports
+pub enum rhi::RhiTradeMutationAdmissionErrorKind
+pub rhi::RhiTradeMutationAdmissionErrorKind::AuthoredTimeRejected
+pub rhi::RhiTradeMutationAdmissionErrorKind::DuplicateEventField
+pub rhi::RhiTradeMutationAdmissionErrorKind::EmptyEvent
+pub rhi::RhiTradeMutationAdmissionErrorKind::EventContentTooLarge
+pub rhi::RhiTradeMutationAdmissionErrorKind::EventIdentifierTooLarge
+pub rhi::RhiTradeMutationAdmissionErrorKind::EventTooLarge
+pub rhi::RhiTradeMutationAdmissionErrorKind::ExtraFieldsTooLarge
+pub rhi::RhiTradeMutationAdmissionErrorKind::InvalidAuthor
+pub rhi::RhiTradeMutationAdmissionErrorKind::InvalidAuthoredTime
+pub rhi::RhiTradeMutationAdmissionErrorKind::InvalidEventId
+pub rhi::RhiTradeMutationAdmissionErrorKind::InvalidEventUtf8
+pub rhi::RhiTradeMutationAdmissionErrorKind::InvalidLimits
+pub rhi::RhiTradeMutationAdmissionErrorKind::InvalidMutation
+pub rhi::RhiTradeMutationAdmissionErrorKind::InvalidObservationTime
+pub rhi::RhiTradeMutationAdmissionErrorKind::InvalidSignature
+pub rhi::RhiTradeMutationAdmissionErrorKind::InvalidTimePolicy
+pub rhi::RhiTradeMutationAdmissionErrorKind::MalformedEvent
+pub rhi::RhiTradeMutationAdmissionErrorKind::TagElementTooLarge
+pub rhi::RhiTradeMutationAdmissionErrorKind::TagsTooLarge
+pub rhi::RhiTradeMutationAdmissionErrorKind::TooManyExtraFields
+pub rhi::RhiTradeMutationAdmissionErrorKind::TooManyTagElements
+pub rhi::RhiTradeMutationAdmissionErrorKind::TooManyTags
+pub rhi::RhiTradeMutationAdmissionErrorKind::UnsupportedKind
 pub enum rhi::TradeAgreementAttestationBackend
 pub rhi::TradeAgreementAttestationBackend::LocalStatementHash
 impl rhi::TradeAgreementAttestationBackend
@@ -310,6 +334,16 @@ pub fn rhi::NostrEventAdapter<'a>::raw_author(&'a self) -> alloc::string::String
 pub fn rhi::NostrEventAdapter<'a>::raw_content(&'a self) -> &'a str
 pub fn rhi::NostrEventAdapter<'a>::raw_id(&'a self) -> alloc::string::String
 pub fn rhi::NostrEventAdapter<'a>::raw_kind(&'a self) -> u32
+pub struct rhi::RhiAdmittedTradeMutationEvent
+impl rhi::RhiAdmittedTradeMutationEvent
+pub fn rhi::RhiAdmittedTradeMutationEvent::authored_at_unix_seconds(&self) -> u64
+pub fn rhi::RhiAdmittedTradeMutationEvent::event_id(&self) -> &radroots_event::id::EventId
+pub fn rhi::RhiAdmittedTradeMutationEvent::event_kind(&self) -> u32
+pub const fn rhi::RhiAdmittedTradeMutationEvent::mutation(&self) -> &radroots_event::trade::TradeMutationEnvelopeV1
+pub const fn rhi::RhiAdmittedTradeMutationEvent::mutation_id(&self) -> &radroots_event::id::MutationId
+pub fn rhi::RhiAdmittedTradeMutationEvent::original_bytes(&self) -> &[u8]
+impl core::fmt::Debug for rhi::RhiAdmittedTradeMutationEvent
+pub fn rhi::RhiAdmittedTradeMutationEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiCliInvocationV1
 impl rhi::RhiCliInvocationV1
 pub const fn rhi::RhiCliInvocationV1::command(&self) -> rhi::RhiCommandV1
@@ -713,6 +747,33 @@ pub fn rhi::RhiTimeEntropyAdapters::sample_full_jitter(&self, rhi::RhiJitterBoun
 pub fn rhi::RhiTimeEntropyAdapters::system() -> Self
 impl core::fmt::Debug for rhi::RhiTimeEntropyAdapters
 pub fn rhi::RhiTimeEntropyAdapters::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiTradeMutationAdmissionError
+impl rhi::RhiTradeMutationAdmissionError
+pub const fn rhi::RhiTradeMutationAdmissionError::kind(self) -> rhi::RhiTradeMutationAdmissionErrorKind
+impl core::error::Error for rhi::RhiTradeMutationAdmissionError
+impl core::fmt::Debug for rhi::RhiTradeMutationAdmissionError
+pub fn rhi::RhiTradeMutationAdmissionError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiTradeMutationAdmissionError
+pub fn rhi::RhiTradeMutationAdmissionError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiTradeMutationAdmissionLimits
+impl rhi::RhiTradeMutationAdmissionLimits
+pub const fn rhi::RhiTradeMutationAdmissionLimits::content_bytes(self) -> usize
+pub fn rhi::RhiTradeMutationAdmissionLimits::from_config(&rhi::RhiConfigDocumentV1) -> core::result::Result<Self, rhi::RhiTradeMutationAdmissionError>
+pub const fn rhi::RhiTradeMutationAdmissionLimits::tag_count(self) -> usize
+pub const fn rhi::RhiTradeMutationAdmissionLimits::tag_element_bytes(self) -> usize
+pub const fn rhi::RhiTradeMutationAdmissionLimits::tag_total_bytes(self) -> usize
+pub const fn rhi::RhiTradeMutationAdmissionLimits::tag_total_elements(self) -> usize
+pub const fn rhi::RhiTradeMutationAdmissionLimits::wire_bytes(self) -> usize
+impl core::fmt::Debug for rhi::RhiTradeMutationAdmissionLimits
+pub fn rhi::RhiTradeMutationAdmissionLimits::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiTradeMutationAuthoredTimePolicy
+impl rhi::RhiTradeMutationAuthoredTimePolicy
+pub const fn rhi::RhiTradeMutationAuthoredTimePolicy::maximum_future_seconds(self) -> u64
+pub fn rhi::RhiTradeMutationAuthoredTimePolicy::new(u64) -> core::result::Result<Self, rhi::RhiTradeMutationAdmissionError>
+pub struct rhi::RhiTradeMutationObservedAtUnixSeconds(_)
+impl rhi::RhiTradeMutationObservedAtUnixSeconds
+pub const fn rhi::RhiTradeMutationObservedAtUnixSeconds::get(self) -> u64
+pub fn rhi::RhiTradeMutationObservedAtUnixSeconds::new(u64) -> core::result::Result<Self, rhi::RhiTradeMutationAdmissionError>
 pub struct rhi::RhiTransportAdapters
 impl rhi::RhiTransportAdapters
 pub fn rhi::RhiTransportAdapters::new(alloc::sync::Arc<dyn radroots_transport::source::EventSource>, alloc::sync::Arc<dyn radroots_transport::source::EventSubscriber>, alloc::sync::Arc<dyn radroots_transport::sink::EventSink>) -> Self
@@ -804,6 +865,12 @@ pub const rhi::RHI_STATE_SCHEMA_VERSION_2_MIGRATION_SHA256: [u8; 32]
 pub const rhi::RHI_STATE_SCHEMA_VERSION_2_OBJECT_COUNT: u32
 pub const rhi::RHI_STATE_SCHEMA_VERSION_2_SHA256: [u8; 32]
 pub const rhi::RHI_STATUS_CONTRACT_VERSION: u32
+pub const rhi::RHI_TRADE_EVENT_EXTRA_FIELD_MAX_COUNT: usize
+pub const rhi::RHI_TRADE_EVENT_EXTRA_JSON_MAX_BYTES: usize
+pub const rhi::RHI_TRADE_EVENT_ID_MAX_BYTES: usize
+pub const rhi::RHI_TRADE_EVENT_PUBLIC_KEY_MAX_BYTES: usize
+pub const rhi::RHI_TRADE_EVENT_SIGNATURE_MAX_BYTES: usize
+pub const rhi::RHI_TRADE_INGEST_CONTRACT_VERSION: u32
 pub const rhi::RHI_WRAPPING_CREDENTIAL_ARTIFACT_BYTES: usize
 pub const rhi::RHI_WRAPPING_CREDENTIAL_CONTRACT_VERSION: u32
 pub trait rhi::RhiCredentialAccess: core::marker::Send + core::marker::Sync
@@ -814,6 +881,7 @@ pub trait rhi::RhiIdentityAccess: core::marker::Send + core::marker::Sync
 pub fn rhi::RhiIdentityAccess::open_existing(&self, &rhi::RhiIdentityEnvelopeBinding, &rhi::RhiWrappingCredential) -> core::result::Result<rhi::RhiDecryptedIdentity, rhi::RhiEncryptedIdentityEnvelopeError>
 impl rhi::RhiIdentityAccess for rhi::CanonicalRhiIdentityAccess
 pub fn rhi::CanonicalRhiIdentityAccess::open_existing(&self, &rhi::RhiIdentityEnvelopeBinding, &rhi::RhiWrappingCredential) -> core::result::Result<rhi::RhiDecryptedIdentity, rhi::RhiEncryptedIdentityEnvelopeError>
+pub fn rhi::admit_rhi_trade_mutation_event(rhi::RhiTradeMutationAdmissionLimits, &[u8], rhi::RhiTradeMutationObservedAtUnixSeconds, rhi::RhiTradeMutationAuthoredTimePolicy) -> core::result::Result<rhi::RhiAdmittedTradeMutationEvent, rhi::RhiTradeMutationAdmissionError>
 pub async fn rhi::apply_rhi_configuration(&rhi::RhiRuntimeContext, &rhi::RhiConfigDocumentV1, &rhi::RhiConfigDocumentV1, radroots_service_sqlite::migration::MigrationAppliedAtUnixSeconds, &radroots_service_sqlite::migration::MigrationBuildIdentity) -> core::result::Result<rhi::RhiConfigApplyOutcome, rhi::RhiConfigApplyError>
 pub fn rhi::attest_projection_claim(&radroots_trade::trade_contract_v1::RadrootsTradeProjectionV1, &radroots_event::id::MutationId, &rhi::TradeAgreementAttestationPolicy) -> core::result::Result<rhi::TradeAgreementAttestationReportV1, rhi::TradeAgreementAttestationError>
 pub async fn rhi::finalize_rhi_state_restore(rhi::RhiStagedStateRestore) -> core::result::Result<(), rhi::RhiStateMaintenanceError>

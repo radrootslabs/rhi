@@ -13,6 +13,8 @@ const RUNTIME_ADAPTER_CONTRACT: &str =
 const RUNTIME_FOUNDATION: &str = include_str!("../src/runtime_foundation.rs");
 const RUNTIME_FOUNDATION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/runtime_foundation.v1.json");
+const TRADE_INGEST_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/trade_ingest.v1.json");
 const PUBLIC_API: &str = include_str!("../contracts/api_baselines/rhi.txt");
 const SOURCES: &[&str] = &[
     include_str!("../src/adapters/nostr/event.rs"),
@@ -30,6 +32,7 @@ const SOURCES: &[&str] = &[
     include_str!("../src/state_maintenance.rs"),
     include_str!("../src/state_metadata.rs"),
     include_str!("../src/state_repository.rs"),
+    include_str!("../src/trade_ingest.rs"),
 ];
 
 #[test]
@@ -93,6 +96,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "state_maintenance",
         "state_metadata",
         "state_repository",
+        "trade_ingest",
     ] {
         assert!(
             ROOT.contains(&format!("mod {module};")),
@@ -131,6 +135,9 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "EntropyError",
         "WallClockError",
         "MonotonicClockError",
+        "admit_rhi_trade_mutation_event",
+        "RhiTradeMutationAdmissionLimits",
+        "RhiAdmittedTradeMutationEvent",
     ] {
         assert!(
             ROOT.contains(required),
@@ -182,7 +189,55 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .lines()
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
-    assert_eq!(public_error_count, 13);
+    assert_eq!(public_error_count, 14);
+}
+
+#[test]
+fn trade_ingest_is_sealed_bounded_verified_and_effect_free() {
+    let contract: serde_json::Value =
+        serde_json::from_str(TRADE_INGEST_CONTRACT).expect("trade-ingest contract");
+    assert_eq!(contract["schema"], "radroots.rhi.trade-ingest.v1");
+    assert_eq!(contract["contract_version"], 1);
+    assert_eq!(contract["wire"]["original_wire_cap_before_parse"], true);
+    assert_eq!(contract["wire"]["duplicate_fields"], "reject");
+    assert_eq!(contract["authored_time"]["default"], "none");
+    assert_eq!(contract["verification"]["event_id"], "recomputed_and_exact");
+    assert_eq!(
+        contract["verification"]["signature"],
+        "bip340_schnorr_verified"
+    );
+    assert_eq!(contract["effects"]["filesystem"], false);
+    assert_eq!(contract["effects"]["sqlite"], false);
+    assert_eq!(contract["effects"]["network"], false);
+
+    let source = include_str!("../src/trade_ingest.rs");
+    for required in [
+        "preflight_wire(source, limits)?",
+        "verify_id(&event)",
+        "verify(&event)",
+        "trade_mutation_from_event(&event)",
+        "original: original.into()",
+    ] {
+        assert!(
+            source.contains(required),
+            "trade ingest is missing {required}"
+        );
+    }
+    for forbidden in [
+        "sqlx::",
+        "std::fs",
+        "std::net",
+        "tokio::",
+        "SystemTime",
+        "process::",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "trade ingest gained effect authority {forbidden}"
+        );
+    }
+    assert!(!ROOT.contains("pub mod trade_ingest"));
+    assert!(!PUBLIC_API.contains("rhi::trade_ingest::"));
 }
 
 #[test]
@@ -297,6 +352,7 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "failures into stable RHI classifications",
         "```compile_fail",
         "[RHI API baseline](contracts/api_baselines/rhi.txt)",
+        "[`trade_ingest.v1.json`](contracts/services_hardening/trade_ingest.v1.json)",
         "## Injected runtime adapters",
         "whole-second wall UTC",
         "process-local monotonic time",
@@ -322,6 +378,7 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "no raw dependency-owned source chain",
         "Compose those dependencies only through the sealed runtime-adapter boundary",
         "exposes no task handle or concrete transport handle",
+        "admit_rhi_trade_mutation_event",
     ] {
         assert!(AGENTS.contains(required), "AGENTS is missing {required}");
     }

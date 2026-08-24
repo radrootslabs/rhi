@@ -1,0 +1,56 @@
+{
+  "schema": "radroots.rhi.trade-ingest.v1",
+  "contract_version": 1,
+  "source": "validated_config_resource_limits_events",
+  "wire": {
+    "original_wire_cap_before_parse": true,
+    "utf8": "required",
+    "required_fields": ["id", "pubkey", "created_at", "kind", "tags", "content", "sig"],
+    "duplicate_fields": "reject",
+    "null_required_fields": "reject",
+    "identifier_max_bytes": { "id": 64, "pubkey": 64, "sig": 128 },
+    "configured_bounds": ["wire_bytes", "content_bytes", "tag_count", "tag_total_elements", "tag_element_bytes", "tag_total_bytes"],
+    "extra_fields": {
+      "maximum_count": 64,
+      "maximum_aggregate_json_bytes": 65536,
+      "measurement": "canonical_key_json_bytes_plus_colon_plus_original_value_json_bytes_per_field",
+      "authority": "radroots_event_wire_v1",
+      "semantic_authority": "none"
+    }
+  },
+  "verification": {
+    "event_id": "recomputed_and_exact",
+    "signature": "bip340_schnorr_verified",
+    "registered_kinds": [3470, 3471, 3472, 3473, 3474],
+    "mutation_contract_family": "radroots.trade.mutation-index.v1",
+    "author": "exact_mutation_author_and_party_binding",
+    "content": "exact_canonical_trade_mutation_content_and_computed_mutation_id",
+    "tags": "exact_ordered_derived_structural_tags",
+    "duplicate_or_conflicting_structural_tags": "reject",
+    "legacy_shape": "reject"
+  },
+  "authored_time": {
+    "representation": "zero_through_i64_max_unix_seconds",
+    "observation": "positive_injected_unix_seconds_through_i64_max",
+    "policy": "explicit_caller_supplied_inclusive_maximum_future_seconds",
+    "default": "none",
+    "past_age_limit": "none_at_admission",
+    "arithmetic": "saturating_upper_bound"
+  },
+  "accepted_value": {
+    "original_bytes": "retained_exactly",
+    "event_id": "verified",
+    "mutation_id": "content_derived_and_verified",
+    "mutation": "canonical_typed_envelope",
+    "debug": "sizes_kind_time_and_redacted_identity_only",
+    "construction": "sealed"
+  },
+  "conformance_vector": {
+    "path": "contracts/conformance/vectors/trade_ingest_proposal.v1.json",
+    "source": "radrootslabs/lib:contracts/conformance/vectors/event/authored_operations.v1.json#typed_trade_proposal_010",
+    "sha256": "89fed4e1e73d917c2f083b5e1569f17952c3381a8691c0e0089e08ede2e8009a"
+  },
+  "errors": "crate_owned_source_free_redacted",
+  "effects": { "filesystem": false, "sqlite": false, "clock_read": false, "network": false, "checkpoint": false, "dirty_generation": false },
+  "deferred": ["mutation_event_and_provenance_persistence", "idempotency_and_conflict_resolution", "source_adapter_and_completion", "checkpoint_and_dirty_generation", "reconciliation", "publication"]
+}

@@ -83,6 +83,10 @@
   and signature, registered kind, author, canonical mutation content and ID,
   canonical serialization, mandatory structural tag cardinality/content
   binding, duplicate or conflicting structural tags, and explicit time policy.
+- Route accepted trade mutations only through the sealed
+  `admit_rhi_trade_mutation_event` boundary. Its wire limits come from the
+  validated configuration, its future-time tolerance is explicit with no
+  default, and it must remain pure until Step 184 owns persistence.
 - Persist canonical mutation, every distinct signed event carrying it, and
   every accepted source observation as separate typed facts. Two events for one
   mutation never overwrite one another, and arrival order never selects truth.
