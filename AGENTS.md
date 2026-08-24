@@ -455,6 +455,13 @@
   a production failpoint surface, or a test environment selector. Step 215
   alone owns actual-process and bounded-soak qualification; Steps 216 and 217
   own native release evidence and promotion respectively.
+- Step 215 closes wave `130-c` with the actual RHI executable. Keep the process
+  corpus loopback-only, deadline- and output-bounded, and free of production
+  failpoints or environment-selected test behavior. Every daemon must be
+  interrupted, joined, and reaped; every admin socket must be absent after
+  shutdown; and the durable state must verify after every one of the exact
+  bounded reopen-soak iterations. Step 216 owns native release artifacts, and
+  Step 217 alone owns promotion and parent-pin alignment.
 - Keep plaintext keys, decrypted identity, wrapping credentials, tokens, raw
   sensitive evidence, private identifiers, paths, upstream errors, and
   equivalent protected material out of config, logs, status, metrics, audit,

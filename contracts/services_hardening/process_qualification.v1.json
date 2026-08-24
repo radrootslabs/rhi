@@ -1,0 +1,55 @@
+{
+  "schema": "radroots.rhi.process-qualification.v1",
+  "contract_version": 1,
+  "step": 215,
+  "service": "rhi",
+  "binary": "rhi",
+  "source_lock": {
+    "schema": "radroots.service.source-lock.v2",
+    "lib_revision": "21b11e7a5120ea949f7ad0838c746873fc73aac2"
+  },
+  "component_qualification": {
+    "schema": "radroots.rhi.failure-qualification.v1",
+    "step": 214,
+    "sha256": "e9c782185a4a2b7512193a3cd237008026193ba3f8bb49fab1c70039a2f35bca"
+  },
+  "bounds": {
+    "process_deadline_ms": 30000,
+    "poll_interval_ms": 2,
+    "connect_deadline_ms": 5000,
+    "relay_handshake_timeout_ms": 5000,
+    "relay_io_timeout_ms": 100,
+    "parallel_inspection_processes": 8,
+    "soak_iterations": 32,
+    "maximum_stdout_bytes": 1048576,
+    "maximum_stderr_bytes": 8192
+  },
+  "actual_process_corpus": [
+    "actual_binary_executes_offline_bootstrap_and_reaches_real_runtime_dependency_boundary",
+    "actual_binary_runs_the_task_graph_serves_admin_and_shuts_down_on_interrupt",
+    "actual_binary_is_bounded_under_parallel_inspection_and_reopen_soak"
+  ],
+  "invariants": {
+    "actual_executable_required": true,
+    "loopback_relay_only": true,
+    "production_failpoint_surface": false,
+    "test_environment_selector": false,
+    "detached_test_worker": false,
+    "parallel_inspection_is_read_only": true,
+    "every_daemon_is_interrupted_joined_and_reaped": true,
+    "admin_socket_absent_after_shutdown": true,
+    "state_verifies_after_every_reopen": true,
+    "captured_output_bounded": true,
+    "diagnostics_path_secret_free": true
+  },
+  "deferred": [
+    "native_release_artifacts_step_216",
+    "rcld_promotion_step_217",
+    "parent_pin_alignment_step_217",
+    "nix",
+    "oci",
+    "signing",
+    "publication",
+    "deployment"
+  ]
+}

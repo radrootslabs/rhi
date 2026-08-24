@@ -787,6 +787,18 @@ artifacts remain Step 216 ownership, and promotion and parent-pin alignment
 remain Step 217 ownership. Nix, OCI, signing, publication, and deployment are
 deferred and unclaimed.
 
+The Step 215
+[`process_qualification.v1.json`](contracts/services_hardening/process_qualification.v1.json)
+contract closes wave `130-c` by binding that component corpus to the actual
+RHI executable. It exercises offline bootstrap and required-dependency outage,
+the complete supervised task graph against loopback relay sessions, eight
+concurrent read-only configuration-validation processes, and 32 clean database
+reopen-and-verify cycles. The live daemon is interrupted, joined, reaped, and
+checked for socket cleanup. Every child process has a fixed deadline and
+bounded captured output. The test surface adds no production failpoint,
+environment selector, detached worker, ambient network dependency, or later
+release authority.
+
 ## Standalone native release contract
 
 The capsule owns a private `cargo xtask native-release` generator and the

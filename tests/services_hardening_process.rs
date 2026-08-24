@@ -2,12 +2,13 @@
 #![cfg(any(target_os = "linux", target_os = "macos"))]
 
 use std::{
+    collections::BTreeSet,
     fs,
     io::{Read as _, Write as _},
     net::{TcpListener, TcpStream},
     os::unix::fs::PermissionsExt as _,
     path::PathBuf,
-    process::{Child, Command, Output, Stdio},
+    process::{Child, Command, ExitStatus, Output, Stdio},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -25,8 +26,24 @@ use sha2::{Digest as _, Sha256};
 use tungstenite::{Error as WebSocketError, Message, accept};
 
 const CONFIG_EXAMPLE: &str = include_str!("../contracts/services_hardening/config.v1.example.toml");
+const PROCESS_QUALIFICATION_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/process_qualification.v1.json");
+const FAILURE_QUALIFICATION_CONTRACT: &[u8] =
+    include_bytes!("../contracts/services_hardening/failure_qualification.v1.json");
+const SOURCE_LOCK: &str = include_str!("../radroots.service.source-lock.v2.toml");
 const PROCESS_DEADLINE: Duration = Duration::from_secs(30);
+const POLL_INTERVAL: Duration = Duration::from_millis(2);
+const CONNECT_DEADLINE_MILLISECONDS: u64 = 5_000;
+const RELAY_HANDSHAKE_TIMEOUT: Duration = Duration::from_millis(5_000);
 const RELAY_IO_TIMEOUT: Duration = Duration::from_millis(100);
+const PARALLEL_INSPECTIONS: usize = 8;
+const SOAK_ITERATIONS: usize = 32;
+const MAXIMUM_STDOUT_BYTES: usize = 1_048_576;
+const MAXIMUM_STDERR_BYTES: usize = 8_192;
+#[cfg(target_os = "linux")]
+const PROCESS_TEMPORARY_ROOT: &str = "/tmp";
+#[cfg(target_os = "macos")]
+const PROCESS_TEMPORARY_ROOT: &str = "/private/tmp";
 
 struct RelayHarness {
     address: std::net::SocketAddr,
@@ -85,15 +102,23 @@ impl Drop for RelayHarness {
 
 fn relay_session(stream: TcpStream, stop: &AtomicBool) {
     stream
-        .set_read_timeout(Some(RELAY_IO_TIMEOUT))
-        .expect("relay read timeout");
+        .set_read_timeout(Some(RELAY_HANDSHAKE_TIMEOUT))
+        .expect("relay handshake read timeout");
     stream
-        .set_write_timeout(Some(RELAY_IO_TIMEOUT))
-        .expect("relay write timeout");
+        .set_write_timeout(Some(RELAY_HANDSHAKE_TIMEOUT))
+        .expect("relay handshake write timeout");
     let mut websocket = match accept(stream) {
         Ok(websocket) => websocket,
         Err(_) => return,
     };
+    websocket
+        .get_mut()
+        .set_read_timeout(Some(RELAY_IO_TIMEOUT))
+        .expect("relay read timeout");
+    websocket
+        .get_mut()
+        .set_write_timeout(Some(RELAY_IO_TIMEOUT))
+        .expect("relay write timeout");
     while !stop.load(Ordering::SeqCst) {
         let message = match websocket.read() {
             Ok(message) => message,
@@ -161,7 +186,7 @@ impl ProcessFixture {
     fn new() -> Self {
         let root = tempfile::Builder::new()
             .prefix("rhi-")
-            .tempdir_in("/private/tmp")
+            .tempdir_in(PROCESS_TEMPORARY_ROOT)
             .expect("short repo-local root");
         fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700))
             .expect("secure repo-local root");
@@ -210,39 +235,127 @@ impl ProcessFixture {
     }
 
     fn run(&self, command: &[&str]) -> Output {
-        wait_bounded(self.command(command).spawn().expect("RHI process"))
+        BoundedProcess::spawn(self.command(command)).wait()
     }
 
     fn run_with_stdin(&self, command: &[&str], bytes: &[u8]) -> Output {
         let mut process = self.command(command);
         process.stdin(Stdio::piped());
-        let mut child = process.spawn().expect("RHI process");
+        let mut child = BoundedProcess::spawn(process);
         child
+            .child
             .stdin
             .take()
             .expect("process stdin")
             .write_all(bytes)
             .expect("bounded stdin");
-        wait_bounded(child)
+        child.wait()
     }
 }
 
-fn wait_bounded(mut child: Child) -> Output {
-    let deadline = Instant::now() + PROCESS_DEADLINE;
-    loop {
-        if child.try_wait().expect("poll RHI process").is_some() {
-            let output = child.wait_with_output().expect("collect RHI process");
-            assert!(output.stdout.len() <= 1_048_576);
-            assert!(output.stderr.len() <= 8_192);
-            return output;
-        }
-        if Instant::now() >= deadline {
-            let _ = child.kill();
-            let output = child.wait_with_output().expect("reap RHI process");
-            panic!("RHI process exceeded deadline: {:?}", output.stderr);
-        }
-        thread::sleep(Duration::from_millis(2));
+struct BoundedProcess {
+    child: Child,
+    stdout_reader: Option<thread::JoinHandle<Vec<u8>>>,
+    stderr_reader: Option<thread::JoinHandle<Vec<u8>>>,
+    completed: bool,
+}
+
+impl BoundedProcess {
+    fn spawn(mut command: Command) -> Self {
+        let child = command.spawn().expect("RHI process");
+        Self::from_child(child)
     }
+
+    fn from_child(mut child: Child) -> Self {
+        let stdout = child.stdout.take().expect("captured process stdout");
+        let stderr = child.stderr.take().expect("captured process stderr");
+        Self {
+            child,
+            stdout_reader: Some(read_bounded(stdout, MAXIMUM_STDOUT_BYTES)),
+            stderr_reader: Some(read_bounded(stderr, MAXIMUM_STDERR_BYTES)),
+            completed: false,
+        }
+    }
+
+    fn id(&self) -> u32 {
+        self.child.id()
+    }
+
+    fn try_wait(&mut self) -> Option<ExitStatus> {
+        self.child.try_wait().expect("poll RHI process")
+    }
+
+    fn collect(&mut self, status: ExitStatus) -> Output {
+        self.completed = true;
+        let stdout = self
+            .stdout_reader
+            .take()
+            .expect("stdout reader available")
+            .join()
+            .expect("join stdout reader");
+        let stderr = self
+            .stderr_reader
+            .take()
+            .expect("stderr reader available")
+            .join()
+            .expect("join stderr reader");
+        assert!(stdout.len() <= MAXIMUM_STDOUT_BYTES);
+        assert!(stderr.len() <= MAXIMUM_STDERR_BYTES);
+        Output {
+            status,
+            stdout,
+            stderr,
+        }
+    }
+
+    fn wait(mut self) -> Output {
+        let deadline = Instant::now() + PROCESS_DEADLINE;
+        loop {
+            if let Some(status) = self.try_wait() {
+                return self.collect(status);
+            }
+            if Instant::now() >= deadline {
+                let _ = self.child.kill();
+                let status = self.child.wait().expect("reap RHI process");
+                let output = self.collect(status);
+                panic!("RHI process exceeded deadline: {:?}", output.stderr);
+            }
+            thread::sleep(POLL_INTERVAL);
+        }
+    }
+}
+
+impl Drop for BoundedProcess {
+    fn drop(&mut self) {
+        if !self.completed {
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
+        if let Some(reader) = self.stdout_reader.take() {
+            let _ = reader.join();
+        }
+        if let Some(reader) = self.stderr_reader.take() {
+            let _ = reader.join();
+        }
+    }
+}
+
+fn read_bounded(
+    reader: impl std::io::Read + Send + 'static,
+    maximum_bytes: usize,
+) -> thread::JoinHandle<Vec<u8>> {
+    thread::spawn(move || {
+        let limit = u64::try_from(maximum_bytes)
+            .expect("output bound fits u64")
+            .checked_add(1)
+            .expect("output bound plus sentinel fits u64");
+        let mut output = Vec::with_capacity(maximum_bytes.min(8_192));
+        reader
+            .take(limit)
+            .read_to_end(&mut output)
+            .expect("read bounded process output");
+        output
+    })
 }
 
 fn identity_secret() -> [u8; 32] {
@@ -283,7 +396,10 @@ fn configuration(
         .replace(&"2".repeat(64), expected_public_key)
         .replace("wss://relay.example.com/", primary_relay)
         .replace("wss://relay-secondary.example.com/", secondary_relay)
-        .replace("connect_deadline_ms = 10000", "connect_deadline_ms = 100")
+        .replace(
+            "connect_deadline_ms = 10000",
+            &format!("connect_deadline_ms = {CONNECT_DEADLINE_MILLISECONDS}"),
+        )
         .replace("request_deadline_ms = 15000", "request_deadline_ms = 1000")
 }
 
@@ -346,19 +462,16 @@ fn bootstrap(fixture: &ProcessFixture, configuration: &str, secret: [u8; 32]) ->
     expected_public_key
 }
 
-fn wait_for_live_status(fixture: &ProcessFixture, daemon: &mut Child) -> Output {
+fn wait_for_live_status(fixture: &ProcessFixture, daemon: &mut BoundedProcess) -> Output {
     let deadline = Instant::now() + PROCESS_DEADLINE;
     let mut last_diagnostic = Vec::new();
     loop {
-        if let Some(status) = daemon.try_wait().expect("poll RHI daemon") {
-            let mut stderr = Vec::new();
-            daemon
-                .stderr
-                .take()
-                .expect("RHI daemon stderr")
-                .read_to_end(&mut stderr)
-                .expect("read RHI daemon stderr");
-            panic!("RHI daemon exited before admin became ready: {status}; stderr={stderr:?}");
+        if let Some(status) = daemon.try_wait() {
+            let output = daemon.collect(status);
+            panic!(
+                "RHI daemon exited before admin became ready: {status}; stderr={:?}",
+                output.stderr
+            );
         }
         if fixture.runtime.artifacts().admin_socket().exists() {
             let status = fixture.run(&["status"]);
@@ -373,8 +486,173 @@ fn wait_for_live_status(fixture: &ProcessFixture, daemon: &mut Child) -> Output 
                 fixture.runtime.artifacts().admin_socket().exists()
             );
         }
-        thread::sleep(Duration::from_millis(2));
+        thread::sleep(POLL_INTERVAL);
     }
+}
+
+fn interrupt_and_wait(daemon: BoundedProcess) -> Output {
+    let signal = Command::new("/bin/kill")
+        .arg("-INT")
+        .arg(daemon.id().to_string())
+        .status()
+        .expect("send interrupt");
+    assert!(signal.success());
+    daemon.wait()
+}
+
+#[test]
+fn process_qualification_contract_freezes_the_exact_wave_closure() {
+    let contract: serde_json::Value =
+        serde_json::from_str(PROCESS_QUALIFICATION_CONTRACT).expect("process contract");
+    assert_eq!(
+        contract
+            .as_object()
+            .expect("process contract object")
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            "actual_process_corpus",
+            "binary",
+            "bounds",
+            "component_qualification",
+            "contract_version",
+            "deferred",
+            "invariants",
+            "schema",
+            "service",
+            "source_lock",
+            "step",
+        ])
+    );
+    assert_eq!(contract["schema"], "radroots.rhi.process-qualification.v1");
+    assert_eq!(contract["contract_version"], 1);
+    assert_eq!(contract["step"], 215);
+    assert_eq!(contract["service"], "rhi");
+    assert_eq!(contract["binary"], "rhi");
+    assert_eq!(
+        contract["source_lock"],
+        serde_json::json!({
+            "schema": "radroots.service.source-lock.v2",
+            "lib_revision": "21b11e7a5120ea949f7ad0838c746873fc73aac2"
+        })
+    );
+    assert_eq!(
+        contract["component_qualification"],
+        serde_json::json!({
+            "schema": "radroots.rhi.failure-qualification.v1",
+            "step": 214,
+            "sha256": "e9c782185a4a2b7512193a3cd237008026193ba3f8bb49fab1c70039a2f35bca"
+        })
+    );
+    assert_eq!(
+        contract["bounds"],
+        serde_json::json!({
+            "process_deadline_ms": 30_000,
+            "poll_interval_ms": 2,
+            "connect_deadline_ms": 5_000,
+            "relay_handshake_timeout_ms": 5_000,
+            "relay_io_timeout_ms": 100,
+            "parallel_inspection_processes": 8,
+            "soak_iterations": 32,
+            "maximum_stdout_bytes": 1_048_576,
+            "maximum_stderr_bytes": 8_192
+        })
+    );
+    assert_eq!(
+        PROCESS_DEADLINE,
+        Duration::from_millis(
+            contract["bounds"]["process_deadline_ms"]
+                .as_u64()
+                .expect("process deadline"),
+        )
+    );
+    assert_eq!(
+        POLL_INTERVAL,
+        Duration::from_millis(
+            contract["bounds"]["poll_interval_ms"]
+                .as_u64()
+                .expect("poll interval"),
+        )
+    );
+    assert_eq!(
+        RELAY_HANDSHAKE_TIMEOUT,
+        Duration::from_millis(
+            contract["bounds"]["relay_handshake_timeout_ms"]
+                .as_u64()
+                .expect("relay handshake timeout"),
+        )
+    );
+    assert_eq!(
+        RELAY_IO_TIMEOUT,
+        Duration::from_millis(
+            contract["bounds"]["relay_io_timeout_ms"]
+                .as_u64()
+                .expect("relay timeout"),
+        )
+    );
+    assert_eq!(
+        CONNECT_DEADLINE_MILLISECONDS,
+        contract["bounds"]["connect_deadline_ms"]
+    );
+    assert_eq!(
+        u64::try_from(PARALLEL_INSPECTIONS).expect("inspection bound"),
+        contract["bounds"]["parallel_inspection_processes"]
+    );
+    assert_eq!(
+        u64::try_from(SOAK_ITERATIONS).expect("soak bound"),
+        contract["bounds"]["soak_iterations"]
+    );
+    assert_eq!(
+        u64::try_from(MAXIMUM_STDOUT_BYTES).expect("stdout bound"),
+        contract["bounds"]["maximum_stdout_bytes"]
+    );
+    assert_eq!(
+        u64::try_from(MAXIMUM_STDERR_BYTES).expect("stderr bound"),
+        contract["bounds"]["maximum_stderr_bytes"]
+    );
+    assert_eq!(
+        contract["actual_process_corpus"],
+        serde_json::json!([
+            "actual_binary_executes_offline_bootstrap_and_reaches_real_runtime_dependency_boundary",
+            "actual_binary_runs_the_task_graph_serves_admin_and_shuts_down_on_interrupt",
+            "actual_binary_is_bounded_under_parallel_inspection_and_reopen_soak"
+        ])
+    );
+    assert_eq!(
+        contract["invariants"],
+        serde_json::json!({
+            "actual_executable_required": true,
+            "loopback_relay_only": true,
+            "production_failpoint_surface": false,
+            "test_environment_selector": false,
+            "detached_test_worker": false,
+            "parallel_inspection_is_read_only": true,
+            "every_daemon_is_interrupted_joined_and_reaped": true,
+            "admin_socket_absent_after_shutdown": true,
+            "state_verifies_after_every_reopen": true,
+            "captured_output_bounded": true,
+            "diagnostics_path_secret_free": true
+        })
+    );
+    assert_eq!(
+        contract["deferred"],
+        serde_json::json!([
+            "native_release_artifacts_step_216",
+            "rcld_promotion_step_217",
+            "parent_pin_alignment_step_217",
+            "nix",
+            "oci",
+            "signing",
+            "publication",
+            "deployment"
+        ])
+    );
+    assert_eq!(
+        lower_hex(&Sha256::digest(FAILURE_QUALIFICATION_CONTRACT)),
+        contract["component_qualification"]["sha256"]
+    );
+    assert!(SOURCE_LOCK.contains("revision = \"21b11e7a5120ea949f7ad0838c746873fc73aac2\""));
 }
 
 #[test]
@@ -418,7 +696,7 @@ fn actual_binary_runs_the_task_graph_serves_admin_and_shuts_down_on_interrupt() 
     );
     bootstrap(&fixture, &configuration, secret);
 
-    let mut daemon = fixture.command(&["run"]).spawn().expect("RHI daemon");
+    let mut daemon = BoundedProcess::spawn(fixture.command(&["run"]));
     let status = wait_for_live_status(&fixture, &mut daemon);
     assert_success(&status);
     let status_value: serde_json::Value =
@@ -428,14 +706,46 @@ fn actual_binary_runs_the_task_graph_serves_admin_and_shuts_down_on_interrupt() 
     assert_eq!(status_value["ready"], true);
     assert_eq!(status_value["persistence"]["schema_version"], 11);
 
-    let signal = Command::new("/bin/kill")
-        .arg("-INT")
-        .arg(daemon.id().to_string())
-        .status()
-        .expect("send interrupt");
-    assert!(signal.success());
-    let shutdown = wait_bounded(daemon);
+    let shutdown = interrupt_and_wait(daemon);
     assert_success(&shutdown);
     assert!(shutdown.stdout.is_empty());
     assert!(!fixture.runtime.artifacts().admin_socket().exists());
+}
+
+#[test]
+fn actual_binary_is_bounded_under_parallel_inspection_and_reopen_soak() {
+    let fixture = ProcessFixture::new();
+    let secret = identity_secret();
+    let expected_public_key = Keys::new(SecretKey::from_slice(&secret).expect("secret"))
+        .public_key()
+        .to_hex();
+    let configuration = configuration(
+        &fixture,
+        &expected_public_key,
+        "ws://127.0.0.1:9/",
+        "ws://127.0.0.1:10/",
+    );
+    bootstrap(&fixture, &configuration, secret);
+
+    let inspections = (0..PARALLEL_INSPECTIONS)
+        .map(|_| BoundedProcess::spawn(fixture.command(&["config", "validate"])))
+        .collect::<Vec<_>>();
+    for inspection in inspections {
+        assert_success(&inspection.wait());
+    }
+
+    for _ in 0..SOAK_ITERATIONS {
+        assert_success(&fixture.run(&["state", "verify"]));
+    }
+    assert!(!fixture.runtime.artifacts().admin_socket().exists());
+}
+
+fn lower_hex(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        output.push(char::from(DIGITS[usize::from(byte >> 4)]));
+        output.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
+    }
+    output
 }

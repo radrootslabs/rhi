@@ -43,6 +43,10 @@ const PUBLICATION_WAVE_QUALIFICATION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/publication_wave_qualification.v1.json");
 const FAILURE_QUALIFICATION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/failure_qualification.v1.json");
+const PROCESS_QUALIFICATION_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/process_qualification.v1.json");
+const PROCESS_QUALIFICATION_TESTS: &str = include_str!("services_hardening_process.rs");
+const RUNTIME_GRAPH: &str = include_str!("../src/runtime_graph.rs");
 const PUBLICATION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/publication_outbox.v1.json");
 const PUBLICATION_SUBMISSION: &str = include_str!("../src/publication_submission.rs");
@@ -1265,6 +1269,43 @@ fn failure_qualification_is_source_locked_bounded_and_nonexpansive() {
         contract["invariants"]["production_failpoint_surface"],
         false
     );
+}
+
+#[test]
+fn process_qualification_is_actual_bounded_and_wave_closed() {
+    let contract: serde_json::Value = serde_json::from_str(PROCESS_QUALIFICATION_CONTRACT)
+        .expect("process qualification contract");
+    assert_eq!(contract["schema"], "radroots.rhi.process-qualification.v1");
+    assert_eq!(contract["step"], 215);
+    assert_eq!(contract["service"], "rhi");
+    assert_eq!(contract["binary"], "rhi");
+    assert_eq!(contract["bounds"]["parallel_inspection_processes"], 8);
+    assert_eq!(contract["bounds"]["soak_iterations"], 32);
+    assert_eq!(
+        contract["component_qualification"]["sha256"],
+        "e9c782185a4a2b7512193a3cd237008026193ba3f8bb49fab1c70039a2f35bca"
+    );
+    assert_eq!(contract["invariants"]["actual_executable_required"], true);
+    assert_eq!(
+        contract["invariants"]["production_failpoint_surface"],
+        false
+    );
+    assert_eq!(contract["invariants"]["test_environment_selector"], false);
+    for name in contract["actual_process_corpus"]
+        .as_array()
+        .expect("actual process corpus")
+    {
+        let name = name.as_str().expect("process test name");
+        assert!(
+            PROCESS_QUALIFICATION_TESTS.contains(&format!("fn {name}(")),
+            "missing actual-process test {name}"
+        );
+    }
+    for forbidden in ["RHI_TEST_", "RADROOTS_TEST_", "FAILPOINT"] {
+        assert!(!MAIN.contains(forbidden));
+        assert!(!RUNTIME_GRAPH.contains(forbidden));
+    }
+    assert!(!PROCESS_QUALIFICATION_TESTS.contains("std::env::var"));
 }
 
 #[test]
