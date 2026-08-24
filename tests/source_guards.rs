@@ -186,6 +186,31 @@ fn rhi_wave_one_removes_prototype_runtime_and_selection_authority() {
     }
 }
 
+#[test]
+fn step_198_publication_boundary_has_no_runtime_or_storage_authority() {
+    let source = read_repo_file("src/publication.rs");
+    let root = read_repo_file("src/lib.rs");
+
+    assert!(root.contains("mod publication;"));
+    assert!(!root.contains("pub mod publication;"));
+    for forbidden in [
+        "sqlx::",
+        "radroots_transport",
+        "std::fs",
+        "std::net",
+        "tokio::",
+        "SystemTime",
+        "thread_rng",
+        "OsRng",
+        "PublicationSink",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "Step 198 publication authority gained deferred behavior `{forbidden}`"
+        );
+    }
+}
+
 fn read_repo_file(relative_path: &str) -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(relative_path);
     fs::read_to_string(path.as_path())

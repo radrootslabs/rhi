@@ -12,7 +12,7 @@ use radroots_service_sqlite::{
 pub const RHI_STATE_BASE_SCHEMA_VERSION: u32 = 1;
 
 /// The newest governed RHI state schema understood by this binary.
-pub const RHI_STATE_SCHEMA_VERSION: u32 = 6;
+pub const RHI_STATE_SCHEMA_VERSION: u32 = 7;
 
 /// The shared metadata and migration-ledger objects present at schema v1.
 pub const RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT: u32 = 6;
@@ -32,10 +32,13 @@ pub const RHI_STATE_SCHEMA_VERSION_5_OBJECT_COUNT: u32 = 33;
 /// The shared objects plus immutable reconciliation attempt/source results.
 pub const RHI_STATE_SCHEMA_VERSION_6_OBJECT_COUNT: u32 = 39;
 
+/// The shared objects plus immutable report and publication workflow state.
+pub const RHI_STATE_SCHEMA_VERSION_7_OBJECT_COUNT: u32 = 63;
+
 /// SHA-256 identity of the ordered migration catalog rooted at schema v1.
 pub const RHI_MIGRATION_CATALOG_SHA256: [u8; 32] = [
-    0x32, 0xf4, 0x9f, 0x1c, 0x50, 0xf5, 0x4c, 0x72, 0x2d, 0x94, 0xd9, 0x34, 0x3a, 0x05, 0x2e, 0x67,
-    0x14, 0x2d, 0x00, 0x74, 0x7a, 0x0b, 0xb1, 0xcc, 0x1c, 0xb5, 0xca, 0xba, 0xfa, 0x30, 0xfe, 0x4c,
+    0xbf, 0x95, 0x58, 0x84, 0xe9, 0x73, 0xde, 0x04, 0xb9, 0x8a, 0x57, 0x98, 0x65, 0x62, 0xef, 0x38,
+    0x05, 0xad, 0x82, 0xce, 0x3d, 0xa6, 0xa8, 0x3a, 0xb5, 0x89, 0x0a, 0x50, 0xe0, 0x6b, 0xd5, 0xf4,
 ];
 
 /// SHA-256 identity of the exact schema-v1 object snapshot.
@@ -104,10 +107,22 @@ pub const RHI_STATE_SCHEMA_VERSION_6_SHA256: [u8; 32] = [
     0xd5, 0x1f, 0x92, 0x94, 0xc7, 0x52, 0x72, 0x04, 0x1f, 0x34, 0x9e, 0x95, 0xce, 0xd5, 0x0f, 0xb4,
 ];
 
+/// SHA-256 identity of the schema-v7 report/publication migration.
+pub const RHI_STATE_SCHEMA_VERSION_7_MIGRATION_SHA256: [u8; 32] = [
+    0x9d, 0xeb, 0xf4, 0xf3, 0xca, 0xad, 0x4d, 0x01, 0x83, 0x11, 0xcb, 0x16, 0x9b, 0xf9, 0x28, 0x22,
+    0x64, 0xd6, 0xab, 0xfc, 0x49, 0xe7, 0x18, 0x84, 0x0b, 0x9c, 0xbf, 0xad, 0x42, 0xed, 0x35, 0x7c,
+];
+
+/// SHA-256 identity of the exact schema-v7 object snapshot.
+pub const RHI_STATE_SCHEMA_VERSION_7_SHA256: [u8; 32] = [
+    0x84, 0x0a, 0xa8, 0x3c, 0x68, 0x9f, 0x9d, 0xf9, 0x9d, 0x26, 0xc5, 0xb4, 0xef, 0x11, 0x71, 0x31,
+    0xc2, 0x70, 0xef, 0x75, 0x22, 0x67, 0x40, 0x37, 0xde, 0xf7, 0x96, 0x28, 0xa2, 0xb0, 0x39, 0x46,
+];
+
 /// SHA-256 identity of the schema catalog bound to the migration catalog.
 pub const RHI_STATE_SCHEMA_CATALOG_SHA256: [u8; 32] = [
-    0x8c, 0x19, 0x82, 0xb2, 0x95, 0xd6, 0x54, 0x4b, 0xbe, 0x6d, 0xf6, 0x79, 0x42, 0x4e, 0xe6, 0xca,
-    0xf3, 0x47, 0x68, 0x31, 0xb3, 0x8d, 0xe9, 0x94, 0x6b, 0x11, 0x5f, 0xbc, 0x5b, 0x24, 0x6b, 0x03,
+    0xec, 0x31, 0x80, 0x9d, 0x62, 0x07, 0xfd, 0x98, 0xb2, 0x04, 0xe5, 0x69, 0x39, 0x73, 0x11, 0x97,
+    0xf2, 0x97, 0x87, 0xbd, 0x1f, 0xef, 0x62, 0x8d, 0x9b, 0x34, 0x5d, 0xb0, 0x20, 0x71, 0x1f, 0xec,
 ];
 
 macro_rules! rhi_config_bindings_table_sql {
@@ -748,6 +763,429 @@ const CREATE_RECONCILIATION_RESULTS_MIGRATION_SQL: &str = concat!(
     ";",
 );
 
+macro_rules! evidence_manifests_table_sql {
+    () => {
+        r#"CREATE TABLE evidence_manifests (
+    manifest_sha256 BLOB NOT NULL PRIMARY KEY CHECK (length(manifest_sha256) = 32),
+    attempt_id BLOB NOT NULL UNIQUE CHECK (length(attempt_id) = 32),
+    trade_id BLOB NOT NULL CHECK (length(trade_id) = 16),
+    trade_generation INTEGER NOT NULL
+        CHECK (trade_generation BETWEEN 1 AND 9223372036854775807),
+    evidence_policy_sha256 BLOB NOT NULL CHECK (length(evidence_policy_sha256) = 32),
+    canonical_manifest BLOB NOT NULL
+        CHECK (length(canonical_manifest) BETWEEN 1 AND 16777216),
+    observed_at_unix_s INTEGER NOT NULL
+        CHECK (observed_at_unix_s BETWEEN 0 AND 9223372036854775807),
+    source_count INTEGER NOT NULL CHECK (source_count BETWEEN 1 AND 16),
+    observation_count INTEGER NOT NULL CHECK (observation_count BETWEEN 0 AND 65536),
+    FOREIGN KEY (attempt_id) REFERENCES evidence_reconciliations (attempt_id)
+) STRICT"#
+    };
+}
+
+macro_rules! trade_projections_table_sql {
+    () => {
+        r#"CREATE TABLE trade_projections (
+    projection_sha256 BLOB NOT NULL PRIMARY KEY CHECK (length(projection_sha256) = 32),
+    manifest_sha256 BLOB NOT NULL UNIQUE CHECK (length(manifest_sha256) = 32),
+    shared_projection_sha256 BLOB NOT NULL CHECK (length(shared_projection_sha256) = 32),
+    reducer_contract TEXT NOT NULL CHECK (reducer_contract = 'radroots.trade.reducer.v1'),
+    reducer_contract_version INTEGER NOT NULL CHECK (reducer_contract_version = 1),
+    issue_count INTEGER NOT NULL CHECK (issue_count BETWEEN 0 AND 65536),
+    FOREIGN KEY (manifest_sha256) REFERENCES evidence_manifests (manifest_sha256)
+) STRICT"#
+    };
+}
+
+macro_rules! attestation_reports_table_sql {
+    () => {
+        r#"CREATE TABLE attestation_reports (
+    statement_sha256 BLOB NOT NULL PRIMARY KEY CHECK (length(statement_sha256) = 32),
+    manifest_sha256 BLOB NOT NULL CHECK (length(manifest_sha256) = 32),
+    projection_sha256 BLOB NOT NULL CHECK (length(projection_sha256) = 32),
+    trade_id BLOB NOT NULL CHECK (length(trade_id) = 16),
+    claim_mutation_id BLOB NOT NULL CHECK (length(claim_mutation_id) = 32),
+    issuer_public_key BLOB NOT NULL CHECK (length(issuer_public_key) = 32),
+    outcome TEXT NOT NULL CHECK (outcome IN ('valid', 'invalid', 'indeterminate')),
+    canonical_report BLOB NOT NULL CHECK (length(canonical_report) BETWEEN 1 AND 16384),
+    observed_at_unix_s INTEGER NOT NULL
+        CHECK (observed_at_unix_s BETWEEN 0 AND 9223372036854775807),
+    supersedes_statement_sha256 BLOB CHECK (length(supersedes_statement_sha256) = 32),
+    supersedes_event_id BLOB CHECK (length(supersedes_event_id) = 32),
+    FOREIGN KEY (manifest_sha256) REFERENCES evidence_manifests (manifest_sha256),
+    FOREIGN KEY (projection_sha256) REFERENCES trade_projections (projection_sha256),
+    FOREIGN KEY (supersedes_statement_sha256)
+        REFERENCES attestation_reports (statement_sha256),
+    CHECK ((supersedes_statement_sha256 IS NULL) = (supersedes_event_id IS NULL))
+) STRICT"#
+    };
+}
+
+macro_rules! attestation_reports_supersession_sql {
+    () => {
+        r#"CREATE UNIQUE INDEX attestation_reports_one_successor
+ON attestation_reports (supersedes_statement_sha256)
+WHERE supersedes_statement_sha256 IS NOT NULL"#
+    };
+}
+
+macro_rules! signed_attestation_events_table_sql {
+    () => {
+        r#"CREATE TABLE signed_attestation_events (
+    event_id BLOB NOT NULL PRIMARY KEY CHECK (length(event_id) = 32),
+    statement_sha256 BLOB NOT NULL UNIQUE CHECK (length(statement_sha256) = 32),
+    event_sha256 BLOB NOT NULL UNIQUE CHECK (length(event_sha256) = 32),
+    issuer_public_key BLOB NOT NULL CHECK (length(issuer_public_key) = 32),
+    authored_at_unix_s INTEGER NOT NULL
+        CHECK (authored_at_unix_s BETWEEN 0 AND 9223372036854775807),
+    canonical_event_json BLOB NOT NULL
+        CHECK (length(canonical_event_json) BETWEEN 1 AND 32768),
+    FOREIGN KEY (statement_sha256) REFERENCES attestation_reports (statement_sha256)
+) STRICT"#
+    };
+}
+
+macro_rules! publication_outbox_table_sql {
+    () => {
+        r#"CREATE TABLE publication_outbox (
+    outbox_id BLOB NOT NULL PRIMARY KEY CHECK (length(outbox_id) = 32),
+    event_id BLOB NOT NULL UNIQUE CHECK (length(event_id) = 32),
+    event_sha256 BLOB NOT NULL CHECK (length(event_sha256) = 32),
+    publication_authority_sha256 BLOB NOT NULL
+        CHECK (length(publication_authority_sha256) = 32),
+    target_set_sha256 BLOB NOT NULL CHECK (length(target_set_sha256) = 32),
+    target_count INTEGER NOT NULL CHECK (target_count BETWEEN 1 AND 32),
+    required_target_count INTEGER NOT NULL
+        CHECK (required_target_count BETWEEN 0 AND target_count),
+    max_attempts INTEGER NOT NULL CHECK (max_attempts BETWEEN 1 AND 100),
+    initial_backoff_ms INTEGER NOT NULL CHECK (initial_backoff_ms BETWEEN 1 AND 60000),
+    maximum_backoff_ms INTEGER NOT NULL CHECK (maximum_backoff_ms BETWEEN 1 AND 3600000),
+    attempt_deadline_ms INTEGER NOT NULL CHECK (attempt_deadline_ms BETWEEN 100 AND 30000),
+    state TEXT NOT NULL CHECK (state IN ('pending', 'leased', 'complete', 'blocked')),
+    revision INTEGER NOT NULL CHECK (revision BETWEEN 1 AND 9223372036854775807),
+    next_attempt_unix_ms INTEGER,
+    lease_owner BLOB,
+    lease_expires_unix_ms INTEGER,
+    created_at_unix_ms INTEGER NOT NULL
+        CHECK (created_at_unix_ms BETWEEN 0 AND 9223372036854775807),
+    updated_at_unix_ms INTEGER NOT NULL
+        CHECK (updated_at_unix_ms BETWEEN created_at_unix_ms AND 9223372036854775807),
+    FOREIGN KEY (event_id) REFERENCES signed_attestation_events (event_id),
+    CHECK (initial_backoff_ms <= maximum_backoff_ms),
+    CHECK (
+        (state = 'pending'
+            AND next_attempt_unix_ms IS NOT NULL
+            AND next_attempt_unix_ms BETWEEN 0 AND 9223372036854775807
+            AND lease_owner IS NULL AND lease_expires_unix_ms IS NULL)
+        OR (state = 'leased'
+            AND next_attempt_unix_ms IS NULL
+            AND lease_owner IS NOT NULL
+            AND length(lease_owner) = 16
+            AND lease_expires_unix_ms IS NOT NULL
+            AND lease_expires_unix_ms BETWEEN 1 AND 9223372036854775807)
+        OR (state IN ('complete', 'blocked')
+            AND next_attempt_unix_ms IS NULL
+            AND lease_owner IS NULL AND lease_expires_unix_ms IS NULL)
+    )
+) STRICT"#
+    };
+}
+
+macro_rules! publication_outbox_schedule_sql {
+    () => {
+        r#"CREATE INDEX publication_outbox_by_schedule
+ON publication_outbox (
+    state, next_attempt_unix_ms, lease_expires_unix_ms,
+    created_at_unix_ms, outbox_id
+)"#
+    };
+}
+
+macro_rules! publication_outbox_guard_update_sql {
+    () => {
+        r#"CREATE TRIGGER publication_outbox_guard_update
+BEFORE UPDATE ON publication_outbox
+WHEN NEW.outbox_id != OLD.outbox_id
+    OR NEW.event_id != OLD.event_id
+    OR NEW.event_sha256 != OLD.event_sha256
+    OR NEW.publication_authority_sha256 != OLD.publication_authority_sha256
+    OR NEW.target_set_sha256 != OLD.target_set_sha256
+    OR NEW.target_count != OLD.target_count
+    OR NEW.required_target_count != OLD.required_target_count
+    OR NEW.max_attempts != OLD.max_attempts
+    OR NEW.initial_backoff_ms != OLD.initial_backoff_ms
+    OR NEW.maximum_backoff_ms != OLD.maximum_backoff_ms
+    OR NEW.attempt_deadline_ms != OLD.attempt_deadline_ms
+    OR NEW.created_at_unix_ms != OLD.created_at_unix_ms
+    OR NEW.revision != OLD.revision + 1
+    OR NEW.updated_at_unix_ms < OLD.updated_at_unix_ms
+    OR NOT (
+        (OLD.state = 'pending' AND NEW.state IN ('leased', 'blocked'))
+        OR (OLD.state = 'leased'
+            AND NEW.state IN ('leased', 'pending', 'complete', 'blocked'))
+        OR (OLD.state = 'blocked' AND NEW.state = 'pending')
+    )
+BEGIN
+    SELECT RAISE(ABORT, 'publication outbox transition is invalid');
+END"#
+    };
+}
+
+macro_rules! publication_targets_table_sql {
+    () => {
+        r#"CREATE TABLE publication_targets (
+    outbox_id BLOB NOT NULL CHECK (length(outbox_id) = 32),
+    target_ordinal INTEGER NOT NULL CHECK (target_ordinal BETWEEN 0 AND 31),
+    relay_id TEXT NOT NULL
+        CHECK (length(CAST(relay_id AS BLOB)) BETWEEN 1 AND 64)
+        CHECK (relay_id NOT GLOB '*[^a-z0-9_-]*')
+        CHECK (substr(relay_id, 1, 1) GLOB '[a-z]'),
+    required INTEGER NOT NULL CHECK (required IN (0, 1)),
+    state TEXT NOT NULL CHECK (state IN (
+        'pending', 'submitted', 'accepted', 'rejected', 'rate_limited',
+        'auth_required', 'failed', 'unknown'
+    )),
+    revision INTEGER NOT NULL CHECK (revision BETWEEN 1 AND 9223372036854775807),
+    attempt_count INTEGER NOT NULL CHECK (attempt_count BETWEEN 0 AND 100),
+    next_attempt_unix_ms INTEGER
+        CHECK (next_attempt_unix_ms BETWEEN 0 AND 9223372036854775807),
+    last_attempt_id BLOB CHECK (length(last_attempt_id) = 32),
+    updated_at_unix_ms INTEGER NOT NULL
+        CHECK (updated_at_unix_ms BETWEEN 0 AND 9223372036854775807),
+    PRIMARY KEY (outbox_id, target_ordinal),
+    UNIQUE (outbox_id, relay_id),
+    FOREIGN KEY (outbox_id) REFERENCES publication_outbox (outbox_id),
+    CHECK ((attempt_count = 0) = (last_attempt_id IS NULL))
+) STRICT"#
+    };
+}
+
+macro_rules! publication_targets_schedule_sql {
+    () => {
+        r#"CREATE INDEX publication_targets_by_schedule
+ON publication_targets (state, next_attempt_unix_ms, updated_at_unix_ms, outbox_id, target_ordinal)"#
+    };
+}
+
+macro_rules! publication_targets_guard_update_sql {
+    () => {
+        r#"CREATE TRIGGER publication_targets_guard_update
+BEFORE UPDATE ON publication_targets
+WHEN NEW.outbox_id != OLD.outbox_id
+    OR NEW.target_ordinal != OLD.target_ordinal
+    OR NEW.relay_id != OLD.relay_id
+    OR NEW.required != OLD.required
+    OR NEW.revision != OLD.revision + 1
+    OR NEW.attempt_count < OLD.attempt_count
+    OR NEW.attempt_count > OLD.attempt_count + 1
+    OR NEW.updated_at_unix_ms < OLD.updated_at_unix_ms
+    OR OLD.state = 'accepted'
+BEGIN
+    SELECT RAISE(ABORT, 'publication target transition is invalid');
+END"#
+    };
+}
+
+macro_rules! publication_attempts_table_sql {
+    () => {
+        r#"CREATE TABLE publication_attempts (
+    attempt_id BLOB NOT NULL PRIMARY KEY CHECK (length(attempt_id) = 32),
+    outbox_id BLOB NOT NULL CHECK (length(outbox_id) = 32),
+    target_ordinal INTEGER NOT NULL CHECK (target_ordinal BETWEEN 0 AND 31),
+    attempt_number INTEGER NOT NULL CHECK (attempt_number BETWEEN 1 AND 100),
+    event_sha256 BLOB NOT NULL CHECK (length(event_sha256) = 32),
+    lease_owner BLOB NOT NULL CHECK (length(lease_owner) = 16),
+    started_at_unix_ms INTEGER NOT NULL
+        CHECK (started_at_unix_ms BETWEEN 0 AND 9223372036854775807),
+    finished_at_unix_ms INTEGER NOT NULL
+        CHECK (finished_at_unix_ms BETWEEN started_at_unix_ms AND 9223372036854775807),
+    outcome TEXT NOT NULL CHECK (outcome IN (
+        'submitted', 'accepted', 'rejected', 'rate_limited',
+        'auth_required', 'failed', 'unknown'
+    )),
+    result_code TEXT NOT NULL
+        CHECK (length(CAST(result_code AS BLOB)) BETWEEN 1 AND 64)
+        CHECK (result_code NOT GLOB '*[^a-z0-9_]*')
+        CHECK (substr(result_code, 1, 1) GLOB '[a-z]'),
+    UNIQUE (outbox_id, target_ordinal, attempt_number),
+    FOREIGN KEY (outbox_id, target_ordinal)
+        REFERENCES publication_targets (outbox_id, target_ordinal)
+) STRICT"#
+    };
+}
+
+const CREATE_EVIDENCE_MANIFESTS_TABLE_SQL: &str = evidence_manifests_table_sql!();
+const CREATE_EVIDENCE_MANIFESTS_NO_UPDATE_SQL: &str = immutable_no_update_sql!(
+    "evidence_manifests_no_update",
+    "evidence_manifests",
+    "evidence manifests are immutable"
+);
+const CREATE_EVIDENCE_MANIFESTS_NO_DELETE_SQL: &str = immutable_no_delete_sql!(
+    "evidence_manifests_no_delete",
+    "evidence_manifests",
+    "evidence manifests are retained"
+);
+const CREATE_TRADE_PROJECTIONS_TABLE_SQL: &str = trade_projections_table_sql!();
+const CREATE_TRADE_PROJECTIONS_NO_UPDATE_SQL: &str = immutable_no_update_sql!(
+    "trade_projections_no_update",
+    "trade_projections",
+    "trade projections are immutable"
+);
+const CREATE_TRADE_PROJECTIONS_NO_DELETE_SQL: &str = immutable_no_delete_sql!(
+    "trade_projections_no_delete",
+    "trade_projections",
+    "trade projections are retained"
+);
+const CREATE_ATTESTATION_REPORTS_TABLE_SQL: &str = attestation_reports_table_sql!();
+const CREATE_ATTESTATION_REPORTS_SUPERSESSION_SQL: &str = attestation_reports_supersession_sql!();
+const CREATE_ATTESTATION_REPORTS_NO_UPDATE_SQL: &str = immutable_no_update_sql!(
+    "attestation_reports_no_update",
+    "attestation_reports",
+    "attestation reports are immutable"
+);
+const CREATE_ATTESTATION_REPORTS_NO_DELETE_SQL: &str = immutable_no_delete_sql!(
+    "attestation_reports_no_delete",
+    "attestation_reports",
+    "attestation reports are retained"
+);
+const CREATE_SIGNED_ATTESTATION_EVENTS_TABLE_SQL: &str = signed_attestation_events_table_sql!();
+const CREATE_SIGNED_ATTESTATION_EVENTS_NO_UPDATE_SQL: &str = immutable_no_update_sql!(
+    "signed_attestation_events_no_update",
+    "signed_attestation_events",
+    "signed attestation events are immutable"
+);
+const CREATE_SIGNED_ATTESTATION_EVENTS_NO_DELETE_SQL: &str = immutable_no_delete_sql!(
+    "signed_attestation_events_no_delete",
+    "signed_attestation_events",
+    "signed attestation events are retained"
+);
+const CREATE_PUBLICATION_OUTBOX_TABLE_SQL: &str = publication_outbox_table_sql!();
+const CREATE_PUBLICATION_OUTBOX_SCHEDULE_SQL: &str = publication_outbox_schedule_sql!();
+const CREATE_PUBLICATION_OUTBOX_GUARD_UPDATE_SQL: &str = publication_outbox_guard_update_sql!();
+const CREATE_PUBLICATION_OUTBOX_NO_DELETE_SQL: &str = immutable_no_delete_sql!(
+    "publication_outbox_no_delete",
+    "publication_outbox",
+    "publication outbox rows are retained"
+);
+const CREATE_PUBLICATION_TARGETS_TABLE_SQL: &str = publication_targets_table_sql!();
+const CREATE_PUBLICATION_TARGETS_SCHEDULE_SQL: &str = publication_targets_schedule_sql!();
+const CREATE_PUBLICATION_TARGETS_GUARD_UPDATE_SQL: &str = publication_targets_guard_update_sql!();
+const CREATE_PUBLICATION_TARGETS_NO_DELETE_SQL: &str = immutable_no_delete_sql!(
+    "publication_targets_no_delete",
+    "publication_targets",
+    "publication targets are retained"
+);
+const CREATE_PUBLICATION_ATTEMPTS_TABLE_SQL: &str = publication_attempts_table_sql!();
+const CREATE_PUBLICATION_ATTEMPTS_NO_UPDATE_SQL: &str = immutable_no_update_sql!(
+    "publication_attempts_no_update",
+    "publication_attempts",
+    "publication attempts are immutable"
+);
+const CREATE_PUBLICATION_ATTEMPTS_NO_DELETE_SQL: &str = immutable_no_delete_sql!(
+    "publication_attempts_no_delete",
+    "publication_attempts",
+    "publication attempts are retained"
+);
+
+const CREATE_REPORT_PUBLICATION_MIGRATION_SQL: &str = concat!(
+    evidence_manifests_table_sql!(),
+    ";\n",
+    immutable_no_update_sql!(
+        "evidence_manifests_no_update",
+        "evidence_manifests",
+        "evidence manifests are immutable"
+    ),
+    ";\n",
+    immutable_no_delete_sql!(
+        "evidence_manifests_no_delete",
+        "evidence_manifests",
+        "evidence manifests are retained"
+    ),
+    ";\n",
+    trade_projections_table_sql!(),
+    ";\n",
+    immutable_no_update_sql!(
+        "trade_projections_no_update",
+        "trade_projections",
+        "trade projections are immutable"
+    ),
+    ";\n",
+    immutable_no_delete_sql!(
+        "trade_projections_no_delete",
+        "trade_projections",
+        "trade projections are retained"
+    ),
+    ";\n",
+    attestation_reports_table_sql!(),
+    ";\n",
+    attestation_reports_supersession_sql!(),
+    ";\n",
+    immutable_no_update_sql!(
+        "attestation_reports_no_update",
+        "attestation_reports",
+        "attestation reports are immutable"
+    ),
+    ";\n",
+    immutable_no_delete_sql!(
+        "attestation_reports_no_delete",
+        "attestation_reports",
+        "attestation reports are retained"
+    ),
+    ";\n",
+    signed_attestation_events_table_sql!(),
+    ";\n",
+    immutable_no_update_sql!(
+        "signed_attestation_events_no_update",
+        "signed_attestation_events",
+        "signed attestation events are immutable"
+    ),
+    ";\n",
+    immutable_no_delete_sql!(
+        "signed_attestation_events_no_delete",
+        "signed_attestation_events",
+        "signed attestation events are retained"
+    ),
+    ";\n",
+    publication_outbox_table_sql!(),
+    ";\n",
+    publication_outbox_schedule_sql!(),
+    ";\n",
+    publication_outbox_guard_update_sql!(),
+    ";\n",
+    immutable_no_delete_sql!(
+        "publication_outbox_no_delete",
+        "publication_outbox",
+        "publication outbox rows are retained"
+    ),
+    ";\n",
+    publication_targets_table_sql!(),
+    ";\n",
+    publication_targets_schedule_sql!(),
+    ";\n",
+    publication_targets_guard_update_sql!(),
+    ";\n",
+    immutable_no_delete_sql!(
+        "publication_targets_no_delete",
+        "publication_targets",
+        "publication targets are retained"
+    ),
+    ";\n",
+    publication_attempts_table_sql!(),
+    ";\n",
+    immutable_no_update_sql!(
+        "publication_attempts_no_update",
+        "publication_attempts",
+        "publication attempts are immutable"
+    ),
+    ";\n",
+    immutable_no_delete_sql!(
+        "publication_attempts_no_delete",
+        "publication_attempts",
+        "publication attempts are retained"
+    ),
+    ";"
+);
+
 const EVIDENCE_RECONCILIATIONS_TABLE_SHA256: [u8; 32] = [
     0xaf, 0xed, 0xa3, 0xfb, 0xfb, 0x32, 0x6b, 0xd5, 0x27, 0x26, 0x42, 0x1d, 0x6c, 0x41, 0x5e, 0xff,
     0xf9, 0x71, 0xf7, 0x47, 0x72, 0x5e, 0xbf, 0x8b, 0x34, 0x26, 0x8f, 0x89, 0x6e, 0xa1, 0x2d, 0x9b,
@@ -771,6 +1209,103 @@ const EVIDENCE_RECONCILIATION_SOURCES_NO_UPDATE_SHA256: [u8; 32] = [
 const EVIDENCE_RECONCILIATION_SOURCES_NO_DELETE_SHA256: [u8; 32] = [
     0x55, 0x75, 0xfc, 0xaf, 0xab, 0x07, 0xaf, 0x83, 0x0b, 0x69, 0x8d, 0xfa, 0x86, 0x56, 0xe9, 0xc6,
     0x98, 0x0b, 0x4c, 0xdc, 0xa2, 0xde, 0xce, 0xfc, 0x06, 0x41, 0x86, 0x69, 0x2e, 0xac, 0x00, 0x39,
+];
+
+const EVIDENCE_MANIFESTS_TABLE_SHA256: [u8; 32] = [
+    0x95, 0x41, 0x37, 0x66, 0x31, 0x3e, 0x96, 0x83, 0x81, 0xdf, 0x0d, 0x8b, 0xc5, 0xd5, 0x50, 0x8b,
+    0xde, 0x34, 0x3c, 0x68, 0xd6, 0x56, 0xea, 0xea, 0xab, 0x08, 0x87, 0x10, 0x9b, 0x23, 0xc6, 0xfb,
+];
+const EVIDENCE_MANIFESTS_NO_UPDATE_SHA256: [u8; 32] = [
+    0x7f, 0xc1, 0x21, 0xaf, 0x5e, 0x9d, 0xc8, 0x32, 0xae, 0xc9, 0x98, 0x6d, 0x45, 0xc7, 0x68, 0xf3,
+    0xc1, 0x76, 0x14, 0xbb, 0xf6, 0xbe, 0x41, 0x11, 0x6a, 0x7e, 0xa9, 0x22, 0x90, 0x27, 0x0e, 0xe5,
+];
+const EVIDENCE_MANIFESTS_NO_DELETE_SHA256: [u8; 32] = [
+    0xd9, 0x9e, 0x5f, 0x55, 0xf7, 0xf2, 0x48, 0x5e, 0xfc, 0xc3, 0xb9, 0x11, 0x88, 0xf5, 0x8d, 0x3b,
+    0xa0, 0x0c, 0x3e, 0xf7, 0x82, 0x3d, 0x88, 0xe0, 0x82, 0xc2, 0x60, 0xb8, 0x0f, 0xf4, 0xd6, 0xa4,
+];
+const TRADE_PROJECTIONS_TABLE_SHA256: [u8; 32] = [
+    0xac, 0x04, 0x55, 0xd5, 0x1b, 0xed, 0xfb, 0x9b, 0x59, 0xfd, 0xc9, 0xea, 0x63, 0x1b, 0x85, 0x63,
+    0x7a, 0x16, 0xf1, 0xb1, 0xfe, 0xad, 0x4d, 0x4c, 0xdf, 0xba, 0xad, 0xa3, 0xef, 0x85, 0x65, 0x43,
+];
+const TRADE_PROJECTIONS_NO_UPDATE_SHA256: [u8; 32] = [
+    0x8f, 0xba, 0x6b, 0x06, 0x8e, 0xb8, 0x69, 0x84, 0x14, 0x4b, 0x64, 0x14, 0xbf, 0x8c, 0x4e, 0x95,
+    0x47, 0x58, 0xaf, 0x09, 0x7d, 0xbb, 0x3a, 0xfe, 0x72, 0x06, 0x21, 0x00, 0x6a, 0x43, 0x32, 0xe0,
+];
+const TRADE_PROJECTIONS_NO_DELETE_SHA256: [u8; 32] = [
+    0x94, 0x8a, 0x5c, 0xed, 0x5a, 0xaa, 0x0a, 0xb4, 0x90, 0x1c, 0xe4, 0x3a, 0xdb, 0x97, 0x69, 0xbf,
+    0x5a, 0x19, 0x5d, 0x35, 0x95, 0xc9, 0x39, 0x54, 0x73, 0xe9, 0x6e, 0xea, 0x9c, 0x08, 0x26, 0xb2,
+];
+const ATTESTATION_REPORTS_TABLE_SHA256: [u8; 32] = [
+    0x97, 0xc4, 0x83, 0x37, 0x56, 0x92, 0x23, 0x67, 0xb2, 0xb8, 0xd2, 0x00, 0xeb, 0xc9, 0x31, 0x0d,
+    0xc8, 0xb9, 0x73, 0x38, 0xf6, 0xc5, 0x9c, 0xe5, 0xe5, 0x19, 0x87, 0x64, 0x19, 0x9d, 0x44, 0xd2,
+];
+const ATTESTATION_REPORTS_SUPERSESSION_SHA256: [u8; 32] = [
+    0x57, 0xd5, 0x59, 0x2e, 0x2a, 0x7a, 0xd0, 0x03, 0x06, 0x42, 0x28, 0x16, 0x31, 0x8c, 0xe1, 0x25,
+    0x30, 0x1c, 0xd3, 0x73, 0xff, 0xc3, 0x47, 0xf5, 0xf8, 0x65, 0xc0, 0x63, 0x73, 0x76, 0xad, 0x8e,
+];
+const ATTESTATION_REPORTS_NO_UPDATE_SHA256: [u8; 32] = [
+    0x5f, 0x27, 0x19, 0x68, 0xe4, 0xd8, 0x32, 0x84, 0xe1, 0x04, 0x09, 0x37, 0x0b, 0xdc, 0x55, 0x9d,
+    0xfa, 0x8f, 0xce, 0xa9, 0x0f, 0xd9, 0xd3, 0x47, 0xd4, 0xfa, 0xc8, 0x12, 0x53, 0x77, 0x17, 0x23,
+];
+const ATTESTATION_REPORTS_NO_DELETE_SHA256: [u8; 32] = [
+    0xbe, 0xaf, 0xa1, 0x1a, 0xbe, 0x57, 0x27, 0xac, 0x3e, 0x43, 0x26, 0xd0, 0x8b, 0x0d, 0x39, 0x36,
+    0xb3, 0x04, 0x11, 0x37, 0x48, 0x13, 0xd3, 0x2a, 0xc8, 0x24, 0x1f, 0x56, 0xa9, 0x2c, 0x51, 0xfc,
+];
+const SIGNED_ATTESTATION_EVENTS_TABLE_SHA256: [u8; 32] = [
+    0x9b, 0x83, 0x5b, 0x84, 0x97, 0x1f, 0x52, 0xba, 0xc2, 0x8f, 0xf2, 0xba, 0x04, 0x9a, 0x1b, 0x9b,
+    0xfc, 0xcc, 0x7c, 0xab, 0x39, 0xd0, 0x16, 0x53, 0x06, 0xa3, 0x9b, 0x93, 0x8c, 0x51, 0x72, 0xab,
+];
+const SIGNED_ATTESTATION_EVENTS_NO_UPDATE_SHA256: [u8; 32] = [
+    0x36, 0x1d, 0xbe, 0xda, 0xae, 0xd4, 0xfc, 0x4c, 0xf3, 0xe8, 0xa8, 0x60, 0xeb, 0x63, 0xc8, 0xc7,
+    0x3a, 0x31, 0x79, 0x7c, 0x4f, 0x92, 0x79, 0x8f, 0x7d, 0x3a, 0x9f, 0xec, 0x7f, 0x95, 0xa8, 0x44,
+];
+const SIGNED_ATTESTATION_EVENTS_NO_DELETE_SHA256: [u8; 32] = [
+    0x06, 0x4d, 0x71, 0x90, 0x60, 0x9e, 0x6a, 0x8e, 0xac, 0x6d, 0x80, 0x44, 0xe1, 0xef, 0x53, 0x76,
+    0x6a, 0xea, 0x6a, 0xb3, 0x68, 0xc9, 0x48, 0xb1, 0x64, 0x24, 0x9a, 0xf2, 0xc0, 0xc3, 0xeb, 0x9c,
+];
+const PUBLICATION_OUTBOX_TABLE_SHA256: [u8; 32] = [
+    0x26, 0x2a, 0x56, 0x79, 0x77, 0x73, 0xcb, 0x84, 0xb6, 0x55, 0x1c, 0x19, 0x32, 0xe1, 0x0e, 0xb1,
+    0x98, 0xf2, 0x4b, 0xf2, 0xb3, 0x5f, 0x90, 0x15, 0xac, 0xc1, 0x8f, 0x27, 0xfd, 0x89, 0x4b, 0x2d,
+];
+const PUBLICATION_OUTBOX_SCHEDULE_SHA256: [u8; 32] = [
+    0xc0, 0x70, 0xb5, 0xb0, 0xd0, 0x1f, 0x05, 0x34, 0xe9, 0x1e, 0xfa, 0xee, 0x6c, 0xba, 0xdd, 0xf8,
+    0x5c, 0xf1, 0x85, 0x33, 0xa7, 0x04, 0x5c, 0xfb, 0x65, 0x11, 0xdc, 0x80, 0x28, 0x7b, 0x4f, 0x6e,
+];
+const PUBLICATION_OUTBOX_GUARD_UPDATE_SHA256: [u8; 32] = [
+    0x3e, 0xd0, 0x80, 0x98, 0x34, 0xb2, 0x24, 0x51, 0x5b, 0x7b, 0x06, 0x8e, 0x46, 0x8e, 0xbe, 0x8a,
+    0x52, 0x8b, 0xdb, 0xcf, 0xb4, 0x0e, 0x33, 0xe5, 0x19, 0xc6, 0xfd, 0xef, 0x19, 0x80, 0xcd, 0x62,
+];
+const PUBLICATION_OUTBOX_NO_DELETE_SHA256: [u8; 32] = [
+    0xc5, 0x77, 0x63, 0xa0, 0x90, 0xde, 0xe0, 0x11, 0x62, 0x2a, 0xda, 0x9f, 0x32, 0x24, 0x47, 0x59,
+    0x54, 0xdf, 0x60, 0xd7, 0xe3, 0xf2, 0xf3, 0x42, 0x36, 0x14, 0x8e, 0xba, 0x52, 0x84, 0x3a, 0x6e,
+];
+const PUBLICATION_TARGETS_TABLE_SHA256: [u8; 32] = [
+    0x23, 0xa0, 0x78, 0x7f, 0x7d, 0x90, 0x91, 0x8b, 0x41, 0x4a, 0x22, 0x37, 0xcc, 0x70, 0xa0, 0x83,
+    0x1a, 0xe0, 0xfa, 0x05, 0x2e, 0x1b, 0x9f, 0x25, 0x50, 0xe3, 0x6f, 0xda, 0xd1, 0x53, 0xab, 0x7b,
+];
+const PUBLICATION_TARGETS_SCHEDULE_SHA256: [u8; 32] = [
+    0xf8, 0xc4, 0x46, 0x10, 0xcb, 0x2d, 0xe4, 0xa3, 0x54, 0xd7, 0x93, 0x64, 0x9f, 0x8b, 0xa9, 0xf1,
+    0x95, 0xfd, 0xba, 0x5d, 0xfc, 0xc1, 0xf9, 0x92, 0xe9, 0x08, 0x08, 0x7e, 0x56, 0x6a, 0x14, 0xde,
+];
+const PUBLICATION_TARGETS_GUARD_UPDATE_SHA256: [u8; 32] = [
+    0x57, 0x10, 0x3b, 0xa2, 0xc3, 0xd7, 0x88, 0xd3, 0x83, 0x3a, 0xba, 0xed, 0xcd, 0xad, 0x49, 0x5e,
+    0xce, 0xfe, 0x6e, 0xbd, 0x63, 0x2a, 0x98, 0x14, 0x04, 0x10, 0x86, 0xb9, 0x84, 0x10, 0x72, 0x0c,
+];
+const PUBLICATION_TARGETS_NO_DELETE_SHA256: [u8; 32] = [
+    0x53, 0x97, 0x8a, 0xa5, 0xca, 0x4d, 0xef, 0x0e, 0xc4, 0x75, 0xc4, 0x55, 0xf6, 0x10, 0x43, 0xf7,
+    0x1b, 0x10, 0x15, 0x6b, 0x2b, 0x56, 0xe0, 0x6c, 0x50, 0x4a, 0xc7, 0xee, 0x57, 0x3e, 0x74, 0x4e,
+];
+const PUBLICATION_ATTEMPTS_TABLE_SHA256: [u8; 32] = [
+    0x7d, 0xa6, 0xea, 0xbe, 0xfc, 0x07, 0xeb, 0x16, 0xde, 0x5c, 0x47, 0xc9, 0x20, 0xfd, 0x64, 0x76,
+    0xa9, 0xe9, 0x8d, 0xce, 0xe9, 0x31, 0x84, 0x45, 0x8d, 0xd2, 0x98, 0xb8, 0x53, 0x52, 0x03, 0x28,
+];
+const PUBLICATION_ATTEMPTS_NO_UPDATE_SHA256: [u8; 32] = [
+    0xc3, 0xe5, 0x51, 0x35, 0x06, 0xad, 0x45, 0xca, 0xea, 0xe5, 0xaa, 0x7e, 0xa2, 0x40, 0xe7, 0x0a,
+    0xde, 0x7c, 0xf7, 0x7f, 0x6d, 0x9a, 0x67, 0x76, 0x92, 0x5e, 0x12, 0x06, 0xc4, 0x55, 0xbf, 0x65,
+];
+const PUBLICATION_ATTEMPTS_NO_DELETE_SHA256: [u8; 32] = [
+    0x6d, 0x8a, 0x4e, 0x03, 0x67, 0x52, 0x51, 0x1a, 0x4e, 0xe7, 0xaa, 0x41, 0x0c, 0x31, 0xaa, 0xc9,
+    0xd3, 0x5c, 0x42, 0x48, 0xe3, 0x78, 0xfa, 0x39, 0x7c, 0x9b, 0x90, 0xa0, 0xe3, 0x72, 0x19, 0x29,
 ];
 
 const RECONCILIATION_JOBS_TABLE_SHA256: [u8; 32] = [
@@ -989,16 +1524,24 @@ pub fn rhi_migration_catalog() -> Result<MigrationCatalog, RhiStateCatalogError>
         MigrationChecksum::from_bytes(RHI_STATE_SCHEMA_VERSION_6_MIGRATION_SHA256),
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::MigrationCatalog))?;
+    let report_publication = MigrationDescriptor::sql(
+        7,
+        "create_reports_and_publication_outbox",
+        CREATE_REPORT_PUBLICATION_MIGRATION_SQL,
+        MigrationChecksum::from_bytes(RHI_STATE_SCHEMA_VERSION_7_MIGRATION_SHA256),
+    )
+    .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::MigrationCatalog))?;
     let catalog = MigrationCatalog::new([
         configuration,
         trade_evidence,
         source_checkpoints,
         reconciliation_jobs,
         reconciliation_results,
+        report_publication,
     ])
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::MigrationCatalog))?;
     if catalog.current_version() != RHI_STATE_SCHEMA_VERSION
-        || catalog.descriptors().len() != 5
+        || catalog.descriptors().len() != 6
         || catalog.digest().as_bytes() != &RHI_MIGRATION_CATALOG_SHA256
     {
         return Err(RhiStateCatalogError::new(
@@ -1042,9 +1585,15 @@ pub fn rhi_schema_catalog() -> Result<SchemaCatalog, RhiStateCatalogError> {
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
     let version_six = SchemaVersionCatalog::new(
-        RHI_STATE_SCHEMA_VERSION,
+        6,
         rhi_schema_version_six_objects()?,
         SchemaDigest::from_bytes(RHI_STATE_SCHEMA_VERSION_6_SHA256),
+    )
+    .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
+    let version_seven = SchemaVersionCatalog::new(
+        RHI_STATE_SCHEMA_VERSION,
+        rhi_schema_version_seven_objects()?,
+        SchemaDigest::from_bytes(RHI_STATE_SCHEMA_VERSION_7_SHA256),
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
     let catalog = SchemaCatalog::new(
@@ -1056,6 +1605,7 @@ pub fn rhi_schema_catalog() -> Result<SchemaCatalog, RhiStateCatalogError> {
             version_four,
             version_five,
             version_six,
+            version_seven,
         ],
     )
     .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))?;
@@ -1070,10 +1620,10 @@ pub fn validate_rhi_state_catalogs(
 ) -> Result<(), RhiStateCatalogError> {
     let versions = schema.versions();
     let valid = migrations.current_version() == RHI_STATE_SCHEMA_VERSION
-        && migrations.descriptors().len() == 5
+        && migrations.descriptors().len() == 6
         && migrations.digest().as_bytes() == &RHI_MIGRATION_CATALOG_SHA256
         && schema.migration_catalog_digest() == migrations.digest()
-        && versions.len() == 6
+        && versions.len() == 7
         && versions[0].version() == RHI_STATE_BASE_SCHEMA_VERSION
         && versions[0].object_count() == RHI_STATE_SCHEMA_VERSION_1_OBJECT_COUNT
         && versions[0].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_1_SHA256
@@ -1089,9 +1639,12 @@ pub fn validate_rhi_state_catalogs(
         && versions[4].version() == 5
         && versions[4].object_count() == RHI_STATE_SCHEMA_VERSION_5_OBJECT_COUNT
         && versions[4].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_5_SHA256
-        && versions[5].version() == RHI_STATE_SCHEMA_VERSION
+        && versions[5].version() == 6
         && versions[5].object_count() == RHI_STATE_SCHEMA_VERSION_6_OBJECT_COUNT
         && versions[5].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_6_SHA256
+        && versions[6].version() == RHI_STATE_SCHEMA_VERSION
+        && versions[6].object_count() == RHI_STATE_SCHEMA_VERSION_7_OBJECT_COUNT
+        && versions[6].digest().as_bytes() == &RHI_STATE_SCHEMA_VERSION_7_SHA256
         && schema.digest().as_bytes() == &RHI_STATE_SCHEMA_CATALOG_SHA256;
     if valid {
         Ok(())
@@ -1161,6 +1714,195 @@ fn rhi_schema_version_six_objects() -> Result<Vec<SchemaObject>, RhiStateCatalog
     let mut objects = rhi_schema_version_five_objects()?;
     objects.extend(rhi_reconciliation_result_objects()?);
     Ok(objects)
+}
+
+fn rhi_schema_version_seven_objects() -> Result<Vec<SchemaObject>, RhiStateCatalogError> {
+    let mut objects = rhi_schema_version_six_objects()?;
+    objects.extend(rhi_report_publication_objects()?);
+    Ok(objects)
+}
+
+fn rhi_report_publication_objects() -> Result<[SchemaObject; 24], RhiStateCatalogError> {
+    let object = |kind, name, table_name, sql, digest| {
+        SchemaObject::new(
+            kind,
+            name,
+            table_name,
+            sql,
+            SchemaDigest::from_bytes(digest),
+        )
+        .map_err(|_| RhiStateCatalogError::new(RhiStateCatalogErrorKind::SchemaCatalog))
+    };
+    Ok([
+        object(
+            SchemaObjectKind::Table,
+            "evidence_manifests",
+            "evidence_manifests",
+            CREATE_EVIDENCE_MANIFESTS_TABLE_SQL,
+            EVIDENCE_MANIFESTS_TABLE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "evidence_manifests_no_update",
+            "evidence_manifests",
+            CREATE_EVIDENCE_MANIFESTS_NO_UPDATE_SQL,
+            EVIDENCE_MANIFESTS_NO_UPDATE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "evidence_manifests_no_delete",
+            "evidence_manifests",
+            CREATE_EVIDENCE_MANIFESTS_NO_DELETE_SQL,
+            EVIDENCE_MANIFESTS_NO_DELETE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Table,
+            "trade_projections",
+            "trade_projections",
+            CREATE_TRADE_PROJECTIONS_TABLE_SQL,
+            TRADE_PROJECTIONS_TABLE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "trade_projections_no_update",
+            "trade_projections",
+            CREATE_TRADE_PROJECTIONS_NO_UPDATE_SQL,
+            TRADE_PROJECTIONS_NO_UPDATE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "trade_projections_no_delete",
+            "trade_projections",
+            CREATE_TRADE_PROJECTIONS_NO_DELETE_SQL,
+            TRADE_PROJECTIONS_NO_DELETE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Table,
+            "attestation_reports",
+            "attestation_reports",
+            CREATE_ATTESTATION_REPORTS_TABLE_SQL,
+            ATTESTATION_REPORTS_TABLE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Index,
+            "attestation_reports_one_successor",
+            "attestation_reports",
+            CREATE_ATTESTATION_REPORTS_SUPERSESSION_SQL,
+            ATTESTATION_REPORTS_SUPERSESSION_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "attestation_reports_no_update",
+            "attestation_reports",
+            CREATE_ATTESTATION_REPORTS_NO_UPDATE_SQL,
+            ATTESTATION_REPORTS_NO_UPDATE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "attestation_reports_no_delete",
+            "attestation_reports",
+            CREATE_ATTESTATION_REPORTS_NO_DELETE_SQL,
+            ATTESTATION_REPORTS_NO_DELETE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Table,
+            "signed_attestation_events",
+            "signed_attestation_events",
+            CREATE_SIGNED_ATTESTATION_EVENTS_TABLE_SQL,
+            SIGNED_ATTESTATION_EVENTS_TABLE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "signed_attestation_events_no_update",
+            "signed_attestation_events",
+            CREATE_SIGNED_ATTESTATION_EVENTS_NO_UPDATE_SQL,
+            SIGNED_ATTESTATION_EVENTS_NO_UPDATE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "signed_attestation_events_no_delete",
+            "signed_attestation_events",
+            CREATE_SIGNED_ATTESTATION_EVENTS_NO_DELETE_SQL,
+            SIGNED_ATTESTATION_EVENTS_NO_DELETE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Table,
+            "publication_outbox",
+            "publication_outbox",
+            CREATE_PUBLICATION_OUTBOX_TABLE_SQL,
+            PUBLICATION_OUTBOX_TABLE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Index,
+            "publication_outbox_by_schedule",
+            "publication_outbox",
+            CREATE_PUBLICATION_OUTBOX_SCHEDULE_SQL,
+            PUBLICATION_OUTBOX_SCHEDULE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "publication_outbox_guard_update",
+            "publication_outbox",
+            CREATE_PUBLICATION_OUTBOX_GUARD_UPDATE_SQL,
+            PUBLICATION_OUTBOX_GUARD_UPDATE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "publication_outbox_no_delete",
+            "publication_outbox",
+            CREATE_PUBLICATION_OUTBOX_NO_DELETE_SQL,
+            PUBLICATION_OUTBOX_NO_DELETE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Table,
+            "publication_targets",
+            "publication_targets",
+            CREATE_PUBLICATION_TARGETS_TABLE_SQL,
+            PUBLICATION_TARGETS_TABLE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Index,
+            "publication_targets_by_schedule",
+            "publication_targets",
+            CREATE_PUBLICATION_TARGETS_SCHEDULE_SQL,
+            PUBLICATION_TARGETS_SCHEDULE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "publication_targets_guard_update",
+            "publication_targets",
+            CREATE_PUBLICATION_TARGETS_GUARD_UPDATE_SQL,
+            PUBLICATION_TARGETS_GUARD_UPDATE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "publication_targets_no_delete",
+            "publication_targets",
+            CREATE_PUBLICATION_TARGETS_NO_DELETE_SQL,
+            PUBLICATION_TARGETS_NO_DELETE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Table,
+            "publication_attempts",
+            "publication_attempts",
+            CREATE_PUBLICATION_ATTEMPTS_TABLE_SQL,
+            PUBLICATION_ATTEMPTS_TABLE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "publication_attempts_no_update",
+            "publication_attempts",
+            CREATE_PUBLICATION_ATTEMPTS_NO_UPDATE_SQL,
+            PUBLICATION_ATTEMPTS_NO_UPDATE_SHA256,
+        )?,
+        object(
+            SchemaObjectKind::Trigger,
+            "publication_attempts_no_delete",
+            "publication_attempts",
+            CREATE_PUBLICATION_ATTEMPTS_NO_DELETE_SQL,
+            PUBLICATION_ATTEMPTS_NO_DELETE_SHA256,
+        )?,
+    ])
 }
 
 fn rhi_reconciliation_result_objects() -> Result<[SchemaObject; 6], RhiStateCatalogError> {

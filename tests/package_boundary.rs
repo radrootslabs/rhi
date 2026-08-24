@@ -11,6 +11,9 @@ const RUNTIME_ADAPTERS: &str = include_str!("../src/runtime_adapters.rs");
 const RUNTIME_ADAPTER_CONTRACT: &str =
     include_str!("../contracts/services_hardening/runtime_adapters.v1.json");
 const RUNTIME_FOUNDATION: &str = include_str!("../src/runtime_foundation.rs");
+const PUBLICATION: &str = include_str!("../src/publication.rs");
+const PUBLICATION_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/publication_outbox.v1.json");
 const RECONCILIATION_ATTEMPTS: &str = include_str!("../src/reconciliation_attempt.rs");
 const RECONCILIATION_COMMIT: &str = include_str!("../src/reconciliation_commit.rs");
 const RECONCILIATION_ATTESTATION: &str = include_str!("../src/reconciliation_attestation.rs");
@@ -51,6 +54,7 @@ const SOURCES: &[&str] = &[
     include_str!("../src/features/trade_agreement_attestation.rs"),
     include_str!("../src/identity_credential.rs"),
     include_str!("../src/identity_envelope.rs"),
+    include_str!("../src/publication.rs"),
     include_str!("../src/reconciliation_attempt.rs"),
     include_str!("../src/reconciliation_attestation.rs"),
     include_str!("../src/reconciliation_commit.rs"),
@@ -125,6 +129,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "features",
         "identity_credential",
         "identity_envelope",
+        "publication",
         "reconciliation_attempt",
         "reconciliation_attestation",
         "reconciliation_commit",
@@ -168,6 +173,12 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "validate_rhi_state_catalogs",
         "RhiStateCatalogError",
         "RhiRuntimeAdapters",
+        "RhiPublicationAuthority",
+        "RhiPublicationErrorKind",
+        "RhiPublicationMode",
+        "RhiPublicationRetryPolicy",
+        "RhiPublicationTarget",
+        "RHI_PUBLICATION_CONTRACT_VERSION",
         "RhiReconciliationAttemptPlan",
         "RhiReconciliationSourceRequest",
         "RhiReconciliationSourceResult",
@@ -250,6 +261,44 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
     assert!(!PUBLIC_API.contains("rhi::adapters::"));
     assert!(!PUBLIC_API.contains("rhi::features::"));
     assert!(!PUBLIC_API.contains("rhi::runtime_adapters::"));
+    assert!(!PUBLIC_API.contains("rhi::publication::"));
+}
+
+#[test]
+fn publication_authority_is_config_derived_sealed_and_effect_free() {
+    let contract: serde_json::Value =
+        serde_json::from_str(PUBLICATION_CONTRACT).expect("publication contract");
+    assert_eq!(contract["schema"], "radroots.rhi.publication-outbox");
+    assert_eq!(contract["schema_version"], 1);
+    assert_eq!(contract["state_schema_version"], 7);
+    assert_eq!(contract["effects"]["sqlite_query_or_mutation"], false);
+    assert_eq!(contract["effects"]["relay_or_network"], false);
+    for required in [
+        "pub fn from_config(config: &RhiConfigDocumentV1)",
+        "RhiPublicationMode::Required",
+        "RhiPublicationMode::Disabled",
+        "target_set_digest(&targets)?",
+        "authority_digest(",
+    ] {
+        assert!(
+            PUBLICATION.contains(required),
+            "publication authority is missing {required}"
+        );
+    }
+    for forbidden in [
+        "sqlx::",
+        "std::fs",
+        "std::net",
+        "tokio::",
+        "SystemTime",
+        "thread_rng",
+        "OsRng",
+    ] {
+        assert!(
+            !PUBLICATION.contains(forbidden),
+            "publication authority gained forbidden effect {forbidden}"
+        );
+    }
 }
 
 #[test]
@@ -503,7 +552,7 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .lines()
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
-    assert_eq!(public_error_count, 24);
+    assert_eq!(public_error_count, 25);
 }
 
 #[test]
@@ -932,6 +981,8 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "Step 199 must rerun the same validator inside the final",
         "## Canonical signed reconciliation attestation",
         "[`reconciliation_attestation.v1.json`](contracts/services_hardening/reconciliation_attestation.v1.json)",
+        "## Explicit publication authority and durable schema",
+        "[`publication_outbox.v1.json`](contracts/services_hardening/publication_outbox.v1.json)",
         "The event body and exact kind-3441 structural tags",
         "without rebuilding, reserializing, or",
         "Coverage is exactly `Missing`, `Partial`, `ScopeSatisfied`, or `Unsupported`",
@@ -949,6 +1000,9 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "4,096 distinct signed-event identities (event ID plus signature) and 8 MiB",
         "observation, and operational retry do not",
         "schema-v6 immutable",
+        "schema-v7 immutable report, signed-event,",
+        "The schema-v7",
+        "catalog is frozen by Step 198",
         "one canonical mutation",
         "every distinct valid signed",
         "does not advance reconciliation checkpoints or dirty generation",

@@ -251,7 +251,9 @@
   governed RHI schema-v2 configuration-binding migration, schema-v3
   immutable trade-evidence migration, schema-v4 source-checkpoint and
   dirty-generation migration, schema-v5 bounded reconciliation-job migration,
-  and schema-v6 immutable reconciliation-attempt/source-result migration.
+  schema-v6 immutable reconciliation-attempt/source-result migration, and
+  schema-v7 immutable manifest, projection, report, exact signed-event, and
+  publication-workflow migration.
   Retain at most 1,024 consecutive
   immutable configuration generations containing only normalized
   config/evidence-policy digests, public identity, exact contract versions,
@@ -268,6 +270,15 @@
   use intent-open, discover source generation under retained authority, and
   match the latest durable binding; configuration apply is an exclusive offline
   operation.
+- Derive publication authority only from one complete validated configuration.
+  Required mode preserves the exact ordered write-relay target inventory,
+  requiredness, retry bounds, queue capacity, and domain-separated identities;
+  disabled mode has no target, retry, network, or hidden fallback authority.
+  Keep manifest, projection, report, signed-event bytes, and attempt rows
+  immutable, and expose outbox/target progress only through versioned
+  compare-and-swap state. Step 198 defines this catalog and performs no SQLite
+  mutation or relay I/O; later publication steps must use only the committed
+  exact signed bytes and may never rebuild, reserialize, or re-sign them.
 - Commit one exact reconciliation-attempt replay inventory only through the
   typed attempt repository. Revalidate the exact live lease, dirty generation,
   evidence policy, and every scoped prior checkpoint before mutation; persist

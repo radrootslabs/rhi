@@ -316,10 +316,32 @@ The sealed result owns the finalization fence, canonical report, verified event
 identifier, exact signed bytes, and the SHA-256 of those bytes. Later
 persistence must retain those bytes without rebuilding, reserializing, or
 re-signing them. This checkpoint performs no SQLite, filesystem, relay,
-network, task, ambient-clock, or ambient-entropy operation. Schema-v7 storage,
-the generation-fenced final transaction, publication, and job finalization
-remain with Steps 198 and 199. The exact machine contract is
+network, task, ambient-clock, or ambient-entropy operation. The schema-v7
+catalog is frozen by Step 198; the generation-fenced write, publication, and
+job finalization remain with Step 199 and its successors. The exact machine contract is
 [`reconciliation_attestation.v1.json`](contracts/services_hardening/reconciliation_attestation.v1.json).
+
+## Explicit publication authority and durable schema
+
+`RhiPublicationAuthority::from_config` is the sole public derivation boundary
+for publication intent. It consumes one complete validated RHI configuration
+and returns exactly `Required` or `Disabled`. Required authority preserves the
+explicit ordered write-relay targets, each target's requiredness, the bounded
+retry policy, and queue capacity under separate domain-separated target-set
+and complete-authority digests. Disabled authority contains no target or retry
+state and authorizes no hidden network work. The sealed result exposes no URL,
+credential, transport, SQLite, clock, entropy, or task authority.
+
+Schema v7 freezes immutable manifest, projection, report, exact signed-event,
+and publication-attempt records plus compare-and-swap outbox and target rows.
+No-update/no-delete triggers protect semantic payload and target identities;
+the closed target evidence vocabulary distinguishes pending, submitted,
+accepted, rejected, rate-limited, auth-required, failed, and unknown. This
+checkpoint defines and verifies the catalog only. Step 199 owns the first
+atomic finalization write, and Steps 200-203 own claims, relay submission,
+outcomes, retry, recovery, and wave qualification. The exact machine contract
+is
+[`publication_outbox.v1.json`](contracts/services_hardening/publication_outbox.v1.json).
 
 ## Existing-state runtime foundation
 
@@ -419,15 +441,17 @@ RHI owns one `state.sqlite` per service instance. Create-new initialization
 starts from the shared schema-v1 baseline and immediately applies the pinned
 schema-v2 configuration migration, schema-v3 immutable trade-evidence
 migration, schema-v4 source-checkpoint and dirty-generation migration,
-schema-v5 bounded reconciliation-job migration, and schema-v6 immutable
-reconciliation-result migration.
-Version six contains the six shared immutable service-metadata and
+schema-v5 bounded reconciliation-job migration, schema-v6 immutable
+reconciliation-result migration, and schema-v7 immutable report, signed-event,
+and publication-workflow migration.
+Version seven contains the six shared immutable service-metadata and
 migration-ledger objects, the bounded append-only `rhi_config_bindings` table,
 separate immutable tables for canonical mutations, signed Nostr events, and
 accepted source observations, and generation-guarded relay checkpoints and
 per-trade dirty generations with their enforcement triggers and indexes.
-It also retains immutable attempt and source-result rows under no-update and
-no-delete triggers.
+It also retains immutable attempt, source-result, manifest, projection, report,
+signed-event, and publication-attempt rows plus compare-and-swap outbox and
+target state under exact transition and retention triggers.
 Exact literal SHA-256 values bind both migrations, every schema snapshot, and
 the schema catalog. RHI validates every identity before it can become database
 authority.

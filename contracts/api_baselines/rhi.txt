@@ -137,6 +137,16 @@ pub enum rhi::RhiPublicationCommandV1
 pub rhi::RhiPublicationCommandV1::Backlog
 pub rhi::RhiPublicationCommandV1::Retry
 pub rhi::RhiPublicationCommandV1::Targets
+pub enum rhi::RhiPublicationErrorKind
+pub rhi::RhiPublicationErrorKind::InvalidConfiguration
+pub rhi::RhiPublicationErrorKind::TargetInventory
+impl rhi::RhiPublicationErrorKind
+pub const fn rhi::RhiPublicationErrorKind::code(self) -> &'static str
+pub enum rhi::RhiPublicationMode
+pub rhi::RhiPublicationMode::Disabled
+pub rhi::RhiPublicationMode::Required
+impl rhi::RhiPublicationMode
+pub const fn rhi::RhiPublicationMode::code(self) -> &'static str
 pub enum rhi::RhiReconciliationAttemptErrorKind
 pub rhi::RhiReconciliationAttemptErrorKind::InvalidConfiguration
 pub rhi::RhiReconciliationAttemptErrorKind::InvalidInput
@@ -639,12 +649,45 @@ pub const fn rhi::RhiPublicationAttemptRepository<'_>::descriptor(&self) -> rhi:
 pub const fn rhi::RhiPublicationAttemptRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
 impl core::fmt::Debug for rhi::RhiPublicationAttemptRepository<'_>
 pub fn rhi::RhiPublicationAttemptRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPublicationAuthority
+impl rhi::RhiPublicationAuthority
+pub const fn rhi::RhiPublicationAuthority::authority_sha256(&self) -> &[u8; 32]
+pub fn rhi::RhiPublicationAuthority::from_config(&rhi::RhiConfigDocumentV1) -> core::result::Result<Self, rhi::RhiPublicationError>
+pub const fn rhi::RhiPublicationAuthority::mode(&self) -> rhi::RhiPublicationMode
+pub const fn rhi::RhiPublicationAuthority::queue_capacity(&self) -> u32
+pub const fn rhi::RhiPublicationAuthority::retry_policy(&self) -> core::option::Option<rhi::RhiPublicationRetryPolicy>
+pub const fn rhi::RhiPublicationAuthority::target_set_sha256(&self) -> &[u8; 32]
+pub fn rhi::RhiPublicationAuthority::targets(&self) -> &[rhi::RhiPublicationTarget]
+impl core::fmt::Debug for rhi::RhiPublicationAuthority
+pub fn rhi::RhiPublicationAuthority::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPublicationError
+impl rhi::RhiPublicationError
+pub const fn rhi::RhiPublicationError::code(self) -> &'static str
+pub const fn rhi::RhiPublicationError::kind(self) -> rhi::RhiPublicationErrorKind
+impl core::error::Error for rhi::RhiPublicationError
+impl core::fmt::Debug for rhi::RhiPublicationError
+pub fn rhi::RhiPublicationError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiPublicationError
+pub fn rhi::RhiPublicationError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiPublicationOutboxRepository<'host>
 impl rhi::RhiPublicationOutboxRepository<'_>
 pub const fn rhi::RhiPublicationOutboxRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
 pub const fn rhi::RhiPublicationOutboxRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
 impl core::fmt::Debug for rhi::RhiPublicationOutboxRepository<'_>
 pub fn rhi::RhiPublicationOutboxRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPublicationRetryPolicy
+impl rhi::RhiPublicationRetryPolicy
+pub const fn rhi::RhiPublicationRetryPolicy::attempt_deadline_milliseconds(self) -> u64
+pub const fn rhi::RhiPublicationRetryPolicy::initial_backoff_milliseconds(self) -> u64
+pub const fn rhi::RhiPublicationRetryPolicy::maximum_attempts(self) -> u16
+pub const fn rhi::RhiPublicationRetryPolicy::maximum_backoff_milliseconds(self) -> u64
+pub struct rhi::RhiPublicationTarget
+impl rhi::RhiPublicationTarget
+pub const fn rhi::RhiPublicationTarget::ordinal(&self) -> u8
+pub fn rhi::RhiPublicationTarget::relay_id(&self) -> &str
+pub const fn rhi::RhiPublicationTarget::required(&self) -> bool
+impl core::fmt::Debug for rhi::RhiPublicationTarget
+pub fn rhi::RhiPublicationTarget::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiPublicationTargetRepository<'host>
 impl rhi::RhiPublicationTargetRepository<'_>
 pub const fn rhi::RhiPublicationTargetRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
@@ -1336,6 +1379,9 @@ pub const rhi::RHI_ENCRYPTED_IDENTITY_ENVELOPE_CONTRACT_VERSION: u32
 pub const rhi::RHI_ENCRYPTED_IDENTITY_ENVELOPE_MAX_BYTES: usize
 pub const rhi::RHI_MIGRATION_CATALOG_SHA256: [u8; 32]
 pub const rhi::RHI_PROVIDER_CONTRACT_VERSION: u32
+pub const rhi::RHI_PUBLICATION_CONTRACT_VERSION: u32
+pub const rhi::RHI_PUBLICATION_MAX_ATTEMPTS: u16
+pub const rhi::RHI_PUBLICATION_MAX_TARGETS: usize
 pub const rhi::RHI_RECONCILIATION_ATTEMPT_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_ATTEMPT_MAX_SOURCES: usize
 pub const rhi::RHI_RECONCILIATION_ATTESTATION_CONTRACT_VERSION: u32
@@ -1375,6 +1421,9 @@ pub const rhi::RHI_STATE_SCHEMA_VERSION_5_SHA256: [u8; 32]
 pub const rhi::RHI_STATE_SCHEMA_VERSION_6_MIGRATION_SHA256: [u8; 32]
 pub const rhi::RHI_STATE_SCHEMA_VERSION_6_OBJECT_COUNT: u32
 pub const rhi::RHI_STATE_SCHEMA_VERSION_6_SHA256: [u8; 32]
+pub const rhi::RHI_STATE_SCHEMA_VERSION_7_MIGRATION_SHA256: [u8; 32]
+pub const rhi::RHI_STATE_SCHEMA_VERSION_7_OBJECT_COUNT: u32
+pub const rhi::RHI_STATE_SCHEMA_VERSION_7_SHA256: [u8; 32]
 pub const rhi::RHI_STATUS_CONTRACT_VERSION: u32
 pub const rhi::RHI_TRADE_EVENT_EXTRA_FIELD_MAX_COUNT: usize
 pub const rhi::RHI_TRADE_EVENT_EXTRA_JSON_MAX_BYTES: usize

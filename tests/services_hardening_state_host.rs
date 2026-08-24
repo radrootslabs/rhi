@@ -11,6 +11,7 @@ use rhi::{
     initialize_rhi_state, open_rhi_state_inspection, open_rhi_state_read_write,
     parse_rhi_cli_v1_from, parse_rhi_config_v1, resolve_rhi_runtime_context,
 };
+use sqlx::{Connection, SqliteConnection, sqlite::SqliteConnectOptions};
 
 const EXAMPLE: &str = include_str!("../contracts/services_hardening/config.v1.example.toml");
 
@@ -207,6 +208,100 @@ async fn initialize_is_create_new_and_both_existing_open_modes_close_explicitly(
         .await
         .expect("authority reacquisition after explicit close");
     writer.close().await.expect("reopened writer close");
+}
+
+#[tokio::test]
+async fn publication_schema_rejects_null_state_holes_and_accepted_target_mutation() {
+    let directory = tempfile::tempdir().expect("temporary root");
+    let runtime = runtime(directory.path(), "publication-schema");
+    prepare_state_directory(&runtime);
+    let metadata = metadata(&runtime);
+    let (applied_at, build) = migration_evidence();
+    initialize_rhi_state(&runtime, &metadata, applied_at, &build)
+        .await
+        .expect("state initialization");
+
+    let options = SqliteConnectOptions::new()
+        .filename(runtime.artifacts().state_database())
+        .create_if_missing(false)
+        .foreign_keys(false);
+    let mut connection = SqliteConnection::connect_with(&options)
+        .await
+        .expect("offline fixture connection");
+
+    let outbox_id = [0x21_u8; 32];
+    let event_id = [0x22_u8; 32];
+    let event_sha256 = [0x23_u8; 32];
+    let authority_sha256 = [0x24_u8; 32];
+    let target_set_sha256 = [0x25_u8; 32];
+    let missing_pending_schedule = sqlx::query(
+        r#"INSERT INTO publication_outbox (
+            outbox_id, event_id, event_sha256, publication_authority_sha256,
+            target_set_sha256, target_count, required_target_count,
+            max_attempts, initial_backoff_ms, maximum_backoff_ms,
+            attempt_deadline_ms, state, revision, next_attempt_unix_ms,
+            lease_owner, lease_expires_unix_ms, created_at_unix_ms,
+            updated_at_unix_ms
+        ) VALUES (?, ?, ?, ?, ?, 1, 1, 3, 100, 1000, 5000,
+            'pending', 1, NULL, NULL, NULL, 10, 10)"#,
+    )
+    .bind(outbox_id.as_slice())
+    .bind(event_id.as_slice())
+    .bind(event_sha256.as_slice())
+    .bind(authority_sha256.as_slice())
+    .bind(target_set_sha256.as_slice())
+    .execute(&mut connection)
+    .await;
+    assert!(
+        missing_pending_schedule.is_err(),
+        "pending outbox rows require a concrete next-attempt time"
+    );
+
+    sqlx::query(
+        r#"INSERT INTO publication_outbox (
+            outbox_id, event_id, event_sha256, publication_authority_sha256,
+            target_set_sha256, target_count, required_target_count,
+            max_attempts, initial_backoff_ms, maximum_backoff_ms,
+            attempt_deadline_ms, state, revision, next_attempt_unix_ms,
+            lease_owner, lease_expires_unix_ms, created_at_unix_ms,
+            updated_at_unix_ms
+        ) VALUES (?, ?, ?, ?, ?, 1, 1, 3, 100, 1000, 5000,
+            'pending', 1, 10, NULL, NULL, 10, 10)"#,
+    )
+    .bind(outbox_id.as_slice())
+    .bind(event_id.as_slice())
+    .bind(event_sha256.as_slice())
+    .bind(authority_sha256.as_slice())
+    .bind(target_set_sha256.as_slice())
+    .execute(&mut connection)
+    .await
+    .expect("valid pending outbox row");
+
+    sqlx::query(
+        r#"INSERT INTO publication_targets (
+            outbox_id, target_ordinal, relay_id, required, state, revision,
+            attempt_count, next_attempt_unix_ms, last_attempt_id,
+            updated_at_unix_ms
+        ) VALUES (?, 0, 'relay_a', 1, 'accepted', 1, 0, NULL, NULL, 10)"#,
+    )
+    .bind(outbox_id.as_slice())
+    .execute(&mut connection)
+    .await
+    .expect("accepted target fixture");
+    let accepted_mutation = sqlx::query(
+        r#"UPDATE publication_targets
+        SET revision = 2, updated_at_unix_ms = 11
+        WHERE outbox_id = ? AND target_ordinal = 0"#,
+    )
+    .bind(outbox_id.as_slice())
+    .execute(&mut connection)
+    .await;
+    assert!(
+        accepted_mutation.is_err(),
+        "accepted publication targets are terminal"
+    );
+
+    connection.close().await.expect("fixture connection close");
 }
 
 #[tokio::test]

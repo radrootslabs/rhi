@@ -1,0 +1,86 @@
+{
+  "schema": "radroots.rhi.publication-outbox",
+  "schema_version": 1,
+  "contract_version": 1,
+  "state_schema_version": 7,
+  "publication_modes": ["required", "disabled"],
+  "authority": {
+    "source": "complete_validated_rhi_config_v1",
+    "required": {
+      "target_count": { "minimum": 1, "maximum": 32 },
+      "target_order": "exact_configured_order",
+      "relay_authority": ["stable_id", "write_true", "required_boolean"],
+      "retry": ["maximum_attempts", "initial_backoff_ms", "maximum_backoff_ms", "attempt_deadline_ms"]
+    },
+    "disabled": {
+      "targets": "absent",
+      "retry": "absent",
+      "network_work": false
+    },
+    "target_set_digest": {
+      "algorithm": "sha256",
+      "domain": "radroots.rhi.publication_target_set.v1\\0",
+      "framing": ["target_count_u32_be", "ordinal_u32_be", "relay_id_length_u64_be", "relay_id_utf8", "required_u8"]
+    },
+    "complete_digest": {
+      "algorithm": "sha256",
+      "domain": "radroots.rhi.publication_authority.v1\\0",
+      "framing": ["mode_u8", "target_count_u32_be", "target_set_sha256", "retry_presence_u8", "retry_fields_be_when_present", "queue_capacity_u32_be"]
+    }
+  },
+  "schema_objects": {
+    "immutable": [
+      "evidence_manifests",
+      "trade_projections",
+      "attestation_reports",
+      "signed_attestation_events",
+      "publication_attempts"
+    ],
+    "compare_and_swap": ["publication_outbox", "publication_targets"],
+    "outbox_states": ["pending", "leased", "complete", "blocked"],
+    "target_states": ["pending", "submitted", "accepted", "rejected", "rate_limited", "auth_required", "failed", "unknown"],
+    "attempt_outcomes": ["submitted", "accepted", "rejected", "rate_limited", "auth_required", "failed", "unknown"],
+    "retention": "no_delete",
+    "accepted_target_is_terminal": true
+  },
+  "payload": {
+    "signed_bytes_maximum": 32768,
+    "stored_bytes": "exact_independently_verified_signed_event_json",
+    "stored_digest": "sha256_of_exact_signed_bytes",
+    "retry_source": "stored_bytes_only",
+    "target_set": "immutable_after_initial_commit"
+  },
+  "effects": {
+    "config_read": true,
+    "sqlite_catalog_definition": true,
+    "sqlite_query_or_mutation": false,
+    "relay_or_network": false,
+    "task_spawn": false,
+    "ambient_clock": false,
+    "ambient_entropy": false
+  },
+  "forbidden": [
+    "implicit_publication_mode",
+    "disabled_mode_target_or_retry_state",
+    "caller_forged_target",
+    "non_write_relay_target",
+    "mutable_signed_payload",
+    "mutable_target_identity",
+    "raw_upstream_error_text",
+    "raw_sqlite_handle",
+    "relay_io",
+    "event_rebuild",
+    "event_reserialize",
+    "event_resign",
+    "unbounded_queue_or_target_inventory"
+  ],
+  "deferred": [
+    "atomic_finalization_commit",
+    "publication_claim",
+    "relay_submission",
+    "target_outcome_transition",
+    "retry_and_recovery",
+    "runtime_worker",
+    "admin_routes"
+  ]
+}

@@ -8,6 +8,7 @@ mod config_v1;
 mod features;
 mod identity_credential;
 mod identity_envelope;
+mod publication;
 mod reconciliation_attempt;
 mod reconciliation_attestation;
 mod reconciliation_commit;
@@ -63,6 +64,11 @@ pub use identity_envelope::{
     RhiEncryptedIdentityProvisioningMaterial, RhiIdentityEnvelopeBinding, RhiIdentityProviderKind,
     RhiIdentityRole, RhiWrappingCredential, open_rhi_encrypted_identity,
     provision_rhi_encrypted_identity,
+};
+pub use publication::{
+    RHI_PUBLICATION_CONTRACT_VERSION, RHI_PUBLICATION_MAX_ATTEMPTS, RHI_PUBLICATION_MAX_TARGETS,
+    RhiPublicationAuthority, RhiPublicationError, RhiPublicationErrorKind, RhiPublicationMode,
+    RhiPublicationRetryPolicy, RhiPublicationTarget,
 };
 pub use radroots_event::id::TradeId;
 pub use radroots_runtime_paths::{
@@ -153,8 +159,9 @@ pub use state_catalog::{
     RHI_STATE_SCHEMA_VERSION_5_MIGRATION_SHA256, RHI_STATE_SCHEMA_VERSION_5_OBJECT_COUNT,
     RHI_STATE_SCHEMA_VERSION_5_SHA256, RHI_STATE_SCHEMA_VERSION_6_MIGRATION_SHA256,
     RHI_STATE_SCHEMA_VERSION_6_OBJECT_COUNT, RHI_STATE_SCHEMA_VERSION_6_SHA256,
-    RhiStateCatalogError, RhiStateCatalogErrorKind, rhi_migration_catalog, rhi_schema_catalog,
-    validate_rhi_state_catalogs,
+    RHI_STATE_SCHEMA_VERSION_7_MIGRATION_SHA256, RHI_STATE_SCHEMA_VERSION_7_OBJECT_COUNT,
+    RHI_STATE_SCHEMA_VERSION_7_SHA256, RhiStateCatalogError, RhiStateCatalogErrorKind,
+    rhi_migration_catalog, rhi_schema_catalog, validate_rhi_state_catalogs,
 };
 pub use state_config::{
     RHI_CONFIG_BINDING_MAX_GENERATIONS, RhiConfigApplyError, RhiConfigApplyErrorKind,
