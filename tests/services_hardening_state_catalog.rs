@@ -249,7 +249,7 @@ fn secret_object() -> SchemaObject {
 #[test]
 fn catalog_source_is_pure_pinned_and_uses_only_the_shared_authority() {
     assert!(MANIFEST.contains(
-        "radroots_service_sqlite = { git = \"https://github.com/radrootslabs/lib\", rev = \"7d7b454b4c9ed86569671993bd03ca868b676665\", version = \"=0.1.0-alpha\" }"
+        "radroots_service_sqlite = { git = \"https://github.com/radrootslabs/lib\", rev = \"79d7818c8fe22a425f9524b884ddf59d25f0ef89\", version = \"=0.1.0-alpha\" }"
     ));
     assert!(LIB_SOURCE.contains("mod state_catalog;"));
     assert!(!LIB_SOURCE.contains("pub mod state_catalog;"));
