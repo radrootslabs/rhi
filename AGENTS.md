@@ -135,6 +135,14 @@
   canonically ordered immutable set with explicit policy digest, reducer
   version, coverage, and observed-time input; they have no database insertion,
   relay, scheduling, wall-clock, entropy, or network dependency.
+- Mint the immutable reconciliation manifest only by consuming a sealed,
+  durably confirmed source-commit outcome. Bind each source result to its exact
+  selector, completion, cursor, timing, and persisted-inventory digest, and
+  bind each observation to the exact canonical signed-event and first-source
+  provenance. Do not expose a raw manifest constructor or parser from RHI.
+- Keep Step 191 manifest materialization pure and in memory. Step 199 alone
+  owns durable manifest persistence; reducers, final coverage/outcome,
+  attestation, publication, and job finalization retain their ordered owners.
 - Coverage is exactly `Missing`, `Partial`, `ScopeSatisfied`, or `Unsupported`.
   ScopeSatisfied means only that the configured policy was satisfied; optional
   evidence never substitutes for required-source completion.

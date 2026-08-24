@@ -13,6 +13,7 @@ const RUNTIME_ADAPTER_CONTRACT: &str =
 const RUNTIME_FOUNDATION: &str = include_str!("../src/runtime_foundation.rs");
 const RECONCILIATION_ATTEMPTS: &str = include_str!("../src/reconciliation_attempt.rs");
 const RECONCILIATION_COMMIT: &str = include_str!("../src/reconciliation_commit.rs");
+const RECONCILIATION_MANIFEST: &str = include_str!("../src/reconciliation_manifest.rs");
 const RECONCILIATION_JOBS: &str = include_str!("../src/reconciliation_job.rs");
 const RECONCILIATION_REPLAY: &str = include_str!("../src/reconciliation_replay.rs");
 const RECONCILIATION_ATTEMPT_CONTRACT: &str =
@@ -21,6 +22,8 @@ const RECONCILIATION_REPLAY_CONTRACT: &str =
     include_str!("../contracts/services_hardening/reconciliation_replay.v1.json");
 const RECONCILIATION_COMMIT_CONTRACT: &str =
     include_str!("../contracts/services_hardening/reconciliation_commit.v1.json");
+const RECONCILIATION_MANIFEST_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/reconciliation_manifest.v1.json");
 const RUNTIME_FOUNDATION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/runtime_foundation.v1.json");
 const TRADE_INGEST_CONTRACT: &str =
@@ -40,6 +43,7 @@ const SOURCES: &[&str] = &[
     include_str!("../src/reconciliation_attempt.rs"),
     include_str!("../src/reconciliation_commit.rs"),
     include_str!("../src/reconciliation_job.rs"),
+    include_str!("../src/reconciliation_manifest.rs"),
     include_str!("../src/reconciliation_replay.rs"),
     include_str!("../src/runtime_context.rs"),
     include_str!("../src/runtime_adapters.rs"),
@@ -110,6 +114,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "reconciliation_attempt",
         "reconciliation_commit",
         "reconciliation_job",
+        "reconciliation_manifest",
         "reconciliation_replay",
         "runtime_context",
         "runtime_adapters",
@@ -152,6 +157,9 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "RhiReconciliationAttemptResults",
         "RhiReconciliationSourceCommitOutcome",
         "RhiReconciliationCommitErrorKind",
+        "RhiReconciliationManifest",
+        "RhiReconciliationManifestErrorKind",
+        "RhiReconciliationScopePrerequisites",
         "RhiReconciliationSourceReplayPlan",
         "RhiReconciliationSourceReplay",
         "RhiReconciliationJobPolicy",
@@ -237,6 +245,39 @@ fn reconciliation_commit_is_atomic_bounded_and_sealed() {
 }
 
 #[test]
+fn reconciliation_manifest_is_canonical_sealed_and_effect_free() {
+    let contract: serde_json::Value = serde_json::from_str(RECONCILIATION_MANIFEST_CONTRACT)
+        .expect("reconciliation-manifest contract");
+    assert_eq!(contract["schema"], "radroots.rhi.reconciliation-manifest");
+    assert_eq!(contract["contract_version"], 1);
+    assert_eq!(
+        contract["construction_authority"],
+        "confirmed_step_190_commit_outcome_only"
+    );
+    assert_eq!(contract["effects"]["sqlite"], false);
+    for required in [
+        "RadrootsTradeEvidenceManifestV1::new(",
+        "SOURCE_RESULT_DIGEST_DOMAIN",
+        "PROVENANCE_DIGEST_DOMAIN",
+        "committed_inventory_digest(part)",
+        "pub fn into_evidence_manifest(",
+    ] {
+        assert!(
+            RECONCILIATION_MANIFEST.contains(required),
+            "reconciliation manifest is missing {required}"
+        );
+    }
+    for forbidden in ["sqlx::", "std::fs", "std::net", "tokio::", "SystemTime"] {
+        assert!(
+            !RECONCILIATION_MANIFEST.contains(forbidden),
+            "reconciliation manifest gained forbidden authority {forbidden}"
+        );
+    }
+    assert!(!ROOT.contains("pub mod reconciliation_manifest"));
+    assert!(!PUBLIC_API.contains("rhi::reconciliation_manifest::"));
+}
+
+#[test]
 fn public_errors_are_crate_owned_redacted_and_source_free() {
     let production = SOURCES.join("\n");
     assert!(!production.contains("fn source("));
@@ -268,7 +309,7 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .lines()
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
-    assert_eq!(public_error_count, 20);
+    assert_eq!(public_error_count, 21);
 }
 
 #[test]
@@ -686,6 +727,8 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "[`reconciliation_replay.v1.json`](contracts/services_hardening/reconciliation_replay.v1.json)",
         "## Atomic reconciliation result commit",
         "[`reconciliation_commit.v1.json`](contracts/services_hardening/reconciliation_commit.v1.json)",
+        "## Immutable reconciliation manifest",
+        "[`reconciliation_manifest.v1.json`](contracts/services_hardening/reconciliation_manifest.v1.json)",
         "configured queue capacity is enforced beneath a fixed 65,536-job",
         "from an unexpired claimed job lease",
         "can be omitted, duplicated, reordered, or appended beyond",

@@ -1,0 +1,104 @@
+{
+  "schema": "radroots.rhi.reconciliation-manifest",
+  "schema_version": 1,
+  "contract_version": 1,
+  "construction_authority": "confirmed_step_190_commit_outcome_only",
+  "shared_manifest": {
+    "contract_id": "radroots.trade.evidence-manifest.v1",
+    "contract_version": 1,
+    "canonical_ordering": "shared_manifest_source_and_observation_order",
+    "manifest_digest": "shared_domain_separated_sha256_over_exact_canonical_bytes",
+    "source_count_maximum": 16,
+    "observation_count_maximum": 65536,
+    "canonical_bytes_maximum": 16777216
+  },
+  "identity": {
+    "trade": "exact_claimed_job_trade",
+    "generation": "exact_claimed_job_input_generation_nonzero",
+    "evidence_policy_digest": "exact_claimed_job_policy_digest",
+    "source_selector_digest": "bound_inside_each_source_result_digest",
+    "scope_prerequisites": "explicit_closed_satisfied_or_unsatisfied_input",
+    "observation_time": "explicit_integer_utc_seconds_not_before_any_source_finish"
+  },
+  "source_result_digest": {
+    "algorithm": "sha256",
+    "domain_utf8_then_nul": "radroots.rhi.reconciliation_manifest_source_result.v1",
+    "ordered_fields": [
+      "attempt_id",
+      "canonical_source_ordinal_u32_be",
+      "request_id",
+      "framed_source_id_utf8",
+      "trade_id",
+      "required_flag",
+      "evidence_policy_digest",
+      "source_selector_digest",
+      "replay_id",
+      "framed_detailed_completion_code_utf8",
+      "started_at_unix_ms_u64_be",
+      "finished_at_unix_ms_u64_be",
+      "accepted_event_count_u32_be",
+      "accepted_event_bytes_u64_be",
+      "step_190_accepted_inventory_digest",
+      "duplicate_observation_count_u32_be",
+      "optional_first_observed_at_unix_s",
+      "optional_prior_cursor",
+      "overlap_seconds_u64_be",
+      "inclusive_since_unix_s_u64_be",
+      "optional_cursor_candidate",
+      "checkpoint_eligible_flag"
+    ],
+    "step_190_inventory_digest_domain_utf8_then_nul": "radroots.rhi.reconciliation_source_inventory.v1"
+  },
+  "observation": {
+    "mutation_id": "signature_verified_canonical_mutation_id",
+    "event_id": "signature_verified_signed_event_id",
+    "signed_event_digest": "sha256_over_exact_canonical_signed_event_json",
+    "provenance_digest": {
+      "algorithm": "sha256",
+      "domain_utf8_then_nul": "radroots.rhi.evidence_provenance.v1",
+      "ordered_fields": [
+        "framed_source_id_utf8",
+        "framed_selector_literal_trade_mutation_lineage_v1",
+        "evidence_policy_digest",
+        "event_id",
+        "event_signature",
+        "first_observed_at_unix_s_u64_be"
+      ]
+    }
+  },
+  "result": {
+    "sealed": true,
+    "caller_forgeable": false,
+    "canonical_bytes_available": true,
+    "manifest_digest_available": true,
+    "debug": "counts_only_redacted",
+    "errors": "crate_owned_source_free_redacted"
+  },
+  "effects": {
+    "sqlite": false,
+    "filesystem": false,
+    "source_or_relay": false,
+    "network": false,
+    "task_spawn": false,
+    "ambient_clock": false,
+    "ambient_entropy": false
+  },
+  "forbidden": [
+    "manifest_from_uncommitted_replay",
+    "caller_supplied_source_result_digest",
+    "caller_supplied_provenance_digest",
+    "arrival_order_selected_truth",
+    "event_authored_time_relabelled_as_observation_time",
+    "manifest_persistence",
+    "reducer_or_final_outcome_authority"
+  ],
+  "deferred": [
+    "wave_qualification",
+    "lineage_reducer",
+    "coverage_and_outcome_projection",
+    "manifest_persistence",
+    "attestation",
+    "publication",
+    "job_finalization"
+  ]
+}

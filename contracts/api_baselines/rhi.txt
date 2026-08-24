@@ -178,6 +178,11 @@ pub rhi::RhiReconciliationJobState::Ready
 pub rhi::RhiReconciliationJobState::Superseded
 impl rhi::RhiReconciliationJobState
 pub const fn rhi::RhiReconciliationJobState::code(self) -> &'static str
+pub enum rhi::RhiReconciliationManifestErrorKind
+pub rhi::RhiReconciliationManifestErrorKind::InvalidCommittedInventory
+pub rhi::RhiReconciliationManifestErrorKind::InvalidObservationTime
+impl rhi::RhiReconciliationManifestErrorKind
+pub const fn rhi::RhiReconciliationManifestErrorKind::code(self) -> &'static str
 pub enum rhi::RhiReconciliationReplayErrorKind
 pub rhi::RhiReconciliationReplayErrorKind::InvalidConfiguration
 pub rhi::RhiReconciliationReplayErrorKind::InvalidInput
@@ -187,6 +192,9 @@ pub rhi::RhiReconciliationReplayErrorKind::ResourceLimit
 pub rhi::RhiReconciliationReplayErrorKind::SignedEventConflict
 impl rhi::RhiReconciliationReplayErrorKind
 pub const fn rhi::RhiReconciliationReplayErrorKind::code(self) -> &'static str
+pub enum rhi::RhiReconciliationScopePrerequisites
+pub rhi::RhiReconciliationScopePrerequisites::Satisfied
+pub rhi::RhiReconciliationScopePrerequisites::Unsatisfied
 pub enum rhi::RhiRuntimeAdapterErrorKind
 pub rhi::RhiRuntimeAdapterErrorKind::CredentialAccess
 pub rhi::RhiRuntimeAdapterErrorKind::EntropyUnavailable
@@ -711,6 +719,29 @@ impl rhi::RhiReconciliationLeaseOwner
 pub fn rhi::RhiReconciliationLeaseOwner::from_bytes([u8; 16]) -> core::result::Result<Self, rhi::RhiReconciliationJobError>
 impl core::fmt::Debug for rhi::RhiReconciliationLeaseOwner
 pub fn rhi::RhiReconciliationLeaseOwner::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationManifest
+impl rhi::RhiReconciliationManifest
+pub fn rhi::RhiReconciliationManifest::canonical_bytes(&self) -> &[u8]
+pub const fn rhi::RhiReconciliationManifest::contract_version(&self) -> u32
+pub fn rhi::RhiReconciliationManifest::digest(&self) -> [u8; 32]
+pub fn rhi::RhiReconciliationManifest::observation_count(&self) -> usize
+pub const fn rhi::RhiReconciliationManifest::observed_at_unix_seconds(&self) -> u64
+pub const fn rhi::RhiReconciliationManifest::shared_manifest_contract_id(&self) -> &'static str
+pub const fn rhi::RhiReconciliationManifest::shared_manifest_contract_version(&self) -> u16
+pub fn rhi::RhiReconciliationManifest::source_count(&self) -> usize
+pub const fn rhi::RhiReconciliationManifest::trade_generation(&self) -> u64
+pub const fn rhi::RhiReconciliationManifest::trade_id(&self) -> &radroots_event::id::TradeId
+impl core::fmt::Debug for rhi::RhiReconciliationManifest
+pub fn rhi::RhiReconciliationManifest::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationManifestError
+impl rhi::RhiReconciliationManifestError
+pub const fn rhi::RhiReconciliationManifestError::code(self) -> &'static str
+pub const fn rhi::RhiReconciliationManifestError::kind(self) -> rhi::RhiReconciliationManifestErrorKind
+impl core::error::Error for rhi::RhiReconciliationManifestError
+impl core::fmt::Debug for rhi::RhiReconciliationManifestError
+pub fn rhi::RhiReconciliationManifestError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiReconciliationManifestError
+pub fn rhi::RhiReconciliationManifestError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiReconciliationReplayError
 impl rhi::RhiReconciliationReplayError
 pub const fn rhi::RhiReconciliationReplayError::code(self) -> &'static str
@@ -735,6 +766,8 @@ pub fn rhi::RhiReconciliationSourceCommitOutcome::committed_cursors(&self) -> &[
 pub const fn rhi::RhiReconciliationSourceCommitOutcome::created(&self) -> bool
 pub const fn rhi::RhiReconciliationSourceCommitOutcome::dirty_generation_advanced(&self) -> bool
 pub const fn rhi::RhiReconciliationSourceCommitOutcome::source_result_count(&self) -> u32
+impl rhi::RhiReconciliationSourceCommitOutcome
+pub fn rhi::RhiReconciliationSourceCommitOutcome::into_evidence_manifest(self, radroots_service_host::time::UnixTimeSeconds, rhi::RhiReconciliationScopePrerequisites) -> core::result::Result<rhi::RhiReconciliationManifest, rhi::RhiReconciliationManifestError>
 impl core::fmt::Debug for rhi::RhiReconciliationSourceCommitOutcome
 pub fn rhi::RhiReconciliationSourceCommitOutcome::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiReconciliationSourceCursorEvidence
@@ -1191,6 +1224,7 @@ pub const rhi::RHI_RECONCILIATION_ATTEMPT_MAX_SOURCES: usize
 pub const rhi::RHI_RECONCILIATION_COMMIT_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_JOB_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_JOB_MAX_ACTIVE: u32
+pub const rhi::RHI_RECONCILIATION_MANIFEST_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_REPLAY_CONTRACT_VERSION: u32
 pub const rhi::RHI_RUNTIME_ADAPTER_CONTRACT_VERSION: u32
 pub const rhi::RHI_RUNTIME_FOUNDATION_CONTRACT_VERSION: u32

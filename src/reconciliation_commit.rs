@@ -15,6 +15,7 @@ use crate::{
     RhiReconciliationSourceCursorEvidence, RhiReconciliationSourceReplay, RhiStateHostMode,
     RhiTradeSourceCursor,
     reconciliation_job::{LeaseValidationError, validate_exact_lease},
+    reconciliation_manifest::{RhiCommittedManifestMaterial, committed_manifest_material},
     reconciliation_replay::{
         RhiReconciliationReplayCommitFact, RhiReconciliationReplayCommitParts,
         committed_cursor_evidence,
@@ -160,6 +161,7 @@ pub struct RhiReconciliationSourceCommitOutcome {
     checkpoint_advance_count: u32,
     dirty_generation_advanced: bool,
     committed_cursors: Box<[RhiReconciliationSourceCursorEvidence]>,
+    pub(crate) manifest_material: RhiCommittedManifestMaterial,
 }
 
 impl RhiReconciliationSourceCommitOutcome {
@@ -203,6 +205,7 @@ impl fmt::Debug for RhiReconciliationSourceCommitOutcome {
             .field("checkpoint_advance_count", &self.checkpoint_advance_count)
             .field("dirty_generation_advanced", &self.dirty_generation_advanced)
             .field("committed_cursors", &self.committed_cursors.len())
+            .field("manifest_material", &"[sealed]")
             .finish()
     }
 }
@@ -254,6 +257,8 @@ impl RhiReconciliationAttemptRepository<'_> {
         }) {
             return Err(failure(RhiReconciliationCommitErrorKind::InvalidInput));
         }
+        let manifest_material = committed_manifest_material(&plan, &parts)
+            .map_err(|()| failure(RhiReconciliationCommitErrorKind::InvalidInput))?;
 
         let raw = self
             .host()
@@ -284,6 +289,7 @@ impl RhiReconciliationAttemptRepository<'_> {
             checkpoint_advance_count: raw.checkpoint_advance_count,
             dirty_generation_advanced: raw.dirty_generation_advanced,
             committed_cursors,
+            manifest_material,
         })
     }
 }
@@ -644,6 +650,12 @@ fn accepted_inventory_digest(
     part: &RhiReconciliationReplayCommitParts,
 ) -> Result<[u8; 32], CommitOperationError> {
     accepted_inventory_digest_for_facts(&part.facts)
+}
+
+pub(crate) fn committed_inventory_digest(
+    part: &RhiReconciliationReplayCommitParts,
+) -> Option<[u8; 32]> {
+    accepted_inventory_digest(part).ok()
 }
 
 fn accepted_inventory_digest_for_facts(

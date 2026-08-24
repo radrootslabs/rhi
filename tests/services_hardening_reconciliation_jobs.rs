@@ -11,10 +11,10 @@ use rhi::{
     RhiReconciliationAttemptResults, RhiReconciliationCommitErrorKind,
     RhiReconciliationJobErrorKind, RhiReconciliationJobPolicy, RhiReconciliationJobState,
     RhiReconciliationLease, RhiReconciliationLeaseOwner, RhiReconciliationRetryDelayMilliseconds,
-    RhiReconciliationSourceReplayPlan, RhiReconciliationSourceResult,
-    RhiReconciliationUnixMilliseconds, RhiRuntimeContext, RhiStateMetadata,
-    RhiTradeMutationAdmissionLimits, RhiTradeMutationAuthoredTimePolicy,
-    RhiTradeMutationObservedAtUnixSeconds, RhiTradeSourceCompletion, TradeId,
+    RhiReconciliationScopePrerequisites, RhiReconciliationSourceReplayPlan,
+    RhiReconciliationSourceResult, RhiReconciliationUnixMilliseconds, RhiRuntimeContext,
+    RhiStateMetadata, RhiTradeMutationAdmissionLimits, RhiTradeMutationAuthoredTimePolicy,
+    RhiTradeMutationObservedAtUnixSeconds, RhiTradeSourceCompletion, TradeId, UnixTimeSeconds,
     admit_rhi_trade_mutation_event, initialize_rhi_state, open_rhi_state_inspection,
     open_rhi_state_read_write, parse_rhi_cli_v1_from, parse_rhi_config_v1,
     resolve_rhi_runtime_context,
@@ -997,6 +997,7 @@ async fn source_replay_commit_is_atomic_idempotent_and_mints_durable_cursor_evid
     };
     let first_replay = make_replay();
     let retry_replay = make_replay();
+    let early_replay = make_replay();
     let resume_plan = plan.clone();
     let attempts = host.repositories().reconciliation_attempts();
     let committed = attempts
@@ -1014,23 +1015,72 @@ async fn source_replay_commit_is_atomic_idempotent_and_mints_durable_cursor_evid
             .created_at_unix_seconds(),
         1_784_347_200
     );
+    let committed_cursor = committed.committed_cursors()[0].clone();
     let resumed = RhiReconciliationSourceReplayPlan::from_request(
         &resume_plan,
         &resume_plan.requests()[0],
         &configuration,
-        Some(committed.committed_cursors()[0].clone()),
+        Some(committed_cursor),
     )
     .expect("committed cursor resumes exact scope");
     assert_eq!(resumed.since_unix_seconds(), 1_784_346_900);
+    let manifest = committed
+        .into_evidence_manifest(
+            UnixTimeSeconds::new(1_784_347_203),
+            RhiReconciliationScopePrerequisites::Satisfied,
+        )
+        .expect("manifest");
+    assert_eq!(manifest.contract_version(), 1);
+    assert_eq!(
+        manifest.shared_manifest_contract_id(),
+        "radroots.trade.evidence-manifest.v1"
+    );
+    assert_eq!(manifest.shared_manifest_contract_version(), 1);
+    assert_eq!(manifest.trade_id(), &TradeId::from_bytes([0x11; 16]));
+    assert_eq!(manifest.trade_generation(), 1);
+    assert_eq!(manifest.observed_at_unix_seconds(), 1_784_347_203);
+    assert_eq!(
+        (manifest.source_count(), manifest.observation_count()),
+        (1, 1)
+    );
+    assert_eq!(
+        manifest.digest(),
+        [
+            0x0b, 0x19, 0x3e, 0xd2, 0x93, 0x56, 0xd6, 0x3d, 0x37, 0x31, 0x63, 0x4b, 0x37, 0xfe,
+            0x1f, 0x5d, 0x53, 0x21, 0x48, 0x74, 0x79, 0x3d, 0xc2, 0x3f, 0xe4, 0xa3, 0xb9, 0x84,
+            0xf8, 0xa4, 0x51, 0xc2,
+        ]
+    );
+    let canonical_manifest = manifest.canonical_bytes().to_vec();
 
     let reconciled = attempts
-        .commit_source_replays(lease, plan, [retry_replay])
+        .commit_source_replays(lease, plan.clone(), [retry_replay])
         .await
         .expect("idempotent reconcile");
     assert!(!reconciled.created());
     assert_eq!(reconciled.source_result_count(), 1);
     assert_eq!(reconciled.checkpoint_advance_count(), 1);
     assert!(!reconciled.dirty_generation_advanced());
+    let reconciled_manifest = reconciled
+        .into_evidence_manifest(
+            UnixTimeSeconds::new(1_784_347_203),
+            RhiReconciliationScopePrerequisites::Satisfied,
+        )
+        .expect("idempotent manifest");
+    assert_eq!(reconciled_manifest.canonical_bytes(), canonical_manifest);
+    let too_early = attempts
+        .commit_source_replays(lease, plan, [early_replay])
+        .await
+        .expect("second idempotent reconcile")
+        .into_evidence_manifest(
+            UnixTimeSeconds::new(1_784_347_201),
+            RhiReconciliationScopePrerequisites::Unsatisfied,
+        )
+        .expect_err("observation precedes source completion");
+    assert_eq!(
+        too_early.kind(),
+        rhi::RhiReconciliationManifestErrorKind::InvalidObservationTime
+    );
     host.close().await.expect("close");
 
     let options = SqliteConnectOptions::new()

@@ -213,6 +213,32 @@ selector cursor evidence is minted only after durable commit confirmation. The
 exact machine contract is
 [`reconciliation_commit.v1.json`](contracts/services_hardening/reconciliation_commit.v1.json).
 
+## Immutable reconciliation manifest
+
+`RhiReconciliationSourceCommitOutcome::into_evidence_manifest` consumes one
+sealed, durably confirmed Step 190 outcome and freezes its exact canonical
+mutation, signed-event, first-provenance, and per-source completion inventory
+into the shared `radroots.trade.evidence-manifest.v1` encoding. The manifest
+binds the claimed trade generation and evidence-policy digest. Each source
+result additionally binds its exact selector digest, detailed completion,
+timing, cursor inputs, checkpoint eligibility, and Step 190 persisted-inventory
+digest. Each observation binds the verified mutation and event identities, the
+SHA-256 of the exact canonical signed-event JSON, and a source/selector/policy/
+signature/first-observation provenance digest.
+
+Sources and observations use the shared canonical ordering, so arrival and
+insertion order cannot select truth. The explicit whole-second observation
+time cannot precede any committed source finish, and the explicit closed scope-
+prerequisite input is included in the immutable bytes. Callers can inspect only
+the redacted sealed result's identity, counts, canonical bytes, and digest; they
+cannot construct a manifest from uncommitted replay material or supply its
+result/provenance digests. Materialization is pure and performs no SQLite,
+filesystem, source, relay, network, task, clock, or entropy operation. Durable
+manifest persistence remains deferred to Step 199, and reduction, final
+coverage/outcome, attestation, and publication retain their later checkpoint
+owners. The exact machine contract is
+[`reconciliation_manifest.v1.json`](contracts/services_hardening/reconciliation_manifest.v1.json).
+
 ## Existing-state runtime foundation
 
 `open_rhi_runtime_foundation` opens only an already initialized database from
