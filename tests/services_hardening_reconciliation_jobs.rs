@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 #![cfg(any(target_os = "linux", target_os = "macos"))]
 
-use std::{error::Error, fs, os::unix::fs::PermissionsExt, path::Path};
+use std::{error::Error, fs, os::unix::fs::PermissionsExt, path::Path, time::Duration};
 
 use radroots_service_sqlite::{MigrationAppliedAtUnixSeconds, MigrationBuildIdentity};
 use radroots_storage::event::SourceGeneration;
@@ -1052,7 +1052,12 @@ async fn source_replay_commit_is_atomic_idempotent_and_mints_durable_cursor_evid
         ]
     );
     let canonical_manifest = manifest.canonical_bytes().to_vec();
+    host.close()
+        .await
+        .expect("close before lost-success replay");
 
+    let host = open_writer(&runtime, &metadata).await;
+    let attempts = host.repositories().reconciliation_attempts();
     let reconciled = attempts
         .commit_source_replays(lease, plan.clone(), [retry_replay])
         .await
@@ -1116,6 +1121,165 @@ async fn source_replay_commit_is_atomic_idempotent_and_mints_durable_cursor_evid
 }
 
 #[tokio::test]
+async fn concurrent_exact_commits_converge_to_one_attempt_and_one_manifest() {
+    let started_ms = 1_784_347_400_000;
+    let (root, runtime, metadata, configuration, host, lease, plan) =
+        replay_fixture("replay-concurrent-commit", EXAMPLE, started_ms).await;
+    let request = &plan.requests()[0];
+    let wire = replay_wire();
+    let make_replay = || {
+        RhiReconciliationSourceReplayPlan::from_request(&plan, request, &configuration, None)
+            .expect("replay plan")
+            .finish(
+                request,
+                RhiTradeSourceCompletion::Complete,
+                now(started_ms),
+                now(started_ms + 2_000),
+                [admitted_replay(&configuration, &wire, 1_784_347_400)],
+            )
+            .expect("replay")
+    };
+    let left_replay = make_replay();
+    let right_replay = make_replay();
+    let attempts = host.repositories().reconciliation_attempts();
+    let (left, right) = tokio::join!(
+        attempts.commit_source_replays(lease, plan.clone(), [left_replay]),
+        attempts.commit_source_replays(lease, plan.clone(), [right_replay]),
+    );
+    let left = left.expect("left exact commit");
+    let right = right.expect("right exact commit");
+    assert_eq!(u8::from(left.created()) + u8::from(right.created()), 1);
+    assert_eq!(
+        u8::from(left.dirty_generation_advanced()) + u8::from(right.dirty_generation_advanced()),
+        1
+    );
+    let left = left
+        .into_evidence_manifest(
+            UnixTimeSeconds::new(1_784_347_403),
+            RhiReconciliationScopePrerequisites::Satisfied,
+        )
+        .expect("left manifest");
+    let right = right
+        .into_evidence_manifest(
+            UnixTimeSeconds::new(1_784_347_403),
+            RhiReconciliationScopePrerequisites::Satisfied,
+        )
+        .expect("right manifest");
+    assert_eq!(left.digest(), right.digest());
+    assert_eq!(left.canonical_bytes(), right.canonical_bytes());
+    host.close().await.expect("close");
+
+    let mut connection = fixture_connection(&runtime).await;
+    let counts: (i64, i64, i64) = sqlx::query_as(
+        r#"SELECT
+            (SELECT COUNT(*) FROM evidence_reconciliations),
+            (SELECT COUNT(*) FROM evidence_reconciliation_sources),
+            (SELECT generation FROM trade_dirty_generations)"#,
+    )
+    .fetch_one(&mut connection)
+    .await
+    .expect("durable converged counts");
+    assert_eq!(counts, (1, 1, 2));
+    connection.close().await.expect("fixture close");
+    drop((configuration, metadata, runtime, root));
+}
+
+#[tokio::test]
+async fn cancelled_blocked_commit_has_no_effect_and_exact_retry_succeeds() {
+    let started_ms = 1_784_347_500_000;
+    let (root, runtime, metadata, configuration, host, lease, plan) =
+        replay_fixture("replay-cancelled-commit", EXAMPLE, started_ms).await;
+    let request = &plan.requests()[0];
+    let wire = replay_wire();
+    let make_replay = || {
+        RhiReconciliationSourceReplayPlan::from_request(&plan, request, &configuration, None)
+            .expect("replay plan")
+            .finish(
+                request,
+                RhiTradeSourceCompletion::Complete,
+                now(started_ms),
+                now(started_ms + 2_000),
+                [admitted_replay(&configuration, &wire, 1_784_347_500)],
+            )
+            .expect("replay")
+    };
+    let cancelled_replay = make_replay();
+    let retry_replay = make_replay();
+    let mut blocker = fixture_connection(&runtime).await;
+    sqlx::query("BEGIN IMMEDIATE")
+        .execute(&mut blocker)
+        .await
+        .expect("exclusive SQLite write blocker");
+
+    let attempts = host.repositories().reconciliation_attempts();
+    let cancelled = tokio::time::timeout(
+        Duration::from_millis(100),
+        attempts.commit_source_replays(lease, plan.clone(), [cancelled_replay]),
+    )
+    .await;
+    assert!(cancelled.is_err(), "blocked commit must remain cancellable");
+    let attempt_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM evidence_reconciliations")
+        .fetch_one(&mut blocker)
+        .await
+        .expect("no attempt before blocker release");
+    assert_eq!(attempt_count, 0);
+    sqlx::query("ROLLBACK")
+        .execute(&mut blocker)
+        .await
+        .expect("release blocker");
+    blocker.close().await.expect("blocker close");
+    tokio::task::yield_now().await;
+
+    let committed = attempts
+        .commit_source_replays(lease, plan, [retry_replay])
+        .await
+        .expect("retry after cancellation");
+    assert!(committed.created());
+    assert_eq!(committed.source_result_count(), 1);
+    host.close().await.expect("close");
+    drop((configuration, metadata, runtime, root));
+}
+
+#[tokio::test]
+async fn commit_inventory_bounds_infinite_iterators_before_any_mutation() {
+    let started_ms = 1_784_347_600_000;
+    let (root, runtime, metadata, configuration, host, lease, plan) =
+        replay_fixture("replay-bounded-commit", EXAMPLE, started_ms).await;
+    let request = &plan.requests()[0];
+    let wire = replay_wire();
+    let make_replay = || {
+        RhiReconciliationSourceReplayPlan::from_request(&plan, request, &configuration, None)
+            .expect("replay plan")
+            .finish(
+                request,
+                RhiTradeSourceCompletion::Complete,
+                now(started_ms),
+                now(started_ms + 2_000),
+                [admitted_replay(&configuration, &wire, 1_784_347_600)],
+            )
+            .expect("replay")
+    };
+    let exact_replay = make_replay();
+    let error = host
+        .repositories()
+        .reconciliation_attempts()
+        .commit_source_replays(lease, plan.clone(), std::iter::repeat_with(make_replay))
+        .await
+        .expect_err("infinite inventory exceeds the exact source count");
+    assert_eq!(error.kind(), RhiReconciliationCommitErrorKind::InvalidInput);
+
+    let committed = host
+        .repositories()
+        .reconciliation_attempts()
+        .commit_source_replays(lease, plan, [exact_replay])
+        .await
+        .expect("exact bounded retry");
+    assert!(committed.created());
+    host.close().await.expect("close");
+    drop((configuration, metadata, runtime, root));
+}
+
+#[tokio::test]
 async fn incomplete_results_never_advance_and_stale_leases_fail_closed() {
     let started_ms = 1_784_347_200_000;
     let (root, runtime, metadata, configuration, host, lease, plan) =
@@ -1127,9 +1291,9 @@ async fn incomplete_results_never_advance_and_stale_leases_fail_closed() {
             .expect("replay plan")
             .finish(
                 request,
-                RhiTradeSourceCompletion::IncompleteUnavailable,
+                RhiTradeSourceCompletion::IncompleteTimeout,
                 now(started_ms),
-                now(started_ms + 2_000),
+                now(started_ms + 10_000),
                 [admitted_replay(&configuration, &wire, 1_784_347_200)],
             )
             .expect("incomplete replay");
@@ -1196,6 +1360,16 @@ async fn incomplete_results_never_advance_and_stale_leases_fail_closed() {
     assert_eq!((attempt_count, checkpoint_count, generation), (0, 0, 1));
     connection.close().await.expect("fixture close");
     drop((configuration, metadata, runtime, root));
+}
+
+async fn fixture_connection(runtime: &RhiRuntimeContext) -> SqliteConnection {
+    let options = SqliteConnectOptions::new()
+        .filename(runtime.artifacts().state_database())
+        .create_if_missing(false)
+        .foreign_keys(true);
+    SqliteConnection::connect_with(&options)
+        .await
+        .expect("offline fixture connection")
 }
 
 async fn attempt_fixture(

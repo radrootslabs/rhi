@@ -239,6 +239,16 @@ coverage/outcome, attestation, and publication retain their later checkpoint
 owners. The exact machine contract is
 [`reconciliation_manifest.v1.json`](contracts/services_hardening/reconciliation_manifest.v1.json).
 
+The Step 192 integration-wave qualification proves that concurrent exact
+commits converge to one durable attempt and byte-identical manifest, a blocked
+commit can be cancelled with no authoritative effect and retried, an exact
+lost-success retry converges after close/reopen, and an infinite replay
+inventory terminates at configured source count plus one before mutation. The
+same corpus covers exact source deadlines, incomplete checkpoint exclusion,
+lease expiry/reclaim, queue and result bounds, stale leases/generations, and
+durable reopen behavior without adding runtime, scheduler, source, or network
+authority.
+
 ## Existing-state runtime foundation
 
 `open_rhi_runtime_foundation` opens only an already initialized database from
