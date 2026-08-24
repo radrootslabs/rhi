@@ -13,6 +13,7 @@ const RUNTIME_ADAPTER_CONTRACT: &str =
 const RUNTIME_FOUNDATION: &str = include_str!("../src/runtime_foundation.rs");
 const RECONCILIATION_ATTEMPTS: &str = include_str!("../src/reconciliation_attempt.rs");
 const RECONCILIATION_COMMIT: &str = include_str!("../src/reconciliation_commit.rs");
+const RECONCILIATION_ATTESTATION: &str = include_str!("../src/reconciliation_attestation.rs");
 const RECONCILIATION_FINALIZATION: &str = include_str!("../src/reconciliation_finalization.rs");
 const RECONCILIATION_MANIFEST: &str = include_str!("../src/reconciliation_manifest.rs");
 const RECONCILIATION_REDUCER: &str = include_str!("../src/reconciliation_reducer.rs");
@@ -24,6 +25,8 @@ const RECONCILIATION_REPLAY_CONTRACT: &str =
     include_str!("../contracts/services_hardening/reconciliation_replay.v1.json");
 const RECONCILIATION_COMMIT_CONTRACT: &str =
     include_str!("../contracts/services_hardening/reconciliation_commit.v1.json");
+const RECONCILIATION_ATTESTATION_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/reconciliation_attestation.v1.json");
 const RECONCILIATION_FINALIZATION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/reconciliation_finalization.v1.json");
 const RECONCILIATION_MANIFEST_CONTRACT: &str =
@@ -49,6 +52,7 @@ const SOURCES: &[&str] = &[
     include_str!("../src/identity_credential.rs"),
     include_str!("../src/identity_envelope.rs"),
     include_str!("../src/reconciliation_attempt.rs"),
+    include_str!("../src/reconciliation_attestation.rs"),
     include_str!("../src/reconciliation_commit.rs"),
     include_str!("../src/reconciliation_finalization.rs"),
     include_str!("../src/reconciliation_job.rs"),
@@ -122,6 +126,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "identity_credential",
         "identity_envelope",
         "reconciliation_attempt",
+        "reconciliation_attestation",
         "reconciliation_commit",
         "reconciliation_finalization",
         "reconciliation_job",
@@ -169,6 +174,12 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "RhiReconciliationAttemptResults",
         "RhiReconciliationSourceCommitOutcome",
         "RhiReconciliationCommitErrorKind",
+        "RhiSignedEvidenceAttestation",
+        "RhiEvidenceAttestationSupersession",
+        "RhiReconciliationAttestationErrorKind",
+        "RHI_RECONCILIATION_ATTESTATION_CONTRACT_VERSION",
+        "RHI_RECONCILIATION_SIGNED_ATTESTATION_MAX_BYTES",
+        "build_rhi_signed_evidence_attestation",
         "RhiReconciliationFinalizationFence",
         "RhiReconciliationFinalizationErrorKind",
         "RHI_RECONCILIATION_FINALIZATION_CONTRACT_VERSION",
@@ -239,6 +250,44 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
     assert!(!PUBLIC_API.contains("rhi::adapters::"));
     assert!(!PUBLIC_API.contains("rhi::features::"));
     assert!(!PUBLIC_API.contains("rhi::runtime_adapters::"));
+}
+
+#[test]
+fn reconciliation_attestation_is_typed_signed_verified_and_effect_free() {
+    let contract: serde_json::Value = serde_json::from_str(RECONCILIATION_ATTESTATION_CONTRACT)
+        .expect("reconciliation-attestation contract");
+    assert_eq!(
+        contract["schema"],
+        "radroots.rhi.reconciliation-attestation"
+    );
+    assert_eq!(contract["contract_version"], 1);
+    assert_eq!(contract["event"]["kind"], 3_441);
+    assert_eq!(contract["effects"]["sqlite"], false);
+    assert_eq!(contract["effects"]["publication"], false);
+    for required in [
+        "RadrootsRhiEvidenceReportV1::new(",
+        "AuthoredEventBody::from_rhi_evidence_attestation(",
+        "AuthoredEventPlan::bind(",
+        "sign_nostr_event(unsigned, auxiliary)",
+        "Nip01EventWire::parse_json_unverified_with_limits(",
+        "verify_id(&event)",
+        "verify(&event)",
+        "rhi_evidence_attestation_from_event(&event)",
+        "validate_against_manifest(manifest)",
+    ] {
+        assert!(
+            RECONCILIATION_ATTESTATION.contains(required),
+            "reconciliation attestation is missing {required}"
+        );
+    }
+    for forbidden in ["sqlx::", "std::fs", "std::net", "tokio::", "SystemTime"] {
+        assert!(
+            !RECONCILIATION_ATTESTATION.contains(forbidden),
+            "reconciliation attestation gained forbidden authority {forbidden}"
+        );
+    }
+    assert!(!ROOT.contains("pub mod reconciliation_attestation"));
+    assert!(!PUBLIC_API.contains("rhi::reconciliation_attestation::"));
 }
 
 #[test]
@@ -454,7 +503,7 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .lines()
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
-    assert_eq!(public_error_count, 23);
+    assert_eq!(public_error_count, 24);
 }
 
 #[test]
@@ -881,6 +930,10 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
         "## Generation-fenced finalization preflight",
         "[`reconciliation_finalization.v1.json`](contracts/services_hardening/reconciliation_finalization.v1.json)",
         "Step 199 must rerun the same validator inside the final",
+        "## Canonical signed reconciliation attestation",
+        "[`reconciliation_attestation.v1.json`](contracts/services_hardening/reconciliation_attestation.v1.json)",
+        "The event body and exact kind-3441 structural tags",
+        "without rebuilding, reserializing, or",
         "Coverage is exactly `Missing`, `Partial`, `ScopeSatisfied`, or `Unsupported`",
         "Missing, partial, unsupported,",
         "The Step 192 integration-wave qualification proves that concurrent exact",

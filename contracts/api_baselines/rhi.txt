@@ -145,6 +145,17 @@ pub rhi::RhiReconciliationAttemptErrorKind::PolicyMismatch
 pub rhi::RhiReconciliationAttemptErrorKind::ResultInventory
 impl rhi::RhiReconciliationAttemptErrorKind
 pub const fn rhi::RhiReconciliationAttemptErrorKind::code(self) -> &'static str
+pub enum rhi::RhiReconciliationAttestationErrorKind
+pub rhi::RhiReconciliationAttestationErrorKind::EntropyUnavailable
+pub rhi::RhiReconciliationAttestationErrorKind::EventPlanInvalid
+pub rhi::RhiReconciliationAttestationErrorKind::IdentityMismatch
+pub rhi::RhiReconciliationAttestationErrorKind::InvalidInput
+pub rhi::RhiReconciliationAttestationErrorKind::ReportInvalid
+pub rhi::RhiReconciliationAttestationErrorKind::SigningFailed
+pub rhi::RhiReconciliationAttestationErrorKind::SupersessionInvalid
+pub rhi::RhiReconciliationAttestationErrorKind::VerificationFailed
+impl rhi::RhiReconciliationAttestationErrorKind
+pub const fn rhi::RhiReconciliationAttestationErrorKind::code(self) -> &'static str
 pub enum rhi::RhiReconciliationCommandV1
 pub rhi::RhiReconciliationCommandV1::Jobs
 pub rhi::RhiReconciliationCommandV1::Refresh
@@ -555,6 +566,11 @@ impl rhi::RhiEncryptedIdentityProvisioningMaterial
 pub fn rhi::RhiEncryptedIdentityProvisioningMaterial::new([u8; 32], [u8; 32], [u8; 24], [u8; 24]) -> core::result::Result<Self, rhi::RhiEncryptedIdentityEnvelopeError>
 impl core::fmt::Debug for rhi::RhiEncryptedIdentityProvisioningMaterial
 pub fn rhi::RhiEncryptedIdentityProvisioningMaterial::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiEvidenceAttestationSupersession
+impl rhi::RhiEvidenceAttestationSupersession
+pub fn rhi::RhiEvidenceAttestationSupersession::from_attestation(&rhi::RhiSignedEvidenceAttestation) -> Self
+impl core::fmt::Debug for rhi::RhiEvidenceAttestationSupersession
+pub fn rhi::RhiEvidenceAttestationSupersession::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiEvidenceManifestRepository<'host>
 impl rhi::RhiEvidenceManifestRepository<'_>
 pub const fn rhi::RhiEvidenceManifestRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
@@ -678,6 +694,15 @@ pub fn rhi::RhiReconciliationAttemptResults::new<I>(&rhi::RhiReconciliationAttem
 pub fn rhi::RhiReconciliationAttemptResults::results(&self) -> &[rhi::RhiReconciliationSourceResult]
 impl core::fmt::Debug for rhi::RhiReconciliationAttemptResults
 pub fn rhi::RhiReconciliationAttemptResults::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiReconciliationAttestationError
+impl rhi::RhiReconciliationAttestationError
+pub const fn rhi::RhiReconciliationAttestationError::code(self) -> &'static str
+pub const fn rhi::RhiReconciliationAttestationError::kind(self) -> rhi::RhiReconciliationAttestationErrorKind
+impl core::error::Error for rhi::RhiReconciliationAttestationError
+impl core::fmt::Debug for rhi::RhiReconciliationAttestationError
+pub fn rhi::RhiReconciliationAttestationError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiReconciliationAttestationError
+pub fn rhi::RhiReconciliationAttestationError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiReconciliationCommitError
 impl rhi::RhiReconciliationCommitError
 pub const fn rhi::RhiReconciliationCommitError::code(self) -> &'static str
@@ -1002,6 +1027,20 @@ pub const fn rhi::RhiSignedEventRepository<'_>::descriptor(&self) -> rhi::RhiSta
 pub const fn rhi::RhiSignedEventRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
 impl core::fmt::Debug for rhi::RhiSignedEventRepository<'_>
 pub fn rhi::RhiSignedEventRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiSignedEvidenceAttestation
+impl rhi::RhiSignedEvidenceAttestation
+pub fn rhi::RhiSignedEvidenceAttestation::canonical_report_bytes(&self) -> &[u8]
+pub const fn rhi::RhiSignedEvidenceAttestation::contract_version(&self) -> u32
+pub const fn rhi::RhiSignedEvidenceAttestation::coverage(&self) -> rhi::RhiReconciliationCoverage
+pub const fn rhi::RhiSignedEvidenceAttestation::created_at_unix_seconds(&self) -> u64
+pub const fn rhi::RhiSignedEvidenceAttestation::event_id(&self) -> &[u8; 32]
+pub const fn rhi::RhiSignedEvidenceAttestation::has_supersession(&self) -> bool
+pub const fn rhi::RhiSignedEvidenceAttestation::outcome(&self) -> rhi::RhiReconciliationOutcome
+pub fn rhi::RhiSignedEvidenceAttestation::signed_event_bytes(&self) -> &[u8]
+pub const fn rhi::RhiSignedEvidenceAttestation::signed_event_sha256(&self) -> &[u8; 32]
+pub fn rhi::RhiSignedEvidenceAttestation::statement_digest(&self) -> [u8; 32]
+impl core::fmt::Debug for rhi::RhiSignedEvidenceAttestation
+pub fn rhi::RhiSignedEvidenceAttestation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiSourceCompletionRepository<'host>
 impl rhi::RhiSourceCompletionRepository<'_>
 pub const fn rhi::RhiSourceCompletionRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
@@ -1299,6 +1338,7 @@ pub const rhi::RHI_MIGRATION_CATALOG_SHA256: [u8; 32]
 pub const rhi::RHI_PROVIDER_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_ATTEMPT_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_ATTEMPT_MAX_SOURCES: usize
+pub const rhi::RHI_RECONCILIATION_ATTESTATION_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_COMMIT_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_FINALIZATION_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_JOB_CONTRACT_VERSION: u32
@@ -1307,6 +1347,7 @@ pub const rhi::RHI_RECONCILIATION_MANIFEST_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_OUTCOME_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_REDUCER_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_REPLAY_CONTRACT_VERSION: u32
+pub const rhi::RHI_RECONCILIATION_SIGNED_ATTESTATION_MAX_BYTES: usize
 pub const rhi::RHI_RUNTIME_ADAPTER_CONTRACT_VERSION: u32
 pub const rhi::RHI_RUNTIME_FOUNDATION_CONTRACT_VERSION: u32
 pub const rhi::RHI_RUNTIME_JITTER_MAX_ENTROPY_DRAWS: usize
@@ -1358,6 +1399,7 @@ pub fn rhi::CanonicalRhiIdentityAccess::open_existing(&self, &rhi::RhiIdentityEn
 pub fn rhi::admit_rhi_trade_mutation_event(rhi::RhiTradeMutationAdmissionLimits, &[u8], rhi::RhiTradeMutationObservedAtUnixSeconds, rhi::RhiTradeMutationAuthoredTimePolicy) -> core::result::Result<rhi::RhiAdmittedTradeMutationEvent, rhi::RhiTradeMutationAdmissionError>
 pub async fn rhi::apply_rhi_configuration(&rhi::RhiRuntimeContext, &rhi::RhiConfigDocumentV1, &rhi::RhiConfigDocumentV1, radroots_service_sqlite::migration::MigrationAppliedAtUnixSeconds, &radroots_service_sqlite::migration::MigrationBuildIdentity) -> core::result::Result<rhi::RhiConfigApplyOutcome, rhi::RhiConfigApplyError>
 pub fn rhi::attest_projection_claim(&radroots_trade::trade_contract_v1::RadrootsTradeProjectionV1, &radroots_event::id::MutationId, &rhi::TradeAgreementAttestationPolicy) -> core::result::Result<rhi::TradeAgreementAttestationReportV1, rhi::TradeAgreementAttestationError>
+pub fn rhi::build_rhi_signed_evidence_attestation(rhi::RhiReconciliationFinalizationFence, &rhi::RhiDecryptedIdentity, radroots_service_host::time::UnixTimeSeconds, &dyn radroots_service_host::entropy::EntropySource, core::option::Option<rhi::RhiEvidenceAttestationSupersession>) -> core::result::Result<rhi::RhiSignedEvidenceAttestation, rhi::RhiReconciliationAttestationError>
 pub fn rhi::evaluate_rhi_reconciliation_claim(rhi::RhiReconciliationProjection, radroots_event::id::MutationId) -> rhi::RhiReconciliationEvaluation
 pub async fn rhi::finalize_rhi_state_restore(rhi::RhiStagedStateRestore) -> core::result::Result<(), rhi::RhiStateMaintenanceError>
 pub async fn rhi::ingest_rhi_trade_source(&rhi::RhiStateRepositories<'_>, &rhi::RhiTransportAdapters, &rhi::RhiConfigDocumentV1, &str, radroots_event::id::TradeId, rhi::RhiTradeSourceAttempt) -> core::result::Result<rhi::RhiTradeSourceIngestOutcome, rhi::RhiTradeSourceIngestError>

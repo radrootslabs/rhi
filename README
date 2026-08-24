@@ -295,6 +295,32 @@ no source, relay, network, filesystem, task, clock, or entropy operation. The
 exact machine contract is
 [`reconciliation_finalization.v1.json`](contracts/services_hardening/reconciliation_finalization.v1.json).
 
+## Canonical signed reconciliation attestation
+
+`build_rhi_signed_evidence_attestation` consumes one sealed Step 195
+finalization fence and derives the shared canonical RHI evidence report only
+from its immutable manifest, projection, evaluation, and claim identity. The
+report issuer is the independently verified encrypted service identity. The
+optional supersession reference can be derived only from an earlier sealed,
+verified signed-attestation result, and the shared ordering validator rejects
+stale or misbound successors.
+
+The event body and exact kind-3441 structural tags come only from the promoted
+typed `radroots_event_codec` builder. Authored time and the 32 bytes of Schnorr
+auxiliary randomness are injected explicitly. The boundary then independently
+reparses the bounded signed NIP-01 JSON, recomputes its event identifier,
+verifies its signature and exact plan fields, decodes the typed attestation,
+reparses the canonical report, and revalidates its exact manifest binding.
+
+The sealed result owns the finalization fence, canonical report, verified event
+identifier, exact signed bytes, and the SHA-256 of those bytes. Later
+persistence must retain those bytes without rebuilding, reserializing, or
+re-signing them. This checkpoint performs no SQLite, filesystem, relay,
+network, task, ambient-clock, or ambient-entropy operation. Schema-v7 storage,
+the generation-fenced final transaction, publication, and job finalization
+remain with Steps 198 and 199. The exact machine contract is
+[`reconciliation_attestation.v1.json`](contracts/services_hardening/reconciliation_attestation.v1.json).
+
 ## Existing-state runtime foundation
 
 `open_rhi_runtime_foundation` opens only an already initialized database from

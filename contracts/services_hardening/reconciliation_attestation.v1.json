@@ -1,0 +1,93 @@
+{
+  "schema": "radroots.rhi.reconciliation-attestation",
+  "schema_version": 1,
+  "contract_version": 1,
+  "purpose": "canonical_signed_evidence_attestation_from_one_generation_fenced_finalization_preflight",
+  "input": {
+    "fence_authority": "sealed_step_195_finalization_fence_consumed_and_retained",
+    "identity_authority": "independently_verified_governed_decrypted_service_identity",
+    "authored_time": "caller_injected_integer_utc_seconds",
+    "entropy": "exactly_32_injected_bytes_for_schnorr_auxiliary_randomness",
+    "supersession": "optional_reference_derived_only_from_one_prior_verified_RhiSignedEvidenceAttestation"
+  },
+  "report": {
+    "builder": "radroots_trade::evidence::RadrootsRhiEvidenceReportV1::new",
+    "contract_id": "radroots.rhi.evidence_attestation.v1",
+    "contract_version": 1,
+    "attestation_method": "signed_evidence_snapshot",
+    "issuer": "exact_verified_service_public_identity",
+    "trade_and_claim": "exact_sealed_evaluation_identity",
+    "projection_manifest_policy_observation_and_generation": "exact_sealed_evaluation_and_manifest_values",
+    "outcome_and_reasons": "exact_closed_RHI_evaluation_mapping",
+    "report_id": "domain_separated_statement_digest",
+    "maximum_canonical_bytes": 16384,
+    "canonical_encoding": "shared_radroots_trade_JCS_contract"
+  },
+  "event": {
+    "typed_body": "AuthoredEventBody::from_rhi_evidence_attestation",
+    "typed_plan": "AuthoredEventPlan::bind",
+    "kind": 3441,
+    "author": "exact_report_issuer",
+    "created_at": "exact_injected_authored_time",
+    "content": "exact_canonical_report_bytes",
+    "tags": "exact_typed_canonical_inventory_with_no_caller_extensions",
+    "signature": "BIP340_Schnorr_over_exact_planned_NIP01_event_id",
+    "maximum_signed_json_bytes": 32768
+  },
+  "conformance_vector": "contracts/conformance/vectors/reconciliation_attestation_signed_event.v1.json",
+  "independent_verification": [
+    "bounded_original_signed_JSON",
+    "strict_NIP01_wire_admission_with_no_extra_fields",
+    "event_id_recomputation",
+    "Schnorr_signature",
+    "exact_planned_event_id_author_created_at_kind_tags_and_content",
+    "typed_RHI_attestation_decode_and_structural_tag_binding",
+    "canonical_shared_report_reparse",
+    "exact_manifest_binding",
+    "complete_report_equality",
+    "governed_supersession_ordering_when_present"
+  ],
+  "result": {
+    "type": "RhiSignedEvidenceAttestation",
+    "sealed": true,
+    "clone": false,
+    "serialize": false,
+    "caller_forgeable": false,
+    "retains_finalization_fence": true,
+    "retains_canonical_report": true,
+    "retains_exact_signed_event_bytes": true,
+    "retains_signed_event_sha256": true,
+    "debug": "coverage_outcome_supersession_presence_and_byte_count_only",
+    "errors": "crate_owned_source_free_redacted"
+  },
+  "effects": {
+    "sqlite": false,
+    "filesystem": false,
+    "source_or_relay": false,
+    "network": false,
+    "task_spawn": false,
+    "ambient_clock": false,
+    "ambient_entropy": false,
+    "publication": false,
+    "job_finalization": false
+  },
+  "forbidden": [
+    "caller_supplied_report_fields",
+    "caller_supplied_event_kind_or_tags",
+    "ambient_randomness_or_time",
+    "unsigned_or_unverified_result",
+    "issuer_author_mismatch",
+    "report_manifest_mismatch",
+    "unbound_or_stale_supersession",
+    "rebuild_reserialize_or_resign_after_success",
+    "persistence_or_relay_submission"
+  ],
+  "deferred": [
+    "state_schema_v7_manifest_report_event_outbox_and_finalization_storage",
+    "atomic_generation_fenced_finalization_transaction",
+    "durable_target_snapshot_and_publication_attempt_state",
+    "relay_submission_and_recovery",
+    "job_finalization",
+    "integration_wave_qualification"
+  ]
+}

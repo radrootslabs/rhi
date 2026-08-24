@@ -181,6 +181,16 @@
 - Build and sign through typed governed APIs, then revalidate issuer/author,
   exact unsigned fields, event ID, signature, canonical report binding, and
   applicable Nostr semantics before persistence or publication.
+- Construct a signed reconciliation attestation only by consuming the sealed
+  finalization fence and the independently verified encrypted service identity.
+  Accept authored time and exactly 32 bytes of Schnorr auxiliary randomness
+  only through injected authorities. Retain the exact independently verified
+  signed JSON bytes and their SHA-256; never rebuild, reserialize, or re-sign
+  them after the boundary succeeds.
+- Accept an attestation supersession input only when it is derived from a prior
+  sealed verified RHI attestation, and rerun the shared report/event binding and
+  ordering validator before exposing the successor. This pure signing boundary
+  has no SQLite, filesystem, relay, network, task, or publication authority.
 - One generation-fenced transaction commits attempt/source results, immutable
   manifest/projection/report, supersession, exact serialized signed event
   bytes/digest, immutable target set and initial outbox when required, accepted

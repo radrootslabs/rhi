@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
-use nostr::{Keys, SecretKey};
+use nostr::{Event, Keys, SecretKey, UnsignedEvent};
 use radroots_runtime_paths::ServiceCredentialArtifactName;
 use radroots_secrets::context::{
     EnvelopeContext, EnvelopePurpose, EnvelopeSubject, PayloadSchemaId,
@@ -373,6 +373,48 @@ impl RhiDecryptedIdentity {
     #[must_use]
     pub fn public_identity(&self) -> &RhiExpectedPublicIdentity {
         &self.public_identity
+    }
+
+    pub(crate) fn sign_nostr_event(
+        &self,
+        unsigned: UnsignedEvent,
+        auxiliary: &[u8; 32],
+    ) -> Result<Event, ()> {
+        let secret_key = SecretKey::from_slice(&self.secret[..]).map_err(|_| ())?;
+        let signing = EphemeralSigningKey::new(secret_key);
+        let actual = nostr::PublicKey::from(
+            nostr::secp256k1::XOnlyPublicKey::from_keypair(&signing.keypair).0,
+        );
+        if actual.to_hex() != self.public_identity.as_hex() {
+            return Err(());
+        }
+        let event_id = unsigned.id.as_ref().ok_or(())?;
+        let message = nostr::secp256k1::Message::from_digest(event_id.to_bytes());
+        let signature =
+            nostr::SECP256K1.sign_schnorr_with_aux_rand(&message, &signing.keypair, auxiliary);
+        unsigned.add_signature(signature).map_err(|_| ())
+    }
+}
+
+struct EphemeralSigningKey {
+    secret_key: SecretKey,
+    keypair: nostr::secp256k1::Keypair,
+}
+
+impl EphemeralSigningKey {
+    fn new(secret_key: SecretKey) -> Self {
+        let keypair = nostr::secp256k1::Keypair::from_secret_key(nostr::SECP256K1, &secret_key);
+        Self {
+            secret_key,
+            keypair,
+        }
+    }
+}
+
+impl Drop for EphemeralSigningKey {
+    fn drop(&mut self) {
+        self.secret_key.non_secure_erase();
+        self.keypair.non_secure_erase();
     }
 }
 

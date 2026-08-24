@@ -3,28 +3,36 @@
 
 use std::{error::Error, fs, os::unix::fs::PermissionsExt, path::Path, time::Duration};
 
+use nostr::{Keys, SecretKey};
+use radroots_service_host::{EntropyError, EntropySource};
 use radroots_service_sqlite::{MigrationAppliedAtUnixSeconds, MigrationBuildIdentity};
 use radroots_storage::event::SourceGeneration;
 use rhi::{
-    RadrootsHostEnvironment, RadrootsPathResolver, RadrootsPlatform,
-    RhiReconciliationAttemptErrorKind, RhiReconciliationAttemptPlan,
-    RhiReconciliationAttemptResults, RhiReconciliationCommitErrorKind,
-    RhiReconciliationFinalizationErrorKind, RhiReconciliationJobErrorKind,
-    RhiReconciliationJobPolicy, RhiReconciliationJobState, RhiReconciliationLease,
-    RhiReconciliationLeaseOwner, RhiReconciliationRetryDelayMilliseconds,
+    RadrootsHostEnvironment, RadrootsPathResolver, RadrootsPlatform, RhiDecryptedIdentity,
+    RhiEncryptedIdentityProvisioningMaterial, RhiEvidenceAttestationSupersession,
+    RhiIdentityEnvelopeBinding, RhiReconciliationAttemptErrorKind, RhiReconciliationAttemptPlan,
+    RhiReconciliationAttemptResults, RhiReconciliationAttestationErrorKind,
+    RhiReconciliationCommitErrorKind, RhiReconciliationFinalizationErrorKind,
+    RhiReconciliationJobErrorKind, RhiReconciliationJobPolicy, RhiReconciliationJobState,
+    RhiReconciliationLease, RhiReconciliationLeaseOwner, RhiReconciliationRetryDelayMilliseconds,
     RhiReconciliationScopePrerequisites, RhiReconciliationSourceReplayPlan,
     RhiReconciliationSourceResult, RhiReconciliationUnixMilliseconds, RhiRuntimeContext,
     RhiStateMetadata, RhiTradeMutationAdmissionLimits, RhiTradeMutationAuthoredTimePolicy,
     RhiTradeMutationObservedAtUnixSeconds, RhiTradeSourceCompletion, TradeId, UnixTimeSeconds,
-    admit_rhi_trade_mutation_event, initialize_rhi_state, open_rhi_state_inspection,
-    open_rhi_state_read_write, parse_rhi_cli_v1_from, parse_rhi_config_v1,
-    reduce_rhi_reconciliation_manifest, resolve_rhi_runtime_context,
+    admit_rhi_trade_mutation_event, build_rhi_signed_evidence_attestation, initialize_rhi_state,
+    open_rhi_state_inspection, open_rhi_state_read_write, parse_rhi_cli_v1_from,
+    parse_rhi_config_v1, provision_rhi_encrypted_identity, reduce_rhi_reconciliation_manifest,
+    resolve_rhi_runtime_context, resolve_rhi_wrapping_credential,
 };
+use sha2::{Digest, Sha256};
 use sqlx::{Connection, SqliteConnection, sqlite::SqliteConnectOptions};
 
 const EXAMPLE: &str = include_str!("../contracts/services_hardening/config.v1.example.toml");
 const TRADE_VECTOR: &str =
     include_str!("../contracts/conformance/vectors/trade_ingest_proposal.v1.json");
+const SIGNED_ATTESTATION_VECTOR: &str = include_str!(
+    "../contracts/conformance/vectors/reconciliation_attestation_signed_event.v1.json"
+);
 
 fn runtime(root: &Path, instance: &str) -> RhiRuntimeContext {
     let invocation = parse_rhi_cli_v1_from([
@@ -1583,6 +1591,330 @@ async fn finalization_rejects_cross_attempt_relabelling_and_read_only_hosts() {
     drop((configuration, metadata, runtime, root));
 }
 
+struct FixedAttestationEntropy(u8);
+
+impl EntropySource for FixedAttestationEntropy {
+    fn fill_bytes(&self, destination: &mut [u8]) -> Result<(), EntropyError> {
+        destination.fill(self.0);
+        Ok(())
+    }
+}
+
+struct FailingAttestationEntropy;
+
+impl EntropySource for FailingAttestationEntropy {
+    fn fill_bytes(&self, _destination: &mut [u8]) -> Result<(), EntropyError> {
+        Err(EntropyError::Unavailable)
+    }
+}
+
+fn attestation_secret() -> [u8; 32] {
+    [1; 32]
+}
+
+fn attestation_configuration(runtime: &RhiRuntimeContext, expected_public_key: &str) -> String {
+    EXAMPLE
+        .replace(
+            "/var/lib/radroots/services/rhi/default/secrets/service.identity.ncrypt",
+            runtime
+                .identity_path()
+                .to_str()
+                .expect("UTF-8 identity path"),
+        )
+        .replace(&"2".repeat(64), expected_public_key)
+}
+
+fn provision_attestation_identity(
+    runtime: &RhiRuntimeContext,
+    configuration: &rhi::RhiConfigDocumentV1,
+    metadata: &RhiStateMetadata,
+) -> RhiDecryptedIdentity {
+    fs::create_dir_all(runtime.context().paths().secrets()).expect("secrets directory");
+    fs::set_permissions(
+        runtime.context().paths().secrets(),
+        fs::Permissions::from_mode(0o700),
+    )
+    .expect("secrets directory mode");
+    let credential_path = runtime
+        .context()
+        .paths()
+        .secrets()
+        .join("service_wrapping_key");
+    fs::write(&credential_path, [0x81; 32]).expect("wrapping credential");
+    fs::set_permissions(&credential_path, fs::Permissions::from_mode(0o600))
+        .expect("wrapping credential mode");
+    let binding = RhiIdentityEnvelopeBinding::from_configuration(configuration, metadata)
+        .expect("identity binding");
+    let credential =
+        resolve_rhi_wrapping_credential(runtime, &binding).expect("wrapping credential open");
+    provision_rhi_encrypted_identity(
+        &binding,
+        &credential,
+        RhiEncryptedIdentityProvisioningMaterial::new(
+            attestation_secret(),
+            [0x42; 32],
+            [0x43; 24],
+            [0x44; 24],
+        )
+        .expect("provisioning material"),
+    )
+    .expect("identity provisioning")
+}
+
+#[tokio::test]
+async fn signed_attestation_is_canonical_exact_verified_and_nonmutating() {
+    let expected_public_key =
+        Keys::new(SecretKey::from_slice(&attestation_secret()).expect("identity secret"))
+            .public_key()
+            .to_hex();
+    let (root, runtime, metadata, configuration, host, lease, evaluation) =
+        finalization_fixture_with_source("attestation-exact", |runtime| {
+            attestation_configuration(runtime, &expected_public_key)
+        })
+        .await;
+    let identity = provision_attestation_identity(&runtime, &configuration, &metadata);
+    let before = finalization_snapshot(&runtime).await;
+    let fence = host
+        .repositories()
+        .reconciliation_attempts()
+        .prepare_finalization(lease, evaluation, now(1_784_347_206_000))
+        .await
+        .expect("finalization fence");
+    let signed = build_rhi_signed_evidence_attestation(
+        fence,
+        &identity,
+        UnixTimeSeconds::new(1_784_347_207),
+        &FixedAttestationEntropy(0xa5),
+        None,
+    )
+    .expect("signed attestation");
+
+    assert_eq!(signed.contract_version(), 1);
+    assert_eq!(signed.created_at_unix_seconds(), 1_784_347_207);
+    assert!(!signed.has_supersession());
+    assert!(!signed.signed_event_bytes().is_empty());
+    assert!(signed.signed_event_bytes().len() <= 32 * 1_024);
+    assert_eq!(
+        signed.signed_event_sha256(),
+        &<[u8; 32]>::from(Sha256::digest(signed.signed_event_bytes()))
+    );
+    let event: serde_json::Value =
+        serde_json::from_slice(signed.signed_event_bytes()).expect("signed event JSON");
+    assert_eq!(
+        signed.signed_event_bytes(),
+        SIGNED_ATTESTATION_VECTOR.trim_end().as_bytes()
+    );
+    assert_eq!(event["id"], lower_hex(signed.event_id()));
+    assert_eq!(event["pubkey"], expected_public_key);
+    assert_eq!(event["created_at"], 1_784_347_207_u64);
+    assert_eq!(event["kind"], 3_441);
+    assert_eq!(event["tags"].as_array().expect("tags").len(), 5);
+    assert_eq!(
+        event["content"].as_str().expect("content").as_bytes(),
+        signed.canonical_report_bytes()
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(signed.canonical_report_bytes()).expect("canonical report");
+    assert_eq!(report["issuer_pubkey"], expected_public_key);
+    assert_eq!(report["trade_generation"], 2);
+    assert_eq!(report["report_id"], lower_hex(&signed.statement_digest()));
+    assert_eq!(report["statement_digest"], report["report_id"]);
+    assert!(report["supersedes_report_id"].is_null());
+    assert!(report["supersedes_event_id"].is_null());
+    let rendered = format!("{signed:?}");
+    assert!(!rendered.contains(&lower_hex(signed.event_id())));
+    assert!(!rendered.contains(&lower_hex(&signed.statement_digest())));
+    assert!(!rendered.contains(&expected_public_key));
+    assert_eq!(finalization_snapshot(&runtime).await, before);
+
+    let supersession = RhiEvidenceAttestationSupersession::from_attestation(&signed);
+    assert_eq!(
+        format!("{supersession:?}"),
+        "RhiEvidenceAttestationSupersession([redacted])"
+    );
+    host.close().await.expect("close");
+    drop((
+        supersession,
+        signed,
+        identity,
+        configuration,
+        metadata,
+        runtime,
+        root,
+    ));
+}
+
+#[tokio::test]
+async fn signed_attestation_fails_closed_when_injected_entropy_is_unavailable() {
+    let expected_public_key =
+        Keys::new(SecretKey::from_slice(&attestation_secret()).expect("identity secret"))
+            .public_key()
+            .to_hex();
+    let (root, runtime, metadata, configuration, host, lease, evaluation) =
+        finalization_fixture_with_source("attestation-entropy", |runtime| {
+            attestation_configuration(runtime, &expected_public_key)
+        })
+        .await;
+    let identity = provision_attestation_identity(&runtime, &configuration, &metadata);
+    let before = finalization_snapshot(&runtime).await;
+    let fence = host
+        .repositories()
+        .reconciliation_attempts()
+        .prepare_finalization(lease, evaluation, now(1_784_347_206_000))
+        .await
+        .expect("finalization fence");
+    let error = build_rhi_signed_evidence_attestation(
+        fence,
+        &identity,
+        UnixTimeSeconds::new(1_784_347_207),
+        &FailingAttestationEntropy,
+        None,
+    )
+    .expect_err("entropy failure");
+    assert_eq!(
+        error.kind(),
+        RhiReconciliationAttestationErrorKind::EntropyUnavailable
+    );
+    assert_eq!(
+        error.code(),
+        "reconciliation_attestation_entropy_unavailable"
+    );
+    assert!(Error::source(&error).is_none());
+    assert!(!format!("{error} {error:?}").contains(&expected_public_key));
+    assert_eq!(finalization_snapshot(&runtime).await, before);
+    host.close().await.expect("close");
+    drop((identity, configuration, metadata, runtime, root));
+}
+
+#[tokio::test]
+async fn signed_attestation_supersession_is_verified_ordered_and_explicit() {
+    let expected_public_key =
+        Keys::new(SecretKey::from_slice(&attestation_secret()).expect("identity secret"))
+            .public_key()
+            .to_hex();
+    let (
+        prior_root,
+        prior_runtime,
+        prior_metadata,
+        prior_config,
+        prior_host,
+        prior_lease,
+        prior_eval,
+    ) = finalization_fixture_with_source_and_generation("attestation-prior", 1, |runtime| {
+        attestation_configuration(runtime, &expected_public_key)
+    })
+    .await;
+    let prior_identity =
+        provision_attestation_identity(&prior_runtime, &prior_config, &prior_metadata);
+    let prior_fence = prior_host
+        .repositories()
+        .reconciliation_attempts()
+        .prepare_finalization(prior_lease, prior_eval, now(1_784_347_206_000))
+        .await
+        .expect("prior fence");
+    let prior = build_rhi_signed_evidence_attestation(
+        prior_fence,
+        &prior_identity,
+        UnixTimeSeconds::new(1_784_347_207),
+        &FixedAttestationEntropy(0xa6),
+        None,
+    )
+    .expect("prior attestation");
+
+    let (next_root, next_runtime, next_metadata, next_config, next_host, next_lease, next_eval) =
+        finalization_fixture_with_source_and_generation("attestation-next", 2, |runtime| {
+            attestation_configuration(runtime, &expected_public_key)
+        })
+        .await;
+    let next_identity = provision_attestation_identity(&next_runtime, &next_config, &next_metadata);
+    let next_fence = next_host
+        .repositories()
+        .reconciliation_attempts()
+        .prepare_finalization(next_lease, next_eval, now(1_784_347_206_000))
+        .await
+        .expect("next fence");
+    let next = build_rhi_signed_evidence_attestation(
+        next_fence,
+        &next_identity,
+        UnixTimeSeconds::new(1_784_347_208),
+        &FixedAttestationEntropy(0xa7),
+        Some(RhiEvidenceAttestationSupersession::from_attestation(&prior)),
+    )
+    .expect("superseding attestation");
+    assert!(next.has_supersession());
+    let next_event: serde_json::Value =
+        serde_json::from_slice(next.signed_event_bytes()).expect("next event");
+    assert_eq!(next_event["tags"].as_array().expect("next tags").len(), 7);
+    let next_report: serde_json::Value =
+        serde_json::from_slice(next.canonical_report_bytes()).expect("next report");
+    assert_eq!(
+        next_report["supersedes_report_id"],
+        lower_hex(&prior.statement_digest())
+    );
+    assert_eq!(
+        next_report["supersedes_event_id"],
+        lower_hex(prior.event_id())
+    );
+    assert_eq!(next_report["trade_generation"], 3);
+
+    let (
+        stale_root,
+        stale_runtime,
+        stale_metadata,
+        stale_config,
+        stale_host,
+        stale_lease,
+        stale_eval,
+    ) = finalization_fixture_with_source_and_generation("attestation-stale", 1, |runtime| {
+        attestation_configuration(runtime, &expected_public_key)
+    })
+    .await;
+    let stale_identity =
+        provision_attestation_identity(&stale_runtime, &stale_config, &stale_metadata);
+    let stale_fence = stale_host
+        .repositories()
+        .reconciliation_attempts()
+        .prepare_finalization(stale_lease, stale_eval, now(1_784_347_206_000))
+        .await
+        .expect("stale fence");
+    let error = build_rhi_signed_evidence_attestation(
+        stale_fence,
+        &stale_identity,
+        UnixTimeSeconds::new(1_784_347_209),
+        &FixedAttestationEntropy(0xa8),
+        Some(RhiEvidenceAttestationSupersession::from_attestation(&next)),
+    )
+    .expect_err("older generation cannot supersede");
+    assert_eq!(
+        error.kind(),
+        RhiReconciliationAttestationErrorKind::SupersessionInvalid
+    );
+    assert!(Error::source(&error).is_none());
+
+    prior_host.close().await.expect("prior close");
+    next_host.close().await.expect("next close");
+    stale_host.close().await.expect("stale close");
+    drop((
+        prior,
+        next,
+        prior_identity,
+        next_identity,
+        stale_identity,
+        prior_config,
+        next_config,
+        stale_config,
+        prior_metadata,
+        next_metadata,
+        stale_metadata,
+        prior_runtime,
+        next_runtime,
+        stale_runtime,
+        prior_root,
+        next_root,
+        stale_root,
+    ));
+}
+
 async fn fixture_connection(runtime: &RhiRuntimeContext) -> SqliteConnection {
     let options = SqliteConnectOptions::new()
         .filename(runtime.artifacts().state_database())
@@ -1629,9 +1961,47 @@ async fn finalization_fixture(
     RhiReconciliationLease,
     rhi::RhiReconciliationEvaluation,
 ) {
+    finalization_fixture_with_source(instance, |_| EXAMPLE.to_owned()).await
+}
+
+async fn finalization_fixture_with_source<F>(
+    instance: &str,
+    source: F,
+) -> (
+    tempfile::TempDir,
+    RhiRuntimeContext,
+    RhiStateMetadata,
+    rhi::RhiConfigDocumentV1,
+    rhi::RhiStateHost,
+    RhiReconciliationLease,
+    rhi::RhiReconciliationEvaluation,
+)
+where
+    F: FnOnce(&RhiRuntimeContext) -> String,
+{
+    finalization_fixture_with_source_and_generation(instance, 1, source).await
+}
+
+async fn finalization_fixture_with_source_and_generation<F>(
+    instance: &str,
+    initial_generation: u64,
+    source: F,
+) -> (
+    tempfile::TempDir,
+    RhiRuntimeContext,
+    RhiStateMetadata,
+    rhi::RhiConfigDocumentV1,
+    rhi::RhiStateHost,
+    RhiReconciliationLease,
+    rhi::RhiReconciliationEvaluation,
+)
+where
+    F: FnOnce(&RhiRuntimeContext) -> String,
+{
     let started_ms = 1_784_347_200_000;
     let (root, runtime, metadata, configuration, host, first_lease, first_plan) =
-        replay_fixture(instance, EXAMPLE, started_ms).await;
+        replay_fixture_with_source_and_generation(instance, started_ms, initial_generation, source)
+            .await;
     let wire = replay_wire();
     let first_request = &first_plan.requests()[0];
     let first_replay = RhiReconciliationSourceReplayPlan::from_request(
@@ -1668,7 +2038,7 @@ async fn finalization_fixture(
         )
         .await
         .expect("schedule final generation");
-    assert_eq!(scheduled.job().input_generation(), 2);
+    assert_eq!(scheduled.job().input_generation(), initial_generation + 1);
     let lease = jobs
         .claim_next(owner(0x92), now(started_ms + 3_000))
         .await
@@ -1706,7 +2076,7 @@ async fn finalization_fixture(
             RhiReconciliationScopePrerequisites::Satisfied,
         )
         .expect("final manifest");
-    assert_eq!(manifest.trade_generation(), 2);
+    assert_eq!(manifest.trade_generation(), initial_generation + 1);
     let projection = reduce_rhi_reconciliation_manifest(manifest).expect("final projection");
     let claim = *projection.root_mutation_id().expect("root claim");
     let evaluation = rhi::evaluate_rhi_reconciliation_claim(projection, claim);
@@ -1774,8 +2144,48 @@ async fn replay_fixture(
     RhiReconciliationLease,
     RhiReconciliationAttemptPlan,
 ) {
+    replay_fixture_with_source(instance, started_ms, |_| source.to_owned()).await
+}
+
+async fn replay_fixture_with_source<F>(
+    instance: &str,
+    started_ms: u64,
+    source: F,
+) -> (
+    tempfile::TempDir,
+    RhiRuntimeContext,
+    RhiStateMetadata,
+    rhi::RhiConfigDocumentV1,
+    rhi::RhiStateHost,
+    RhiReconciliationLease,
+    RhiReconciliationAttemptPlan,
+)
+where
+    F: FnOnce(&RhiRuntimeContext) -> String,
+{
+    replay_fixture_with_source_and_generation(instance, started_ms, 1, source).await
+}
+
+async fn replay_fixture_with_source_and_generation<F>(
+    instance: &str,
+    started_ms: u64,
+    initial_generation: u64,
+    source: F,
+) -> (
+    tempfile::TempDir,
+    RhiRuntimeContext,
+    RhiStateMetadata,
+    rhi::RhiConfigDocumentV1,
+    rhi::RhiStateHost,
+    RhiReconciliationLease,
+    RhiReconciliationAttemptPlan,
+)
+where
+    F: FnOnce(&RhiRuntimeContext) -> String,
+{
     let root = tempfile::tempdir().expect("root");
     let runtime = runtime(root.path(), instance);
+    let source = source(&runtime);
     let configuration = parse_rhi_config_v1(source.as_bytes(), rhi::RhiConfigProfile::RepoLocal)
         .expect("configuration");
     let metadata = metadata_from_config(&runtime, &configuration);
@@ -1784,7 +2194,7 @@ async fn replay_fixture(
     write_dirty(
         &runtime,
         trade,
-        1,
+        initial_generation,
         *metadata.evidence_policy_digest().as_bytes(),
         started_ms / 1_000,
     )

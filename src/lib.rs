@@ -9,6 +9,7 @@ mod features;
 mod identity_credential;
 mod identity_envelope;
 mod reconciliation_attempt;
+mod reconciliation_attestation;
 mod reconciliation_commit;
 mod reconciliation_finalization;
 mod reconciliation_job;
@@ -79,6 +80,12 @@ pub use reconciliation_attempt::{
     RhiReconciliationAttemptPlan, RhiReconciliationAttemptResults, RhiReconciliationSourceRequest,
     RhiReconciliationSourceRequestId, RhiReconciliationSourceResult,
     RhiReconciliationSourceSelectorDigest,
+};
+pub use reconciliation_attestation::{
+    RHI_RECONCILIATION_ATTESTATION_CONTRACT_VERSION,
+    RHI_RECONCILIATION_SIGNED_ATTESTATION_MAX_BYTES, RhiEvidenceAttestationSupersession,
+    RhiReconciliationAttestationError, RhiReconciliationAttestationErrorKind,
+    RhiSignedEvidenceAttestation, build_rhi_signed_evidence_attestation,
 };
 pub use reconciliation_commit::{
     RHI_RECONCILIATION_COMMIT_CONTRACT_VERSION, RhiReconciliationCommitError,
