@@ -1,0 +1,63 @@
+{
+  "schema": "radroots.rhi.publication-submission",
+  "schema_version": 1,
+  "contract_version": 1,
+  "source": {
+    "authority": "immutable_schema_v7_publication_outbox_joined_to_signed_attestation_event",
+    "read": "one_bounded_read_only_sqlx_transaction",
+    "maximum_signed_event_bytes": 32768,
+    "required_bindings": [
+      "requested_outbox_id",
+      "outbox_event_id_equals_event_id",
+      "outbox_event_sha256_equals_event_sha256",
+      "sha256_exact_stored_bytes_equals_event_sha256"
+    ]
+  },
+  "sealed_capability": {
+    "type": "RhiCommittedPublication",
+    "forgeable": false,
+    "cloneable": false,
+    "serializable": false,
+    "debug": "redacted",
+    "relay_claim_or_lease": false,
+    "payload_accessor": "exact_signed_event_bytes"
+  },
+  "retry_and_recovery": {
+    "input": "same_committed_outbox_identity",
+    "payload": "same_stored_exact_signed_event_bytes",
+    "close_reopen_changes_payload": false,
+    "parse_event": false,
+    "rebuild_event": false,
+    "reserialize_event": false,
+    "resign_event": false
+  },
+  "effects": {
+    "sqlite_read": true,
+    "sqlite_mutation": false,
+    "relay_or_network": false,
+    "filesystem": false,
+    "task_spawn": false,
+    "ambient_clock": false,
+    "ambient_entropy": false
+  },
+  "deferred": [
+    "publication_claim",
+    "target_state_transition",
+    "attempt_evidence",
+    "relay_submission",
+    "backoff",
+    "lease_recovery",
+    "runtime_worker"
+  ],
+  "forbidden": [
+    "caller_forged_committed_publication",
+    "unbounded_blob_decode",
+    "json_or_event_deserialization",
+    "event_rebuild",
+    "event_reserialization",
+    "event_resigning",
+    "raw_sqlite_handle",
+    "relay_io",
+    "hidden_retry_loop"
+  ]
+}

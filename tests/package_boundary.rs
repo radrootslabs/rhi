@@ -14,6 +14,9 @@ const RUNTIME_FOUNDATION: &str = include_str!("../src/runtime_foundation.rs");
 const PUBLICATION: &str = include_str!("../src/publication.rs");
 const PUBLICATION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/publication_outbox.v1.json");
+const PUBLICATION_SUBMISSION: &str = include_str!("../src/publication_submission.rs");
+const PUBLICATION_SUBMISSION_CONTRACT: &str =
+    include_str!("../contracts/services_hardening/publication_submission.v1.json");
 const RECONCILIATION_ATTEMPTS: &str = include_str!("../src/reconciliation_attempt.rs");
 const RECONCILIATION_COMMIT: &str = include_str!("../src/reconciliation_commit.rs");
 const RECONCILIATION_ATTESTATION: &str = include_str!("../src/reconciliation_attestation.rs");
@@ -59,6 +62,7 @@ const SOURCES: &[&str] = &[
     include_str!("../src/identity_credential.rs"),
     include_str!("../src/identity_envelope.rs"),
     include_str!("../src/publication.rs"),
+    include_str!("../src/publication_submission.rs"),
     include_str!("../src/reconciliation_attempt.rs"),
     include_str!("../src/reconciliation_attestation.rs"),
     include_str!("../src/reconciliation_commit.rs"),
@@ -135,6 +139,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "identity_credential",
         "identity_envelope",
         "publication",
+        "publication_submission",
         "reconciliation_attempt",
         "reconciliation_attestation",
         "reconciliation_commit",
@@ -185,6 +190,10 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
         "RhiPublicationRetryPolicy",
         "RhiPublicationTarget",
         "RHI_PUBLICATION_CONTRACT_VERSION",
+        "RhiCommittedPublication",
+        "RhiPublicationOutboxId",
+        "RhiPublicationSubmissionErrorKind",
+        "RHI_PUBLICATION_SUBMISSION_CONTRACT_VERSION",
         "RhiReconciliationAttemptPlan",
         "RhiReconciliationSourceRequest",
         "RhiReconciliationSourceResult",
@@ -271,6 +280,7 @@ fn state_catalog_module_is_private_and_root_api_is_curated() {
     assert!(!PUBLIC_API.contains("rhi::features::"));
     assert!(!PUBLIC_API.contains("rhi::runtime_adapters::"));
     assert!(!PUBLIC_API.contains("rhi::publication::"));
+    assert!(!PUBLIC_API.contains("rhi::publication_submission::"));
 }
 
 #[test]
@@ -308,6 +318,47 @@ fn publication_authority_is_config_derived_sealed_and_effect_free() {
             "publication authority gained forbidden effect {forbidden}"
         );
     }
+}
+
+#[test]
+fn committed_publication_is_bounded_exact_and_never_reconstructed() {
+    let contract: serde_json::Value = serde_json::from_str(PUBLICATION_SUBMISSION_CONTRACT)
+        .expect("publication-submission contract");
+    assert_eq!(contract["schema"], "radroots.rhi.publication-submission");
+    assert_eq!(contract["contract_version"], 1);
+    assert_eq!(contract["source"]["maximum_signed_event_bytes"], 32_768);
+    assert_eq!(contract["retry_and_recovery"]["parse_event"], false);
+    assert_eq!(contract["retry_and_recovery"]["reserialize_event"], false);
+    assert_eq!(contract["retry_and_recovery"]["resign_event"], false);
+    for required in [
+        "pub async fn read_committed_publication(",
+        "READ_COMMITTED_PUBLICATION_SQL",
+        "length(event.canonical_event_json) BETWEEN 1 AND 32768",
+        "Sha256::digest(&exact_signed_event_bytes)",
+        "pub const fn exact_signed_event_bytes(&self) -> &[u8]",
+    ] {
+        assert!(
+            PUBLICATION_SUBMISSION.contains(required),
+            "committed publication is missing {required}"
+        );
+    }
+    for forbidden in [
+        "serde_json",
+        "Nip01EventWire",
+        "SignedEvent",
+        "sign_nostr_event",
+        "EventSink",
+        "std::net",
+        "tokio::spawn",
+        "SystemTime",
+    ] {
+        assert!(
+            !PUBLICATION_SUBMISSION.contains(forbidden),
+            "committed publication gained reconstruction or I/O authority {forbidden}"
+        );
+    }
+    assert!(!ROOT.contains("pub mod publication_submission"));
+    assert!(!PUBLIC_API.contains("rhi::publication_submission::"));
 }
 
 #[test]
@@ -597,7 +648,7 @@ fn public_errors_are_crate_owned_redacted_and_source_free() {
         .lines()
         .filter(|line| line.starts_with("pub struct rhi::") && line.ends_with("Error"))
         .count();
-    assert_eq!(public_error_count, 26);
+    assert_eq!(public_error_count, 27);
 }
 
 #[test]

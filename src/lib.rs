@@ -9,6 +9,7 @@ mod features;
 mod identity_credential;
 mod identity_envelope;
 mod publication;
+mod publication_submission;
 mod reconciliation_attempt;
 mod reconciliation_attestation;
 mod reconciliation_commit;
@@ -70,6 +71,10 @@ pub use publication::{
     RHI_PUBLICATION_CONTRACT_VERSION, RHI_PUBLICATION_MAX_ATTEMPTS, RHI_PUBLICATION_MAX_TARGETS,
     RhiPublicationAuthority, RhiPublicationError, RhiPublicationErrorKind, RhiPublicationMode,
     RhiPublicationRetryPolicy, RhiPublicationTarget,
+};
+pub use publication_submission::{
+    RHI_PUBLICATION_SUBMISSION_CONTRACT_VERSION, RhiCommittedPublication, RhiPublicationOutboxId,
+    RhiPublicationSubmissionError, RhiPublicationSubmissionErrorKind,
 };
 pub use radroots_event::id::TradeId;
 pub use radroots_runtime_paths::{

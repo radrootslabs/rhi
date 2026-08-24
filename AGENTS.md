@@ -287,6 +287,11 @@
   compare-and-swap state. Step 198 defines this catalog and performs no SQLite
   mutation or relay I/O; later publication steps must use only the committed
   exact signed bytes and may never rebuild, reserialize, or re-sign them.
+  Read retry/recovery payloads only through the sealed committed-publication
+  capability joined from the immutable outbox and signed-event rows. Recheck
+  the bounded stored-byte digest on every read, including after reopen. The
+  capability is not claim authority; later relay execution must borrow its
+  exact byte slice without parsing or reconstruction.
 - Commit one exact reconciliation-attempt replay inventory only through the
   typed attempt repository. Revalidate the exact live lease, dirty generation,
   evidence policy, and every scoped prior checkpoint before mutation; persist

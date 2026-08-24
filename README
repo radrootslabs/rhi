@@ -365,6 +365,23 @@ or ambient entropy read. Publication claims and relay submission remain later
 steps. The exact machine contract is
 [`reconciliation_finalization_commit.v1.json`](contracts/services_hardening/reconciliation_finalization_commit.v1.json).
 
+## Exact committed publication bytes
+
+`RhiPublicationOutboxRepository::read_committed_publication` joins one immutable
+schema-v7 outbox to its signed-attestation row in one bounded read-only SQLx
+transaction. It admits at most 32,768 stored bytes, rechecks the exact outbox,
+event-identifier, and SHA-256 bindings, and returns a sealed
+`RhiCommittedPublication`. Repeated reads and reads after a clean close/reopen
+return the same committed byte string or fail closed.
+
+The capability is not a relay claim or lease. Its only payload accessor returns
+the stored bytes unchanged; this path contains no JSON or event parsing,
+rebuilding, reserialization, signing, relay/network/filesystem work, task
+spawn, or ambient clock/entropy access. Target states, attempt evidence, relay
+I/O, retry scheduling, and lease recovery remain with Steps 201-202. The exact
+machine contract is
+[`publication_submission.v1.json`](contracts/services_hardening/publication_submission.v1.json).
+
 ## Existing-state runtime foundation
 
 `open_rhi_runtime_foundation` opens only an already initialized database from

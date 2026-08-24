@@ -13,9 +13,9 @@ use radroots_trade::evidence::{
 use sha2::{Digest, Sha256};
 
 use crate::{
-    RhiPublicationAuthority, RhiPublicationMode, RhiReconciliationAttemptRepository,
-    RhiReconciliationLease, RhiReconciliationOutcome, RhiReconciliationUnixMilliseconds,
-    RhiSignedEvidenceAttestation, RhiStateHostMode,
+    RhiPublicationAuthority, RhiPublicationMode, RhiPublicationOutboxId,
+    RhiReconciliationAttemptRepository, RhiReconciliationLease, RhiReconciliationOutcome,
+    RhiReconciliationUnixMilliseconds, RhiSignedEvidenceAttestation, RhiStateHostMode,
     reconciliation_finalization::{FinalizationIdentity, validate_finalization_identity},
 };
 
@@ -164,6 +164,7 @@ pub struct RhiReconciliationFinalizationCommitOutcome {
     created: bool,
     publication_mode: RhiPublicationMode,
     target_count: u8,
+    outbox_id: Option<RhiPublicationOutboxId>,
 }
 
 impl RhiReconciliationFinalizationCommitOutcome {
@@ -184,6 +185,12 @@ impl RhiReconciliationFinalizationCommitOutcome {
     pub const fn target_count(self) -> u8 {
         self.target_count
     }
+
+    /// Returns the immutable outbox identity when publication is required.
+    #[must_use]
+    pub const fn outbox_id(self) -> Option<RhiPublicationOutboxId> {
+        self.outbox_id
+    }
 }
 
 impl fmt::Debug for RhiReconciliationFinalizationCommitOutcome {
@@ -193,6 +200,7 @@ impl fmt::Debug for RhiReconciliationFinalizationCommitOutcome {
             .field("created", &self.created)
             .field("publication_mode", &self.publication_mode)
             .field("target_count", &self.target_count)
+            .field("outbox_id", &self.outbox_id.map(|_| "[redacted]"))
             .finish()
     }
 }
@@ -413,16 +421,21 @@ impl FinalizationRecord {
     }
 
     fn outcome(&self, created: bool) -> RhiReconciliationFinalizationCommitOutcome {
-        let (publication_mode, target_count) = match &self.publication {
-            FinalizationPublication::Disabled => (RhiPublicationMode::Disabled, 0),
-            FinalizationPublication::Required(required) => {
-                (RhiPublicationMode::Required, required.target_count)
-            }
+        let (publication_mode, target_count, outbox_id) = match &self.publication {
+            FinalizationPublication::Disabled => (RhiPublicationMode::Disabled, 0, None),
+            FinalizationPublication::Required(required) => (
+                RhiPublicationMode::Required,
+                required.target_count,
+                Some(RhiPublicationOutboxId::from_committed_bytes(
+                    required.outbox_id,
+                )),
+            ),
         };
         RhiReconciliationFinalizationCommitOutcome {
             created,
             publication_mode,
             target_count,
+            outbox_id,
         }
     }
 }

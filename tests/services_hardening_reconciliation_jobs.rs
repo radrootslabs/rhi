@@ -1940,6 +1940,22 @@ async fn atomic_finalization_commits_exact_required_inventory_and_reconciles_ret
     assert!(first.created());
     assert_eq!(first.publication_mode(), RhiPublicationMode::Required);
     assert_eq!(first.target_count(), 2);
+    let outbox_id = first.outbox_id().expect("required outbox identity");
+    let committed = repositories
+        .publication_outbox()
+        .read_committed_publication(outbox_id)
+        .await
+        .expect("committed exact publication");
+    assert_eq!(committed.outbox_id(), outbox_id);
+    assert_eq!(committed.event_id(), signed.event_id());
+    assert_eq!(committed.event_sha256(), signed.signed_event_sha256());
+    assert_eq!(
+        committed.exact_signed_event_bytes(),
+        signed.signed_event_bytes()
+    );
+    let committed_debug = format!("{committed:?} {outbox_id:?}");
+    assert!(!committed_debug.contains("relay-primary"));
+    assert!(!committed_debug.contains("{\"id\""));
 
     let mut progressed = fixture_connection(&runtime).await;
     let checkpoint = sqlx::query(
@@ -1963,6 +1979,7 @@ SET cursor_created_at_unix_s = cursor_created_at_unix_s + 1,
     assert!(!retry.created());
     assert_eq!(retry.publication_mode(), RhiPublicationMode::Required);
     assert_eq!(retry.target_count(), 2);
+    assert_eq!(retry.outbox_id(), Some(outbox_id));
 
     let mut connection = fixture_connection(&runtime).await;
     let counts: (i64, i64, i64, i64, i64, i64, i64) = sqlx::query_as(
@@ -1999,7 +2016,23 @@ JOIN publication_outbox AS outbox ON outbox.event_id = event.event_id"#,
     assert_eq!(exact.4, 2);
     connection.close().await.expect("fixture close");
 
+    let exact_signed_event_bytes = signed.signed_event_bytes().to_vec();
     host.close().await.expect("host close");
+    let inspection = open_rhi_state_inspection(&runtime, &metadata)
+        .await
+        .expect("reopened inspection");
+    let recovered = inspection
+        .repositories()
+        .publication_outbox()
+        .read_committed_publication(outbox_id)
+        .await
+        .expect("recovered exact publication");
+    assert_eq!(
+        recovered.exact_signed_event_bytes(),
+        exact_signed_event_bytes
+    );
+    assert_eq!(recovered.event_sha256(), signed.signed_event_sha256());
+    inspection.close().await.expect("inspection close");
     drop((
         signed,
         publication,
@@ -2034,6 +2067,7 @@ async fn atomic_finalization_disabled_mode_creates_no_publication_rows() {
     assert!(outcome.created());
     assert_eq!(outcome.publication_mode(), RhiPublicationMode::Disabled);
     assert_eq!(outcome.target_count(), 0);
+    assert_eq!(outcome.outbox_id(), None);
     let mut connection = fixture_connection(&runtime).await;
     let counts: (i64, i64, i64) = sqlx::query_as(
         r#"SELECT

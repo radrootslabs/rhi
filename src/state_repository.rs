@@ -473,6 +473,12 @@ impl<'host> RhiReconciliationAttemptRepository<'host> {
     }
 }
 
+impl<'host> RhiPublicationOutboxRepository<'host> {
+    pub(crate) const fn host(&self) -> &'host RhiStateHost {
+        self.host
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

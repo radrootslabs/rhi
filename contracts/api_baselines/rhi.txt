@@ -147,6 +147,12 @@ pub rhi::RhiPublicationMode::Disabled
 pub rhi::RhiPublicationMode::Required
 impl rhi::RhiPublicationMode
 pub const fn rhi::RhiPublicationMode::code(self) -> &'static str
+pub enum rhi::RhiPublicationSubmissionErrorKind
+pub rhi::RhiPublicationSubmissionErrorKind::Binding
+pub rhi::RhiPublicationSubmissionErrorKind::NotFound
+pub rhi::RhiPublicationSubmissionErrorKind::Storage
+impl rhi::RhiPublicationSubmissionErrorKind
+pub const fn rhi::RhiPublicationSubmissionErrorKind::code(self) -> &'static str
 pub enum rhi::RhiReconciliationAttemptErrorKind
 pub rhi::RhiReconciliationAttemptErrorKind::InvalidConfiguration
 pub rhi::RhiReconciliationAttemptErrorKind::InvalidInput
@@ -508,6 +514,14 @@ impl core::fmt::Debug for rhi::RhiCliV1Error
 pub fn rhi::RhiCliV1Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for rhi::RhiCliV1Error
 pub fn rhi::RhiCliV1Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiCommittedPublication
+impl rhi::RhiCommittedPublication
+pub const fn rhi::RhiCommittedPublication::event_id(&self) -> &[u8; 32]
+pub const fn rhi::RhiCommittedPublication::event_sha256(&self) -> &[u8; 32]
+pub const fn rhi::RhiCommittedPublication::exact_signed_event_bytes(&self) -> &[u8]
+pub const fn rhi::RhiCommittedPublication::outbox_id(&self) -> rhi::RhiPublicationOutboxId
+impl core::fmt::Debug for rhi::RhiCommittedPublication
+pub fn rhi::RhiCommittedPublication::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiConfigApplyError
 impl rhi::RhiConfigApplyError
 pub const fn rhi::RhiConfigApplyError::code(self) -> &'static str
@@ -684,10 +698,17 @@ impl core::fmt::Debug for rhi::RhiPublicationError
 pub fn rhi::RhiPublicationError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for rhi::RhiPublicationError
 pub fn rhi::RhiPublicationError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rhi::RhiPublicationOutboxId(_)
+impl rhi::RhiPublicationOutboxId
+pub const fn rhi::RhiPublicationOutboxId::as_bytes(&self) -> &[u8; 32]
+impl core::fmt::Debug for rhi::RhiPublicationOutboxId
+pub fn rhi::RhiPublicationOutboxId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiPublicationOutboxRepository<'host>
 impl rhi::RhiPublicationOutboxRepository<'_>
 pub const fn rhi::RhiPublicationOutboxRepository<'_>::descriptor(&self) -> rhi::RhiStateRepositoryDescriptor
 pub const fn rhi::RhiPublicationOutboxRepository<'_>::kind(&self) -> rhi::RhiStateRepositoryKind
+impl rhi::RhiPublicationOutboxRepository<'_>
+pub async fn rhi::RhiPublicationOutboxRepository<'_>::read_committed_publication(&self, rhi::RhiPublicationOutboxId) -> core::result::Result<rhi::RhiCommittedPublication, rhi::RhiPublicationSubmissionError>
 impl core::fmt::Debug for rhi::RhiPublicationOutboxRepository<'_>
 pub fn rhi::RhiPublicationOutboxRepository<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiPublicationRetryPolicy
@@ -696,6 +717,15 @@ pub const fn rhi::RhiPublicationRetryPolicy::attempt_deadline_milliseconds(self)
 pub const fn rhi::RhiPublicationRetryPolicy::initial_backoff_milliseconds(self) -> u64
 pub const fn rhi::RhiPublicationRetryPolicy::maximum_attempts(self) -> u16
 pub const fn rhi::RhiPublicationRetryPolicy::maximum_backoff_milliseconds(self) -> u64
+pub struct rhi::RhiPublicationSubmissionError
+impl rhi::RhiPublicationSubmissionError
+pub const fn rhi::RhiPublicationSubmissionError::code(self) -> &'static str
+pub const fn rhi::RhiPublicationSubmissionError::kind(self) -> rhi::RhiPublicationSubmissionErrorKind
+impl core::error::Error for rhi::RhiPublicationSubmissionError
+impl core::fmt::Debug for rhi::RhiPublicationSubmissionError
+pub fn rhi::RhiPublicationSubmissionError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rhi::RhiPublicationSubmissionError
+pub fn rhi::RhiPublicationSubmissionError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiPublicationTarget
 impl rhi::RhiPublicationTarget
 pub const fn rhi::RhiPublicationTarget::ordinal(&self) -> u8
@@ -794,6 +824,7 @@ pub fn rhi::RhiReconciliationFinalizationCommitError::fmt(&self, &mut core::fmt:
 pub struct rhi::RhiReconciliationFinalizationCommitOutcome
 impl rhi::RhiReconciliationFinalizationCommitOutcome
 pub const fn rhi::RhiReconciliationFinalizationCommitOutcome::created(self) -> bool
+pub const fn rhi::RhiReconciliationFinalizationCommitOutcome::outbox_id(self) -> core::option::Option<rhi::RhiPublicationOutboxId>
 pub const fn rhi::RhiReconciliationFinalizationCommitOutcome::publication_mode(self) -> rhi::RhiPublicationMode
 pub const fn rhi::RhiReconciliationFinalizationCommitOutcome::target_count(self) -> u8
 impl core::fmt::Debug for rhi::RhiReconciliationFinalizationCommitOutcome
@@ -1415,6 +1446,7 @@ pub const rhi::RHI_PROVIDER_CONTRACT_VERSION: u32
 pub const rhi::RHI_PUBLICATION_CONTRACT_VERSION: u32
 pub const rhi::RHI_PUBLICATION_MAX_ATTEMPTS: u16
 pub const rhi::RHI_PUBLICATION_MAX_TARGETS: usize
+pub const rhi::RHI_PUBLICATION_SUBMISSION_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_ATTEMPT_CONTRACT_VERSION: u32
 pub const rhi::RHI_RECONCILIATION_ATTEMPT_MAX_SOURCES: usize
 pub const rhi::RHI_RECONCILIATION_ATTESTATION_CONTRACT_VERSION: u32
