@@ -12,4 +12,5 @@ cargo check --locked --all-targets
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
 cargo test --locked -p rhi_xtask
+scripts/verify-supply-chain.sh
 git diff --check
