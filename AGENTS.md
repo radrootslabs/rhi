@@ -527,6 +527,7 @@ cargo extbuild run -- cargo check --workspace --all-targets --locked
 cargo extbuild run -- cargo test --workspace --all-targets --locked
 cargo extbuild run -- cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo extbuild run -- env RUSTDOCFLAGS=-Dwarnings cargo doc --workspace --no-deps --locked
+cargo extbuild run -- ./scripts/verify-boundaries.sh
 cargo extbuild run -- ./scripts/verify-supply-chain.sh
 cargo extbuild run -- ./scripts/release-acceptance.sh
 ```
