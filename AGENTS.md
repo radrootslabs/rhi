@@ -513,6 +513,15 @@
   parent-owned human docs, credentials, Nix or OCI inputs/outputs, private
   harnesses, signatures, tags, publication, deployment, or generated artifacts
   in the source tree.
+- RCLD-RSHR-150 Step 227 owns the fixed standalone systemd unit and
+  `systemd_qualification.v1.json`. Keep the canonical service-host directory
+  directives, stable exit-code restart split, bounded stop, empty capability
+  sets, no environment-carried credentials, systemd 252 minimum, and maximum
+  offline exposure 3.0 exact. The Linux verifier must fail closed when
+  `systemd-analyze` is absent. Do not enable compatibility-sensitive
+  `MemoryDenyWriteExecute` or syscall filters until the Step 229 integration
+  wave proves them against the real binary; do not install, enable, start, or
+  deploy a production service here.
 
 ## 10. Canonical verification
 
@@ -529,6 +538,7 @@ cargo extbuild run -- cargo clippy --workspace --all-targets --locked -- -D warn
 cargo extbuild run -- env RUSTDOCFLAGS=-Dwarnings cargo doc --workspace --no-deps --locked
 cargo extbuild run -- ./scripts/verify-boundaries.sh
 cargo extbuild run -- ./scripts/verify-supply-chain.sh
+cargo extbuild run -- ./scripts/verify-systemd.sh
 cargo extbuild run -- ./scripts/release-acceptance.sh
 ```
 

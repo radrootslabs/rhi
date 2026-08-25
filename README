@@ -825,10 +825,20 @@ SBOM component references are domain-separated hashes of framed Cargo
 name/version/source/checksum identity, so they neither disclose a checkout path
 nor vary when the same exact source is built from another directory.
 
-The checked-in systemd instance unit is package material only. Its presence
-does not claim that the governed daemon is installed, enabled, started, or
-production-activated. Native artifact qualification remains Step 216
-ownership, and promotion remains Step 217 ownership.
+The standalone Linux systemd boundary is frozen by
+`contracts/services_hardening/systemd_qualification.v1.json` and checked by
+`scripts/verify-systemd.sh`. The instance unit uses the canonical service-host
+paths, fixed unprivileged account, restrictive directory modes and umask,
+fixed restart delay, bounded stop behavior, empty capabilities, no environment-based secret
+input, and the reviewed filesystem, kernel, namespace, process, and address-
+family protections. The Linux-only verifier requires systemd 252 or newer,
+runs syntax verification, and rejects an offline security exposure above 3.0.
+Type `simple` remains deliberate: readiness is the cached CLI/admin contract,
+not `sd_notify`. Compatibility-sensitive `MemoryDenyWriteExecute` and syscall
+filters remain deferred to the Step 229 integration wave rather than being
+enabled without real-binary evidence. This qualification does not install,
+enable, start, stop, or deploy a production service. Native artifact qualification
+remains Step 216 ownership, and promotion remains Step 217 ownership.
 
 Validate the standalone crate through extbuild:
 

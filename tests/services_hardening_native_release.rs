@@ -194,7 +194,7 @@ fn native_release_contract_and_manifest_metadata_are_exact() {
     );
     for required in [
         "ExecStart=/usr/bin/rhi --profile service-host --instance %i run",
-        "ConfigDirectory=radroots/services/rhi/%i",
+        "ConfigurationDirectory=radroots/services/rhi/%i",
         "StateDirectory=radroots/services/rhi/%i",
         "CacheDirectory=radroots/services/rhi/%i",
         "LogsDirectory=radroots/services/rhi/%i",
@@ -202,6 +202,7 @@ fn native_release_contract_and_manifest_metadata_are_exact() {
         "UMask=0077",
         "NoNewPrivileges=yes",
         "ProtectSystem=strict",
+        "CapabilityBoundingSet=",
     ] {
         assert!(SYSTEMD_UNIT.contains(required), "missing `{required}`");
     }
