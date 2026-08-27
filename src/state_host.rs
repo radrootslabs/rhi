@@ -1,18 +1,15 @@
 //! Sealed lifecycle boundary for the canonical RHI SQLite state catalog.
 
 use core::fmt;
-use std::{
-    error::Error,
-    path::{Path, PathBuf},
-};
+use std::{error::Error, path::Path};
 
 use radroots_service_sqlite::{
     BackupCreatedAtUnixMs, ExistingServiceDatabaseIntent, IntegrityCheckedAtUnixMs,
     MigrationAppliedAtUnixSeconds, MigrationBuildIdentity, OpenMode, ServiceBackupManifest,
     ServiceSqliteApplicationId, ServiceSqliteConnectionOptions, ServiceSqliteHost,
-    ServiceSqliteIntegrityReport, ServiceSqlitePaths, initialize_database,
+    ServiceSqliteInitializer, ServiceSqliteInitializerFuture, ServiceSqliteIntegrityReport,
+    ServiceSqlitePaths, initialize_database,
 };
-use sqlx::{ConnectOptions, Connection, SqliteConnection, sqlite::SqliteConnectOptions};
 
 use crate::{
     RHI_STATE_APPLICATION_ID, RHI_STATE_BASE_SCHEMA_VERSION, RHI_STATE_SCHEMA_VERSION,
@@ -222,6 +219,7 @@ pub async fn initialize_rhi_state(
     require_metadata(runtime, metadata)?;
     require_migration_build(metadata, build)?;
     let (migrations, schema) = catalogs()?;
+    provision_state_directory(runtime)?;
     let authority = initialize_database(
         &paths,
         OpenMode::Initialize,
@@ -494,6 +492,14 @@ pub(crate) fn state_paths(
         .map_err(|_| RhiStateHostError::new(RhiStateHostErrorKind::InvalidPaths))
 }
 
+fn provision_state_directory(runtime: &RhiRuntimeContext) -> Result<(), RhiStateHostError> {
+    runtime
+        .context()
+        .state_directory_plan()
+        .and_then(|plan| plan.provision())
+        .map_err(|_| RhiStateHostError::new(RhiStateHostErrorKind::Initialize))
+}
+
 pub(crate) fn require_metadata(
     runtime: &RhiRuntimeContext,
     metadata: &RhiStateMetadata,
@@ -575,27 +581,8 @@ pub(crate) fn catalogs() -> Result<
     Ok((migrations, schema))
 }
 
-#[derive(Debug)]
-struct EmptyCatalogInitializationError;
-
-impl fmt::Display for EmptyCatalogInitializationError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("RHI baseline database reservation could not be opened")
-    }
-}
-
-impl Error for EmptyCatalogInitializationError {}
-
-async fn initialize_empty_catalog(path: PathBuf) -> Result<(), EmptyCatalogInitializationError> {
-    let options = SqliteConnectOptions::new()
-        .filename(path)
-        .create_if_missing(false)
-        .disable_statement_logging();
-    let connection = SqliteConnection::connect_with(&options)
-        .await
-        .map_err(|_| EmptyCatalogInitializationError)?;
-    connection
-        .close()
-        .await
-        .map_err(|_| EmptyCatalogInitializationError)
+fn initialize_empty_catalog<'a>(
+    _initializer: &'a mut ServiceSqliteInitializer<'_>,
+) -> ServiceSqliteInitializerFuture<'a, core::convert::Infallible> {
+    Box::pin(async { Ok(()) })
 }

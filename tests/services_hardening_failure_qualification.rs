@@ -56,7 +56,7 @@ fn contract_freezes_the_exact_failure_qualification_corpus() {
         contract["source_lock"],
         serde_json::json!({
             "schema": "radroots.service.source-lock.v2",
-            "lib_revision": "21b11e7a5120ea949f7ad0838c746873fc73aac2"
+            "lib_revision": "053d0c750bf9cd683c6ea37cefe7e79617ba629f"
         })
     );
     assert_eq!(

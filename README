@@ -743,6 +743,14 @@ credential remain excluded from the state-backup contract. That earlier
 wave-two boundary proof did not itself execute a backup; the governed
 resilience boundary below now owns the actual backup and recovery mechanics.
 
+Explicit state initialization validates runtime identity, build evidence, and
+the complete migration/schema catalogs before invoking the runtime-path
+directory plan. That plan alone may provision the exact interactive
+`services/rhi/<instance>` suffix; service-host deployment roots and suffixes
+must already exist. The shared service-SQLite initializer owns the one
+transaction and exposes only its sealed typed SQLx executor. Existing writable
+and inspection opens never provision directories or create missing state.
+
 RHI's state surface is partitioned into twenty-one distinct non-forgeable typed
 repository capabilities bound to one already-opened `RhiStateHost`. Their
 closed topology covers source results, cursors, completions, admitted signed

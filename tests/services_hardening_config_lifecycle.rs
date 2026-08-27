@@ -1,16 +1,13 @@
 #![forbid(unsafe_code)]
 #![cfg(any(target_os = "linux", target_os = "macos"))]
 
-use std::{
-    fs,
-    os::unix::fs::PermissionsExt,
-    path::{Path, PathBuf},
-};
+use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 
 use nostr::{Keys, SecretKey};
 use radroots_service_sqlite::{
     MigrationAppliedAtUnixSeconds, MigrationBuildIdentity, OpenMode,
-    ServiceSqliteConnectionOptions, ServiceSqliteHost, ServiceSqlitePaths, initialize_database,
+    ServiceSqliteConnectionOptions, ServiceSqliteHost, ServiceSqliteInitializer,
+    ServiceSqliteInitializerFuture, ServiceSqlitePaths, initialize_database,
 };
 use radroots_storage::event::SourceGeneration;
 use rhi::{
@@ -53,7 +50,7 @@ fn evidence(at: u64) -> (MigrationAppliedAtUnixSeconds, MigrationBuildIdentity) 
     let build = MigrationBuildIdentity::new(
         env!("CARGO_PKG_VERSION"),
         "1111111111111111111111111111111111111111",
-        "21b11e7a5120ea949f7ad0838c746873fc73aac2",
+        "053d0c750bf9cd683c6ea37cefe7e79617ba629f",
         "rustc-test",
         "test-target",
         "service-host",
@@ -77,18 +74,10 @@ async fn offline_connection(runtime: &rhi::RhiRuntimeContext) -> SqliteConnectio
         .expect("offline connection")
 }
 
-async fn initialize_empty_catalog(path: PathBuf) -> Result<(), std::io::Error> {
-    let options = SqliteConnectOptions::new()
-        .filename(path)
-        .create_if_missing(false)
-        .disable_statement_logging();
-    let connection = SqliteConnection::connect_with(&options)
-        .await
-        .map_err(|_| std::io::Error::other("database open failed"))?;
-    connection
-        .close()
-        .await
-        .map_err(|_| std::io::Error::other("database close failed"))
+fn initialize_empty_catalog<'a>(
+    _initializer: &'a mut ServiceSqliteInitializer<'_>,
+) -> ServiceSqliteInitializerFuture<'a, core::convert::Infallible> {
+    Box::pin(async { Ok(()) })
 }
 
 #[tokio::test]

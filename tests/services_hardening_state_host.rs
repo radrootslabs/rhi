@@ -44,6 +44,18 @@ fn prepare_state_directory(runtime: &rhi::RhiRuntimeContext) {
     fs::set_permissions(directory, fs::Permissions::from_mode(0o700)).expect("state mode");
 }
 
+fn prepare_state_root(runtime: &rhi::RhiRuntimeContext) {
+    let root = runtime
+        .context()
+        .paths()
+        .state()
+        .ancestors()
+        .nth(3)
+        .expect("state root");
+    fs::create_dir_all(root).expect("state root");
+    fs::set_permissions(root, fs::Permissions::from_mode(0o700)).expect("state root mode");
+}
+
 fn metadata(runtime: &rhi::RhiRuntimeContext) -> RhiStateMetadata {
     let configuration = parse_rhi_config_v1(EXAMPLE.as_bytes(), RhiConfigProfile::RepoLocal)
         .expect("configuration");
@@ -61,7 +73,7 @@ fn migration_evidence() -> (MigrationAppliedAtUnixSeconds, MigrationBuildIdentit
     let build = MigrationBuildIdentity::new(
         env!("CARGO_PKG_VERSION"),
         "1111111111111111111111111111111111111111",
-        "21b11e7a5120ea949f7ad0838c746873fc73aac2",
+        "053d0c750bf9cd683c6ea37cefe7e79617ba629f",
         "rustc-test",
         "test-target",
         "service-host",
@@ -182,11 +194,12 @@ async fn insert_historical_reconciliation_job(
 async fn initialize_is_create_new_and_both_existing_open_modes_close_explicitly() {
     let directory = tempfile::tempdir().expect("temporary root");
     let runtime = runtime(directory.path(), "primary");
-    prepare_state_directory(&runtime);
+    prepare_state_root(&runtime);
     let metadata = metadata(&runtime);
     let state = runtime.artifacts().state_database();
     let lock = runtime.artifacts().state_lock();
 
+    assert!(!runtime.context().paths().state().exists());
     assert!(!state.exists());
     let (applied_at, build) = migration_evidence();
     initialize_rhi_state(&runtime, &metadata, applied_at, &build)
@@ -528,23 +541,14 @@ async fn schema_v8_scans_historical_nullable_job_state_and_installs_permanent_gu
 
 #[tokio::test]
 async fn missing_state_and_mismatched_evidence_fail_before_database_creation() {
-    let directory = tempfile::tempdir().expect("temporary root");
-    let primary = runtime(directory.path(), "primary");
-    let secondary = runtime(directory.path(), "secondary");
-    prepare_state_directory(&primary);
-    let primary_metadata = metadata(&primary);
+    let invalid_directory = tempfile::tempdir().expect("invalid temporary root");
+    let invalid_runtime = runtime(invalid_directory.path(), "invalid");
+    let invalid_metadata = metadata(&invalid_runtime);
     let (applied_at, build) = migration_evidence();
-
-    let missing = open_rhi_state_read_write(&primary, &primary_metadata, applied_at, &build)
-        .await
-        .expect_err("missing state is never created by open");
-    assert_eq!(missing.kind(), RhiStateHostErrorKind::ReadWriteOpen);
-    assert!(!primary.artifacts().state_database().exists());
-
     let invalid_build = MigrationBuildIdentity::new(
         env!("CARGO_PKG_VERSION"),
         "1111111111111111111111111111111111111111",
-        "21b11e7a5120ea949f7ad0838c746873fc73aac2",
+        "053d0c750bf9cd683c6ea37cefe7e79617ba629f",
         "rustc-test",
         "test-target",
         "service-host",
@@ -555,10 +559,37 @@ async fn missing_state_and_mismatched_evidence_fail_before_database_creation() {
         1,
     )
     .expect("structurally valid mismatched build");
-    let invalid = initialize_rhi_state(&primary, &primary_metadata, applied_at, &invalid_build)
-        .await
-        .expect_err("migration build must match RHI policy before I/O");
+    let invalid = initialize_rhi_state(
+        &invalid_runtime,
+        &invalid_metadata,
+        applied_at,
+        &invalid_build,
+    )
+    .await
+    .expect_err("migration build must match RHI policy before I/O");
     assert_eq!(invalid.kind(), RhiStateHostErrorKind::InvalidEvidence);
+    assert!(!invalid_runtime.context().paths().state().exists());
+
+    let missing_directory = tempfile::tempdir().expect("missing temporary root");
+    let missing_runtime = runtime(missing_directory.path(), "missing");
+    prepare_state_root(&missing_runtime);
+    let missing_metadata = metadata(&missing_runtime);
+    let missing =
+        open_rhi_state_read_write(&missing_runtime, &missing_metadata, applied_at, &build)
+            .await
+            .expect_err("existing-only open never provisions the service suffix");
+    assert_eq!(missing.kind(), RhiStateHostErrorKind::ReadWriteOpen);
+    assert!(!missing_runtime.context().paths().state().exists());
+
+    let directory = tempfile::tempdir().expect("temporary root");
+    let primary = runtime(directory.path(), "primary");
+    let secondary = runtime(directory.path(), "secondary");
+    prepare_state_directory(&primary);
+    let primary_metadata = metadata(&primary);
+    let missing = open_rhi_state_read_write(&primary, &primary_metadata, applied_at, &build)
+        .await
+        .expect_err("missing state is never created by open");
+    assert_eq!(missing.kind(), RhiStateHostErrorKind::ReadWriteOpen);
     assert!(!primary.artifacts().state_database().exists());
 
     let mismatch = initialize_rhi_state(&secondary, &primary_metadata, applied_at, &build)
@@ -579,6 +610,17 @@ fn public_lifecycle_source_is_sealed() {
     assert!(!LIB_SOURCE.contains("pub mod state_host;"));
     assert!(HOST_SOURCE.contains("host: ServiceSqliteHost"));
     assert!(!HOST_SOURCE.contains("pub host:"));
+    for required in [
+        "ServiceSqliteInitializer",
+        "ServiceSqliteInitializerFuture",
+        ".state_directory_plan()",
+        ".and_then(|plan| plan.provision())",
+    ] {
+        assert!(
+            HOST_SOURCE.contains(required),
+            "missing sealed initialization boundary `{required}`"
+        );
+    }
     for forbidden in [
         "pub fn transaction",
         "pub async fn transaction",
@@ -590,6 +632,12 @@ fn public_lifecycle_source_is_sealed() {
         "raw_sql",
         "CREATE TABLE",
         "PRAGMA application_id",
+        "PathBuf",
+        "use sqlx::",
+        "SqliteConnectOptions",
+        "ConnectOptions",
+        "create_dir_all",
+        "try_exists",
     ] {
         assert!(
             !HOST_SOURCE.contains(forbidden),

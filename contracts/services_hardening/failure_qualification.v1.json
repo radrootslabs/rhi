@@ -6,7 +6,7 @@
   "service": "rhi",
   "source_lock": {
     "schema": "radroots.service.source-lock.v2",
-    "lib_revision": "21b11e7a5120ea949f7ad0838c746873fc73aac2"
+    "lib_revision": "053d0c750bf9cd683c6ea37cefe7e79617ba629f"
   },
   "resource_bounds": {
     "configuration_document_utf8_bytes": 1048576,

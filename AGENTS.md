@@ -56,6 +56,13 @@
 - Keep changes narrowly scoped and independently reviewable. Do not mix
   unrelated cleanup, speculative abstractions, roadmap work, or compatibility
   scaffolding into a checkpoint.
+- RCLD-RSHR-195 Step 246 advances the active native Lib source lock and freezes
+  RHI state creation behind the runtime-path directory plan plus the sealed
+  service-SQLite initializer. Explicit initialization may provision only the
+  exact governed service-instance suffix after identity and catalog validation;
+  every existing-only open remains non-creating. Do not restore raw paths, raw
+  SQLx connections, filesystem probes, or directory-creation fallbacks at the
+  state-host boundary.
 
 ## 3. Clean-slate service rule
 

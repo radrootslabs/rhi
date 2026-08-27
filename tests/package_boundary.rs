@@ -88,6 +88,7 @@ const TRADE_EVIDENCE_PERSISTENCE_CONTRACT: &str =
     include_str!("../contracts/services_hardening/trade_evidence_persistence.v1.json");
 const TRADE_SOURCE_INGEST_CONTRACT: &str =
     include_str!("../contracts/services_hardening/trade_source_ingest.v1.json");
+const STATE_HOST: &str = include_str!("../src/state_host.rs");
 const PUBLIC_API: &str = include_str!("../contracts/api_baselines/rhi.txt");
 const SOURCES: &[&str] = &[
     include_str!("../src/adapters/nostr/event.rs"),
@@ -129,6 +130,35 @@ const SOURCES: &[&str] = &[
     include_str!("../src/status_v1.rs"),
     include_str!("../src/trade_ingest.rs"),
 ];
+
+#[test]
+fn state_initialization_uses_only_governed_directory_and_sqlite_authority() {
+    for required in [
+        "ServiceSqliteInitializer",
+        "ServiceSqliteInitializerFuture",
+        ".state_directory_plan()",
+        ".and_then(|plan| plan.provision())",
+        "initialize_database(",
+    ] {
+        assert!(
+            STATE_HOST.contains(required),
+            "state initialization is missing `{required}`"
+        );
+    }
+    for forbidden in [
+        "PathBuf",
+        "use sqlx::",
+        "SqliteConnectOptions",
+        "ConnectOptions",
+        "create_dir_all",
+        "try_exists",
+    ] {
+        assert!(
+            !STATE_HOST.contains(forbidden),
+            "state initialization regained `{forbidden}`"
+        );
+    }
+}
 
 #[test]
 fn package_identity_is_standalone_and_non_publishable() {
@@ -1251,7 +1281,7 @@ fn failure_qualification_is_source_locked_bounded_and_nonexpansive() {
     assert_eq!(contract["service"], "rhi");
     assert_eq!(
         contract["source_lock"]["lib_revision"],
-        "21b11e7a5120ea949f7ad0838c746873fc73aac2"
+        "053d0c750bf9cd683c6ea37cefe7e79617ba629f"
     );
     assert_eq!(contract["resource_bounds"]["source_result_events"], 4_096);
     assert_eq!(
@@ -1283,7 +1313,7 @@ fn process_qualification_is_actual_bounded_and_wave_closed() {
     assert_eq!(contract["bounds"]["soak_iterations"], 32);
     assert_eq!(
         contract["component_qualification"]["sha256"],
-        "e9c782185a4a2b7512193a3cd237008026193ba3f8bb49fab1c70039a2f35bca"
+        "f05da8e559f463f99c67c3c7e22eafa57935be91fb0094f2aa2f98a58544b8b9"
     );
     assert_eq!(contract["invariants"]["actual_executable_required"], true);
     assert_eq!(

@@ -534,7 +534,7 @@ fn process_qualification_contract_freezes_the_exact_wave_closure() {
         contract["source_lock"],
         serde_json::json!({
             "schema": "radroots.service.source-lock.v2",
-            "lib_revision": "21b11e7a5120ea949f7ad0838c746873fc73aac2"
+            "lib_revision": "053d0c750bf9cd683c6ea37cefe7e79617ba629f"
         })
     );
     assert_eq!(
@@ -542,7 +542,7 @@ fn process_qualification_contract_freezes_the_exact_wave_closure() {
         serde_json::json!({
             "schema": "radroots.rhi.failure-qualification.v1",
             "step": 214,
-            "sha256": "e9c782185a4a2b7512193a3cd237008026193ba3f8bb49fab1c70039a2f35bca"
+            "sha256": "f05da8e559f463f99c67c3c7e22eafa57935be91fb0094f2aa2f98a58544b8b9"
         })
     );
     assert_eq!(
@@ -652,7 +652,7 @@ fn process_qualification_contract_freezes_the_exact_wave_closure() {
         lower_hex(&Sha256::digest(FAILURE_QUALIFICATION_CONTRACT)),
         contract["component_qualification"]["sha256"]
     );
-    assert!(SOURCE_LOCK.contains("revision = \"21b11e7a5120ea949f7ad0838c746873fc73aac2\""));
+    assert!(SOURCE_LOCK.contains("revision = \"053d0c750bf9cd683c6ea37cefe7e79617ba629f\""));
 }
 
 #[test]

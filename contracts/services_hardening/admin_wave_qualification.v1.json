@@ -62,7 +62,7 @@
   },
   "source_locked_transport_evidence": {
     "repository": "https://github.com/radrootslabs/lib",
-    "revision": "21b11e7a5120ea949f7ad0838c746873fc73aac2",
+    "revision": "053d0c750bf9cd683c6ea37cefe7e79617ba629f",
     "package": "radroots_service_host",
     "corpus": [
       "serves_valid_json_with_exact_caller_correlation_and_no_web_headers",
