@@ -30,7 +30,7 @@ const PROCESS_QUALIFICATION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/process_qualification.v1.json");
 const FAILURE_QUALIFICATION_CONTRACT: &[u8] =
     include_bytes!("../contracts/services_hardening/failure_qualification.v1.json");
-const SOURCE_LOCK: &str = include_str!("../radroots.service.source-lock.v2.toml");
+const SOURCE_LOCK: &str = include_str!("../radroots.service.source-lock.v3.toml");
 const PROCESS_DEADLINE: Duration = Duration::from_secs(30);
 const POLL_INTERVAL: Duration = Duration::from_millis(2);
 const CONNECT_DEADLINE_MILLISECONDS: u64 = 5_000;
@@ -652,7 +652,7 @@ fn process_qualification_contract_freezes_the_exact_wave_closure() {
         lower_hex(&Sha256::digest(FAILURE_QUALIFICATION_CONTRACT)),
         contract["component_qualification"]["sha256"]
     );
-    assert!(SOURCE_LOCK.contains("revision = \"053d0c750bf9cd683c6ea37cefe7e79617ba629f\""));
+    assert!(SOURCE_LOCK.contains("revision = \"055096853fca95e15d0f813d33a14aca13be3881\""));
 }
 
 #[test]

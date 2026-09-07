@@ -7,7 +7,7 @@ use serde_json::Value;
 
 const CONFIG_EXAMPLE: &str = include_str!("../contracts/services_hardening/config.v1.example.toml");
 const CONFIG_SCHEMA: &str = include_str!("../contracts/services_hardening/config.v1.schema.json");
-const SOURCE_LOCK: &str = include_str!("../radroots.service.source-lock.v2.toml");
+const SOURCE_LOCK: &str = include_str!("../radroots.service.source-lock.v3.toml");
 
 #[test]
 fn canonical_example_agrees_with_the_exact_schema_and_parser() {
@@ -29,12 +29,10 @@ fn canonical_example_agrees_with_the_exact_schema_and_parser() {
 }
 
 #[test]
-fn wave_one_removed_files_and_predecessor_lock_are_absent() {
+fn wave_one_removed_files_remain_absent_after_nix_qualification() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     for removed in [
         "config.toml",
-        "flake.lock",
-        "flake.nix",
         "radroots.lib.source-lock.v1.toml",
         "src/config.rs",
         "src/host_nostr.rs",
@@ -46,20 +44,15 @@ fn wave_one_removed_files_and_predecessor_lock_are_absent() {
             "removed path remains: {removed}"
         );
     }
-    assert!(root.join("radroots.service.source-lock.v2.toml").is_file());
+    assert!(!root.join("radroots.service.source-lock.v2.toml").exists());
+    assert!(root.join("radroots.service.source-lock.v3.toml").is_file());
+    assert!(root.join("flake.nix").is_file());
+    assert!(root.join("flake.lock").is_file());
     assert!(SOURCE_LOCK.starts_with(
-        "schema = \"radroots.service.source-lock.v2\"\ncontract_version = 2\nservice = \"rhi\"\n"
+        "schema = \"radroots.service.source-lock.v3\"\ncontract_version = 3\nservice = \"rhi\"\n"
     ));
-    for forbidden in [
-        "lib_revision =",
-        "flake_lock_sha256",
-        "material = \"present\"",
-    ] {
-        assert!(
-            !SOURCE_LOCK.contains(forbidden),
-            "source lock retains predecessor behavior: {forbidden}"
-        );
-    }
+    assert!(SOURCE_LOCK.contains("material = \"qualified\""));
+    assert!(SOURCE_LOCK.contains("lib_revision = \"055096853fca95e15d0f813d33a14aca13be3881\""));
 }
 
 #[test]

@@ -1,0 +1,67 @@
+schema = "radroots.service.source-lock.v3"
+contract_version = 3
+service = "rhi"
+repository = "https://github.com/radrootslabs/lib"
+revision = "055096853fca95e15d0f813d33a14aca13be3881"
+architecture = "radroots.crates.release.v2"
+workspace_catalog_sha256 = "deca0c080deae187ff8186c0708903e42f41ea57f77c5f91581e23aa561164a4"
+version = "0.1.0-alpha"
+source_archive_sha256 = "89b8ace3f61167df43aca89917405d58b2aaf2ddea8fadfb21d351d76f184e68"
+cargo_lock_sha256 = "9d2ee2d488b002b5f0ca7795f1c75600a5a684d1f492a0fc8d7352ef23c261ae"
+rust_version = "1.97.1"
+host_feature_profile = "service-host"
+
+[source_archive_contract]
+binding = "sha256_of_canonical_exact_lib_revision_tree_archive"
+format = "ustar"
+compression = "none"
+compression_timestamp = "not_applicable"
+entry_order = "bytewise_git_path"
+path_prefix = "none"
+file_mode = "git_index_100644_or_100755"
+uid = 0
+gid = 0
+uname = ""
+gname = ""
+mtime = "lib_revision_commit_timestamp"
+pax_headers = "forbidden"
+directory_entries = "omitted"
+symlinks = "forbidden"
+hardlinks = "forbidden"
+submodules = "forbidden"
+trailer = "two_zero_blocks"
+
+[nix]
+material = "qualified"
+lib_revision = "055096853fca95e15d0f813d33a14aca13be3881"
+supported_systems = ["aarch64-darwin", "x86_64-linux"]
+
+[nix.public_input_lock]
+path = "flake.lock"
+sha256 = "5d5b11622c341292f429a5f93e55f38a3506431b139720ff62f983b35bf7d55f"
+binding = "exact_regular_file_bytes"
+mutable_reference = "forbidden"
+lib_input = "lib"
+
+[nix.parent_result]
+embedded_in_public_input_lock = false
+embedded_in_source_lock = false
+storage = "separate_generation_scoped_evidence"
+
+[artifact_contract]
+path = "contracts/release/rhi-artifact-contract.v3.json"
+sha256 = "d2fedbe4e8bee8f2e6c4396e2cb361bd20b303782cc729b8ee790cfd72bd4682"
+binding = "exact_regular_file_bytes_in_same_source_revision"
+
+[sqlite]
+high_level_authority = "sqlx_only"
+second_pool_connection_query_transaction_migration_authority = "forbidden"
+incremental_backup_adapter = "sealed_native_sqlx_owned_locked_handle_only"
+native_linkage_count = 1
+
+[contract_versions]
+config = 1
+state = 11
+admin = 1
+status = 1
+provider = 1

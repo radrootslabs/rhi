@@ -1869,14 +1869,15 @@ fn readme_freezes_the_root_only_boundary_and_exact_baseline() {
 }
 
 #[test]
-fn human_verification_contract_is_extbuild_only_through_rcld_170() {
+fn human_verification_contract_routes_checks_and_records_nix_outputs() {
     for required in [
         "cargo extbuild doctor",
         "cargo extbuild run -- cargo fmt --all --check",
         "cargo extbuild run -- cargo check --workspace --all-targets --locked",
         "cargo extbuild run -- cargo test --workspace --all-targets --locked",
         "cargo extbuild run -- cargo clippy --workspace --all-targets --locked -- -D warnings",
-        "Nix-produced OCI artifacts are deferred and unclaimed",
+        "The flake exposes the RHI package, application, checks, and development shell",
+        "unsigned OCI\nderivation for `x86_64-linux`",
     ] {
         assert!(README.contains(required), "README is missing {required}");
     }

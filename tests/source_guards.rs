@@ -43,7 +43,7 @@ fn rhi_manifest_exact_pins_radroots_contract() {
         );
         assert_eq!(
             dependency.get("rev").and_then(toml::Value::as_str),
-            Some("053d0c750bf9cd683c6ea37cefe7e79617ba629f"),
+            Some("055096853fca95e15d0f813d33a14aca13be3881"),
             "RHI must source-lock {name} to the exact promoted Lib revision"
         );
         assert_eq!(
@@ -145,8 +145,6 @@ fn rhi_runtime_context_retains_only_governed_artifacts() {
 fn rhi_wave_one_removes_prototype_runtime_and_selection_authority() {
     for forbidden_path in [
         "config.toml",
-        "flake.lock",
-        "flake.nix",
         "radroots.lib.source-lock.v1.toml",
         "src/config.rs",
         "src/host_nostr.rs",

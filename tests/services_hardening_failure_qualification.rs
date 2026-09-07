@@ -6,7 +6,6 @@ use serde_json::Value;
 
 const CONTRACT: &str =
     include_str!("../contracts/services_hardening/failure_qualification.v1.json");
-const SOURCE_LOCK: &str = include_str!("../radroots.service.source-lock.v2.toml");
 const MANIFEST: &str = include_str!("../Cargo.toml");
 const README: &str = include_str!("../README");
 const AGENTS: &str = include_str!("../AGENTS.md");
@@ -174,13 +173,15 @@ fn every_component_contract_entry_names_an_executable_test() {
 }
 
 #[test]
-fn source_lock_binds_the_shared_sqlite_failure_corpus_without_a_second_authority() {
+fn historical_source_lock_binds_the_shared_sqlite_failure_corpus() {
     let contract: Value = serde_json::from_str(CONTRACT).expect("failure qualification contract");
     let revision = contract["source_lock"]["lib_revision"]
         .as_str()
         .expect("Lib revision");
-    assert!(SOURCE_LOCK.contains(&format!("revision = \"{revision}\"")));
-    assert!(MANIFEST.contains(&format!("radroots_service_sqlite = {{ git = \"https://github.com/radrootslabs/lib\", rev = \"{revision}\"")));
+    assert_eq!(revision, "053d0c750bf9cd683c6ea37cefe7e79617ba629f");
+    assert!(MANIFEST.contains(
+        "radroots_service_sqlite = { git = \"https://github.com/radrootslabs/lib\", rev = \"055096853fca95e15d0f813d33a14aca13be3881\""
+    ));
     assert_eq!(
         contract["source_locked_shared_sqlite_corpus"],
         serde_json::json!([
