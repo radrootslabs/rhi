@@ -24,7 +24,7 @@ const EXACT_SOURCES: &[(&str, &str)] = &[
     ),
     (
         "contracts/release/rhi-artifact-contract.v3.json",
-        "d2fedbe4e8bee8f2e6c4396e2cb361bd20b303782cc729b8ee790cfd72bd4682",
+        "2548c52da4d9b721b9f87dc4a1a9ba3d3dc0eb30fc74c5f580f38fa94c2b59bd",
     ),
     (
         "flake.lock",
@@ -36,7 +36,7 @@ const EXACT_SOURCES: &[(&str, &str)] = &[
     ),
     (
         "radroots.service.source-lock.v3.toml",
-        "e8593c3203bf27cef1c9bb412124ad5b73276a43a344eab5bd02406342710e30",
+        "cd8f293046ec8be9f74b1fbc562332e87bddab5e3c94b900ea5321aff33bd091",
     ),
 ];
 

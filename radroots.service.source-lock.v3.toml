@@ -50,7 +50,7 @@ storage = "separate_generation_scoped_evidence"
 
 [artifact_contract]
 path = "contracts/release/rhi-artifact-contract.v3.json"
-sha256 = "d2fedbe4e8bee8f2e6c4396e2cb361bd20b303782cc729b8ee790cfd72bd4682"
+sha256 = "2548c52da4d9b721b9f87dc4a1a9ba3d3dc0eb30fc74c5f580f38fa94c2b59bd"
 binding = "exact_regular_file_bytes_in_same_source_revision"
 
 [sqlite]
