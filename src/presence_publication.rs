@@ -2967,7 +2967,7 @@ const fn failure(kind: RhiPresencePublicationErrorKind) -> RhiPresencePublicatio
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeSet, error::Error as _};
+    use std::collections::BTreeSet;
 
     use super::*;
 

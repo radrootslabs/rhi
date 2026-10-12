@@ -605,8 +605,6 @@ fn configuration_integer(
 
 #[cfg(test)]
 mod tests {
-    use std::error::Error as _;
-
     use super::*;
     use crate::{RhiConfigProfile, parse_rhi_config_v1};
 

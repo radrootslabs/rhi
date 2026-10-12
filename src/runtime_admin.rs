@@ -615,7 +615,7 @@ fn parse_digest(value: &str) -> Result<[u8; 32], RhiAdminHandlerError> {
         return Err(failure(RhiAdminHandlerErrorKind::Internal));
     }
     let mut bytes = [0_u8; 32];
-    for (index, chunk) in value.as_bytes().chunks_exact(2).enumerate() {
+    for (index, chunk) in value.as_bytes().as_chunks::<2>().0.iter().enumerate() {
         let high =
             hex_nibble(chunk[0]).ok_or_else(|| failure(RhiAdminHandlerErrorKind::Internal))?;
         let low =
