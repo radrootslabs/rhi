@@ -32,7 +32,7 @@
 ## 2. Authority and preflight
 
 - Before editing, read this file, `README`, `Cargo.toml`,
-  `radroots.service.source-lock.v2.toml`, and the relevant implementation and
+  `radroots.service.source-lock.v3.toml`, and the relevant implementation and
   tests. The removed prototype root `config.toml` is not configuration
   authority.
 - `.radroots-consumer-root` is the standalone source-lock identity and must
@@ -483,9 +483,12 @@
 
 ## 9. Rust and test discipline
 
-- The final Rust baseline is edition 2024, resolver 3, and Rust/toolchain
-  1.97.1. Keep `Cargo.toml`, `rust-toolchain.toml`, and Cargo metadata in exact
-  agreement.
+- The current stable compiler and MSRV are exact Rust 1.99.0, edition 2024
+  and resolver 3. Keep package minimums, `rust-toolchain.toml` and Cargo metadata
+  in exact agreement. Preserve original compiler identities in frozen release
+  history and dedicated nightly tooling. A current minimum change does not
+  qualify old source-lock, artifact or acquisition descriptors for a new
+  candidate; update and verify those through their owning producers first.
 - Keep `#![forbid(unsafe_code)]` at crate roots; unsafe code is forbidden. Deny
   broken rustdoc links, `dbg!`, `todo!`, and `unimplemented!` in production.
 - Prefer pure transformations, explicit state machines, validated newtypes,
