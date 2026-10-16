@@ -32,9 +32,16 @@
 ## 2. Authority and preflight
 
 - Before editing, read this file, `README`, `Cargo.toml`,
-  `radroots.service.source-lock.v3.toml`, and the relevant implementation and
+  `radroots.service.source_lock.v4.toml`, and the relevant implementation and
   tests. The removed prototype root `config.toml` is not configuration
   authority.
+- Current compiler/source preparation uses the V4 lock and
+  `contracts/services_hardening/native_release.v3.json`. Nix inputs are bound;
+  executed current qualification remains separate. Prepare an exact staged
+  migration through the source-locked Lib producer, verify and commit the
+  complete candidate, then require its clean-source check. Archived V3 locks
+  and earlier contracts retain their history. Step 301 tooling is replay-only
+  for its original source and does not qualify current inputs.
 - `.radroots-consumer-root` is the standalone source-lock identity and must
   remain exactly `rhi`. The reserved pre-implementation evidence authority is
   `contracts/services_hardening/evidence_policy.v1.json`, and the reserved

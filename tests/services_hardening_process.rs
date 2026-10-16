@@ -30,7 +30,7 @@ const PROCESS_QUALIFICATION_CONTRACT: &str =
     include_str!("../contracts/services_hardening/process_qualification.v1.json");
 const FAILURE_QUALIFICATION_CONTRACT: &[u8] =
     include_bytes!("../contracts/services_hardening/failure_qualification.v1.json");
-const SOURCE_LOCK: &str = include_str!("../radroots.service.source-lock.v3.toml");
+const SOURCE_LOCK: &str = include_str!("../radroots.service.source_lock.v4.toml");
 const PROCESS_DEADLINE: Duration = Duration::from_secs(30);
 const POLL_INTERVAL: Duration = Duration::from_millis(2);
 const CONNECT_DEADLINE_MILLISECONDS: u64 = 5_000;
@@ -101,6 +101,11 @@ impl Drop for RelayHarness {
 }
 
 fn relay_session(stream: TcpStream, stop: &AtomicBool) {
+    // Accepted sockets can inherit the listener's nonblocking mode on macOS.
+    // This fixture uses blocking tungstenite with explicit I/O deadlines.
+    stream
+        .set_nonblocking(false)
+        .expect("blocking accepted relay socket");
     stream
         .set_read_timeout(Some(RELAY_HANDSHAKE_TIMEOUT))
         .expect("relay handshake read timeout");
@@ -174,6 +179,50 @@ fn relay_text(websocket: &mut tungstenite::WebSocket<TcpStream>, text: &str) {
         }
         _ => {}
     }
+}
+
+#[test]
+fn loopback_relay_waits_for_delayed_upgrade_on_an_inherited_nonblocking_socket() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("regression listener");
+    let address = listener.local_addr().expect("regression address");
+    let client = TcpStream::connect(address).expect("regression client");
+    client
+        .set_read_timeout(Some(RELAY_HANDSHAKE_TIMEOUT))
+        .expect("client read deadline");
+    client
+        .set_write_timeout(Some(RELAY_HANDSHAKE_TIMEOUT))
+        .expect("client write deadline");
+    let (server, _) = listener.accept().expect("accepted regression socket");
+    // Exercise inherited nonblocking mode explicitly on every platform.
+    server.set_nonblocking(true).expect("inherited socket mode");
+    let stop = Arc::new(AtomicBool::new(false));
+    let session_stop = Arc::clone(&stop);
+    let (finished, completion) = std::sync::mpsc::channel();
+    let session = thread::spawn(move || {
+        relay_session(server, &session_stop);
+        let _ = finished.send(());
+    });
+    let waiting = matches!(
+        completion.recv_timeout(Duration::from_millis(50)),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+    );
+    let response = (|| -> Result<Message, String> {
+        if !waiting {
+            return Err("relay discarded an upgrade before the client sent it".to_owned());
+        }
+        let (mut socket, _) = tungstenite::client(format!("ws://{address}/delayed"), client)
+            .map_err(|error| error.to_string())?;
+        socket
+            .send(Message::Text(r#"["REQ","delayed",{}]"#.into()))
+            .map_err(|error| error.to_string())?;
+        socket.read().map_err(|error| error.to_string())
+    })();
+    stop.store(true, Ordering::SeqCst);
+    session.join().expect("joined regression relay");
+    assert_eq!(
+        response.expect("delayed upgrade and request succeed"),
+        Message::Text(r#"["EOSE","delayed"]"#.into())
+    );
 }
 
 struct ProcessFixture {
@@ -652,7 +701,7 @@ fn process_qualification_contract_freezes_the_exact_wave_closure() {
         lower_hex(&Sha256::digest(FAILURE_QUALIFICATION_CONTRACT)),
         contract["component_qualification"]["sha256"]
     );
-    assert!(SOURCE_LOCK.contains("revision = \"055096853fca95e15d0f813d33a14aca13be3881\""));
+    assert!(SOURCE_LOCK.contains("revision = \"386e2d7e8cca95bdd0f6ce3444b5e741ea61ef8a\""));
 }
 
 #[test]

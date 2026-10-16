@@ -6,18 +6,18 @@ use serde_json::json;
 
 const CONTRACT: &str = include_str!("../contracts/services_hardening/native_release.v1.json");
 const ACTIVE_CONTRACT: &str =
-    include_str!("../contracts/services_hardening/native_release.v2.json");
+    include_str!("../contracts/services_hardening/native_release.v3.json");
 const MANIFEST: &str = include_str!("../Cargo.toml");
 const LOCK: &str = include_str!("../Cargo.lock");
 const FLAKE: &str = include_str!("../flake.nix");
 const FLAKE_LOCK: &str = include_str!("../flake.lock");
-const SOURCE_LOCK: &str = include_str!("../radroots.service.source-lock.v3.toml");
+const SOURCE_LOCK: &str = include_str!("../radroots.service.source_lock.v4.toml");
 const CARGO_CONFIG: &str = include_str!("../.cargo/config.toml");
 const SYSTEMD_UNIT: &str = include_str!("../packaging/systemd/rhi@.service");
 const RELEASE_ACCEPTANCE: &str = include_str!("../scripts/release-acceptance.sh");
 const XTASK_MANIFEST: &str = include_str!("../tools/xtask/Cargo.toml");
 
-const LIB_REVISION: &str = "055096853fca95e15d0f813d33a14aca13be3881";
+const LIB_REVISION: &str = "386e2d7e8cca95bdd0f6ce3444b5e741ea61ef8a";
 const LIB_REPOSITORY: &str = "https://github.com/radrootslabs/lib";
 
 #[test]
@@ -171,7 +171,7 @@ fn native_release_contract_and_manifest_metadata_are_exact() {
     assert_eq!(
         manifest["workspace"]["metadata"]["radroots"]["service_source_lock"]["nix_material"]
             .as_str(),
-        Some("qualified")
+        Some("bound")
     );
     let source_lock: toml::Value = toml::from_str(SOURCE_LOCK).expect("source lock");
     assert_eq!(
@@ -263,7 +263,7 @@ fn every_radroots_dependency_is_exactly_source_locked() {
     assert!(source.contains(&format!("?rev={LIB_REVISION}#{LIB_REVISION}")));
 
     for required in [
-        "url = \"github:radrootslabs/lib/055096853fca95e15d0f813d33a14aca13be3881\";",
+        "url = \"github:radrootslabs/lib/386e2d7e8cca95bdd0f6ce3444b5e741ea61ef8a\";",
         "systems = lib.lib.supportedSystems;",
         "nixosModules.default",
     ] {
@@ -282,12 +282,12 @@ fn every_radroots_dependency_is_exactly_source_locked() {
 }
 
 #[test]
-fn native_release_surfaces_remain_external_and_nix_qualified() {
+fn native_release_surfaces_remain_external_and_nix_bound() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     for required in [
         ".cargo/config.toml",
         "packaging/systemd/rhi@.service",
-        "radroots.service.source-lock.v3.toml",
+        "radroots.service.source_lock.v4.toml",
         "scripts/release-acceptance.sh",
         "tools/xtask/Cargo.toml",
         "tools/xtask/src/main.rs",
@@ -322,14 +322,17 @@ fn native_release_surfaces_remain_external_and_nix_qualified() {
     assert!(!CONTRACT.contains("nixos-module"));
     let active: serde_json::Value =
         serde_json::from_str(ACTIVE_CONTRACT).expect("active release contract");
-    assert_eq!(active["schema_version"], 2);
-    assert_eq!(active["contract_version"], 2);
-    assert_eq!(active["predecessor"]["filename"], "native_release.v1.json");
+    assert_eq!(active["schema_version"], 3);
+    assert_eq!(active["contract_version"], 3);
+    assert_eq!(active["predecessor"]["filename"], "native_release.v2.json");
     assert_eq!(
         active["source_lock"]["filename"],
-        "radroots.service.source-lock.v3.toml"
+        "radroots.service.source_lock.v4.toml"
     );
-    assert_eq!(active["source_lock"]["nix_material"], "qualified");
+    assert_eq!(active["source_lock"]["nix_material"], "bound");
+    assert_eq!(active["toolchain"]["rust_version"], "1.99.0");
+    assert_eq!(active["nix_qualified"], false);
+    assert_eq!(active["maximums"]["source_lock_bytes"], 16_384);
     assert_eq!(active["nix_outputs"]["bundled_sqlite"], true);
     assert_eq!(active["nix_outputs"]["native_linkage_count"], 1);
 }
