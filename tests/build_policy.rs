@@ -44,7 +44,7 @@ fn source_lock_metadata_is_exact_and_nix_is_bound() {
 fn shared_host_packages_are_exactly_source_locked() {
     for dependency in ["radroots_service_host", "radroots_service_sqlite"] {
         assert!(MANIFEST.contains(&format!(
-            "{dependency} = {{ git = \"https://github.com/radrootslabs/lib\", rev = \"386e2d7e8cca95bdd0f6ce3444b5e741ea61ef8a\", version = \"=0.1.0-alpha\" }}"
+            "{dependency} = {{ git = \"https://github.com/radrootslabs/lib\", rev = \"3af7814ea4f76f2cca3d33d4c2bd8a854f3fb78f\", version = \"=0.1.0-alpha\" }}"
         )));
     }
 }
@@ -52,7 +52,7 @@ fn shared_host_packages_are_exactly_source_locked() {
 #[test]
 fn shared_service_sqlite_is_the_only_catalog_authority() {
     assert!(MANIFEST.contains(
-        "radroots_service_sqlite = { git = \"https://github.com/radrootslabs/lib\", rev = \"386e2d7e8cca95bdd0f6ce3444b5e741ea61ef8a\", version = \"=0.1.0-alpha\" }"
+        "radroots_service_sqlite = { git = \"https://github.com/radrootslabs/lib\", rev = \"3af7814ea4f76f2cca3d33d4c2bd8a854f3fb78f\", version = \"=0.1.0-alpha\" }"
     ));
     for forbidden in ["rusqlite", "libsqlite3-sys"] {
         assert!(
@@ -65,17 +65,17 @@ fn shared_service_sqlite_is_the_only_catalog_authority() {
 #[test]
 fn shared_storage_generation_type_is_exactly_source_locked() {
     assert!(MANIFEST.contains(
-        "radroots_storage = { git = \"https://github.com/radrootslabs/lib\", rev = \"386e2d7e8cca95bdd0f6ce3444b5e741ea61ef8a\", version = \"=0.1.0-alpha\", default-features = false }"
+        "radroots_storage = { git = \"https://github.com/radrootslabs/lib\", rev = \"3af7814ea4f76f2cca3d33d4c2bd8a854f3fb78f\", version = \"=0.1.0-alpha\", default-features = false }"
     ));
 }
 
 #[test]
 fn shared_transport_spi_is_exactly_source_locked_without_serde() {
     assert!(MANIFEST.contains(
-        "radroots_transport = { git = \"https://github.com/radrootslabs/lib\", rev = \"386e2d7e8cca95bdd0f6ce3444b5e741ea61ef8a\", version = \"=0.1.0-alpha\", default-features = false, features = [\"std\"] }"
+        "radroots_transport = { git = \"https://github.com/radrootslabs/lib\", rev = \"3af7814ea4f76f2cca3d33d4c2bd8a854f3fb78f\", version = \"=0.1.0-alpha\", default-features = false, features = [\"std\"] }"
     ));
     assert!(MANIFEST.contains(
-        "radroots_transport_nostr = { git = \"https://github.com/radrootslabs/lib\", rev = \"386e2d7e8cca95bdd0f6ce3444b5e741ea61ef8a\", version = \"=0.1.0-alpha\" }"
+        "radroots_transport_nostr = { git = \"https://github.com/radrootslabs/lib\", rev = \"3af7814ea4f76f2cca3d33d4c2bd8a854f3fb78f\", version = \"=0.1.0-alpha\" }"
     ));
 }
 
@@ -88,15 +88,15 @@ fn source_lock_binds_the_current_cargo_lock() {
     ));
     assert!(SOURCE_LOCK.contains(&format!("cargo_lock_sha256 = \"{digest}\"")));
     assert!(SOURCE_LOCK.contains(&format!("sha256 = \"{flake_digest}\"")));
-    assert!(SOURCE_LOCK.contains("revision = \"386e2d7e8cca95bdd0f6ce3444b5e741ea61ef8a\""));
+    assert!(SOURCE_LOCK.contains("revision = \"3af7814ea4f76f2cca3d33d4c2bd8a854f3fb78f\""));
     assert!(SOURCE_LOCK.contains(
         "workspace_catalog_sha256 = \"f6f0d6af573b28e5b5bf7c6862d26ba6a5583d5674149fb4e96f8a6630b51735\""
     ));
     assert!(SOURCE_LOCK.contains(
-        "source_archive_sha256 = \"425ed6106fbcce8026e7af6c405fcdf1cf7139c9000841410991789878c901c5\""
+        "source_archive_sha256 = \"9229fcb361a54bb925ccf2737010a44f564a61e414b9aa88c28e2eb2a7f8bef3\""
     ));
     assert!(SOURCE_LOCK.contains(
-        "[nix]\nmaterial = \"bound\"\nlib_revision = \"386e2d7e8cca95bdd0f6ce3444b5e741ea61ef8a\"\nsupported_systems = [\"aarch64-darwin\", \"x86_64-linux\"]\n"
+        "[nix]\nmaterial = \"bound\"\nlib_revision = \"3af7814ea4f76f2cca3d33d4c2bd8a854f3fb78f\"\nsupported_systems = [\"aarch64-darwin\", \"x86_64-linux\"]\n"
     ));
     assert!(SOURCE_LOCK.ends_with(
         "[contract_versions]\nconfig = 1\nstate = 11\nadmin = 1\nstatus = 1\nprovider = 1\n"

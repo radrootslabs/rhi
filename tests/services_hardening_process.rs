@@ -701,7 +701,7 @@ fn process_qualification_contract_freezes_the_exact_wave_closure() {
         lower_hex(&Sha256::digest(FAILURE_QUALIFICATION_CONTRACT)),
         contract["component_qualification"]["sha256"]
     );
-    assert!(SOURCE_LOCK.contains("revision = \"386e2d7e8cca95bdd0f6ce3444b5e741ea61ef8a\""));
+    assert!(SOURCE_LOCK.contains("revision = \"3af7814ea4f76f2cca3d33d4c2bd8a854f3fb78f\""));
 }
 
 #[test]

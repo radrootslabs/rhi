@@ -121,7 +121,7 @@ fn qualification_is_executable_source_locked_and_authority_safe() {
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
     );
     assert_eq!(revision, "053d0c750bf9cd683c6ea37cefe7e79617ba629f");
-    assert!(MANIFEST.contains("rev = \"386e2d7e8cca95bdd0f6ce3444b5e741ea61ef8a\""));
+    assert!(MANIFEST.contains("rev = \"3af7814ea4f76f2cca3d33d4c2bd8a854f3fb78f\""));
     assert!(
         MANIFEST
             .contains("radroots_service_host = { git = \"https://github.com/radrootslabs/lib\"")
