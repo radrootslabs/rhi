@@ -540,12 +540,12 @@ fn wait_for_live_status(fixture: &ProcessFixture, daemon: &mut BoundedProcess) -
 }
 
 fn interrupt_and_wait(daemon: BoundedProcess) -> Output {
-    let signal = Command::new("/bin/kill")
+    let signal = Command::new("kill")
         .arg("-INT")
         .arg(daemon.id().to_string())
         .status()
         .expect("send interrupt");
-    assert!(signal.success());
+    assert!(signal.success(), "interrupt command failed: {signal}");
     daemon.wait()
 }
 

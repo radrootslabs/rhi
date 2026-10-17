@@ -4,6 +4,9 @@ use std::collections::BTreeSet;
 
 use serde_json::json;
 
+#[path = "support/canonical_source.rs"]
+mod canonical_source;
+
 const CONTRACT: &str = include_str!("../contracts/services_hardening/native_release.v1.json");
 const ACTIVE_CONTRACT: &str =
     include_str!("../contracts/services_hardening/native_release.v3.json");
@@ -283,7 +286,26 @@ fn every_radroots_dependency_is_exactly_source_locked() {
 
 #[test]
 fn native_release_surfaces_remain_external_and_nix_bound() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root = canonical_source::source_root(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")),
+        option_env!("NIX_BUILD_TOP").map(std::path::Path::new),
+        option_env!("src").map(std::path::Path::new),
+        std::path::Path::new("/nix/store"),
+        "rhi",
+        &[
+            ("Cargo.toml", MANIFEST.as_bytes()),
+            ("flake.lock", FLAKE_LOCK.as_bytes()),
+            (
+                "tests/services_hardening_native_release.rs",
+                include_bytes!("services_hardening_native_release.rs"),
+            ),
+            (
+                "tests/support/canonical_source.rs",
+                include_bytes!("support/canonical_source.rs"),
+            ),
+        ],
+    )
+    .expect("native working tree or exact isolated Nix input");
     for required in [
         ".cargo/config.toml",
         "packaging/systemd/rhi@.service",

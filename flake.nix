@@ -48,11 +48,8 @@
           craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
           source = pkgs.lib.cleanSourceWith {
             src = ./.;
-            filter =
-              path: type:
-              craneLib.filterCargoSources path type
-              || pkgs.lib.hasSuffix ".json" (baseNameOf path)
-              || baseNameOf path == "README";
+            # Standalone tests also consume identity, policy and packaging assets.
+            filter = pkgs.lib.cleanSourceFilter;
             name = "rhi-source";
           };
           commonArgs = {
@@ -97,7 +94,9 @@
               }
             );
             check = mkCargoCheck "check" "cargo check --workspace --all-targets --locked" { };
-            test = mkCargoCheck "test" "cargo test --workspace --all-targets --locked" { };
+            test = mkCargoCheck "test" "cargo test --workspace --all-targets --locked" {
+              nativeBuildInputs = nativeInputs.nativeBuildInputs ++ [ pkgs.coreutils ];
+            };
             clippy = mkCargoCheck "clippy" "cargo clippy --workspace --all-targets --locked -- -D warnings" { };
             docs = mkCargoCheck "docs" "cargo doc --workspace --no-deps --locked" {
               RUSTDOCFLAGS = "-D warnings";
