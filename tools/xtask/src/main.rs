@@ -22,7 +22,21 @@ const VERSION: &str = "0.1.0";
 const REPOSITORY: &str = "https://github.com/radrootslabs/rhi";
 const RUST_VERSION: &str = "1.99.0";
 const HOST_FEATURE_PROFILE: &str = "service-host";
-const RADROOTS_DEPENDENCY_COUNT: usize = 12;
+const RADROOTS_DEPENDENCIES: [&str; 13] = [
+    "radroots_event",
+    "radroots_event_codec",
+    "radroots_nostr",
+    "radroots_protocol",
+    "radroots_runtime_paths",
+    "radroots_secrets",
+    "radroots_service_host",
+    "radroots_service_sqlite",
+    "radroots_storage",
+    "radroots_trade",
+    "radroots_transport",
+    "radroots_transport_nostr",
+    "radroots_transport_nostr_native",
+];
 const SOURCE_LOCK: &str = "radroots.service.source_lock.v4.toml";
 const CONFIG_EXAMPLE: &str = "contracts/services_hardening/config.v1.example.toml";
 const CONFIG_SCHEMA: &str = "contracts/services_hardening/config.v1.schema.json";
@@ -846,12 +860,12 @@ fn cargo_dependency_revisions(root: &Path) -> Result<BTreeSet<String>, ReleaseEr
         .and_then(toml::Value::as_table)
         .ok_or(ReleaseError::InvalidSourceLock)?;
     let mut revisions = BTreeSet::new();
-    let mut count = 0_usize;
+    let mut names = BTreeSet::new();
     for (name, dependency) in dependencies {
         if !name.starts_with("radroots_") {
             continue;
         }
-        count += 1;
+        names.insert(name.as_str());
         let table = dependency
             .as_table()
             .ok_or(ReleaseError::InvalidSourceLock)?;
@@ -872,7 +886,7 @@ fn cargo_dependency_revisions(root: &Path) -> Result<BTreeSet<String>, ReleaseEr
                 .to_owned(),
         );
     }
-    if count != RADROOTS_DEPENDENCY_COUNT {
+    if names != RADROOTS_DEPENDENCIES.into_iter().collect() {
         return Err(ReleaseError::InvalidSourceLock);
     }
     Ok(revisions)
@@ -1841,6 +1855,23 @@ mod tests {
             assert!(read_source_lock(fixture.path()).is_err(), "{name}");
             fs::write(target, original).expect("restore input");
         }
+        let manifest = fixture.path().join("Cargo.toml");
+        let original = fs::read_to_string(&manifest).expect("manifest");
+        let native = original
+            .lines()
+            .find(|line| line.starts_with("radroots_transport_nostr_native ="))
+            .expect("native connector dependency");
+        for changed in [
+            original.replace(native, ""),
+            original.replace(
+                "radroots_transport_nostr_native =",
+                "radroots_transport_unexpected =",
+            ),
+        ] {
+            fs::write(&manifest, changed).expect("changed dependency inventory");
+            assert!(read_source_lock(fixture.path()).is_err());
+        }
+        fs::write(manifest, original).expect("restore manifest");
     }
 
     #[test]

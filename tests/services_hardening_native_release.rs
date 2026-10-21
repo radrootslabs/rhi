@@ -20,7 +20,7 @@ const SYSTEMD_UNIT: &str = include_str!("../packaging/systemd/rhi@.service");
 const RELEASE_ACCEPTANCE: &str = include_str!("../scripts/release-acceptance.sh");
 const XTASK_MANIFEST: &str = include_str!("../tools/xtask/Cargo.toml");
 
-const LIB_REVISION: &str = "b6f927c4d484ed2f8afcf171a83f2c8f967fb4d4";
+const LIB_REVISION: &str = "a903133cdcd78b6a25687bd23c793d17d17b90c8";
 const LIB_REPOSITORY: &str = "https://github.com/radrootslabs/lib";
 
 #[test]
@@ -228,7 +228,29 @@ fn every_radroots_dependency_is_exactly_source_locked() {
         .iter()
         .filter(|(name, _)| name.starts_with("radroots_"))
         .collect::<Vec<_>>();
-    assert_eq!(radroots.len(), 12);
+    assert_eq!(
+        radroots
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect::<BTreeSet<_>>(),
+        [
+            "radroots_event",
+            "radroots_event_codec",
+            "radroots_nostr",
+            "radroots_protocol",
+            "radroots_runtime_paths",
+            "radroots_secrets",
+            "radroots_service_host",
+            "radroots_service_sqlite",
+            "radroots_storage",
+            "radroots_trade",
+            "radroots_transport",
+            "radroots_transport_nostr",
+            "radroots_transport_nostr_native",
+        ]
+        .into_iter()
+        .collect()
+    );
     for (name, dependency) in radroots {
         let dependency = dependency.as_table().expect("detailed dependency");
         assert_eq!(
@@ -266,7 +288,7 @@ fn every_radroots_dependency_is_exactly_source_locked() {
     assert!(source.contains(&format!("?rev={LIB_REVISION}#{LIB_REVISION}")));
 
     for required in [
-        "url = \"github:radrootslabs/lib/b6f927c4d484ed2f8afcf171a83f2c8f967fb4d4\";",
+        "url = \"github:radrootslabs/lib/a903133cdcd78b6a25687bd23c793d17d17b90c8\";",
         "systems = lib.lib.supportedSystems;",
         "nixosModules.default",
     ] {

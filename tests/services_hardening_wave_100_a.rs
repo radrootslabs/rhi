@@ -52,7 +52,7 @@ fn wave_one_removed_files_remain_absent_with_current_source_binding() {
         "schema = \"radroots.service.source_lock.v4\"\ncontract_version = 4\nservice = \"rhi\"\n"
     ));
     assert!(SOURCE_LOCK.contains("material = \"bound\""));
-    assert!(SOURCE_LOCK.contains("lib_revision = \"b6f927c4d484ed2f8afcf171a83f2c8f967fb4d4\""));
+    assert!(SOURCE_LOCK.contains("lib_revision = \"a903133cdcd78b6a25687bd23c793d17d17b90c8\""));
 }
 
 #[test]
