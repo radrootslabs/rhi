@@ -180,7 +180,7 @@ fn historical_source_lock_binds_the_shared_sqlite_failure_corpus() {
         .expect("Lib revision");
     assert_eq!(revision, "053d0c750bf9cd683c6ea37cefe7e79617ba629f");
     assert!(MANIFEST.contains(
-        "radroots_service_sqlite = { git = \"https://github.com/radrootslabs/lib\", rev = \"a903133cdcd78b6a25687bd23c793d17d17b90c8\""
+        "radroots_service_sqlite = { git = \"https://github.com/radrootslabs/lib\", rev = \"4b4aa8a7feaab08492c3f596df9182070ee8d814\""
     ));
     assert_eq!(
         contract["source_locked_shared_sqlite_corpus"],

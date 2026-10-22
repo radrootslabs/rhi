@@ -101,6 +101,14 @@ impl Drop for RelayHarness {
 }
 
 fn relay_session(stream: TcpStream, stop: &AtomicBool) {
+    relay_session_when_ready(stream, stop, || true);
+}
+
+fn relay_session_when_ready(
+    stream: TcpStream,
+    stop: &AtomicBool,
+    handshake_ready: impl FnOnce() -> bool,
+) {
     // Accepted sockets can inherit the listener's nonblocking mode on macOS.
     // This fixture uses blocking tungstenite with explicit I/O deadlines.
     stream
@@ -112,6 +120,9 @@ fn relay_session(stream: TcpStream, stop: &AtomicBool) {
     stream
         .set_write_timeout(Some(RELAY_HANDSHAKE_TIMEOUT))
         .expect("relay handshake write timeout");
+    if !handshake_ready() {
+        return;
+    }
     let mut websocket = match accept(stream) {
         Ok(websocket) => websocket,
         Err(_) => return,
@@ -195,21 +206,27 @@ fn loopback_relay_waits_for_delayed_upgrade_on_an_inherited_nonblocking_socket()
     let (server, _) = listener.accept().expect("accepted regression socket");
     // Exercise inherited nonblocking mode explicitly on every platform.
     server.set_nonblocking(true).expect("inherited socket mode");
+    let observed_server = server.try_clone().expect("observe accepted socket mode");
     let stop = Arc::new(AtomicBool::new(false));
     let session_stop = Arc::clone(&stop);
-    let (finished, completion) = std::sync::mpsc::channel();
+    let (ready, configured) = std::sync::mpsc::sync_channel(0);
+    let (resume, released) = std::sync::mpsc::sync_channel(0);
     let session = thread::spawn(move || {
-        relay_session(server, &session_stop);
-        let _ = finished.send(());
+        relay_session_when_ready(server, &session_stop, || {
+            ready.send(()).is_ok() && released.recv_timeout(PROCESS_DEADLINE).is_ok()
+        });
     });
-    let waiting = matches!(
-        completion.recv_timeout(Duration::from_millis(50)),
-        Err(std::sync::mpsc::RecvTimeoutError::Timeout)
-    );
     let response = (|| -> Result<Message, String> {
-        if !waiting {
-            return Err("relay discarded an upgrade before the client sent it".to_owned());
+        configured
+            .recv_timeout(PROCESS_DEADLINE)
+            .map_err(|error| error.to_string())?;
+        // Observe the actual shared socket flags before sending upgrade bytes.
+        // A timed absence of completion is not evidence under scheduler load.
+        let flags = rustix::fs::fcntl_getfl(&observed_server).map_err(|error| error.to_string())?;
+        if flags.contains(rustix::fs::OFlags::NONBLOCK) {
+            return Err("relay retained inherited nonblocking mode".to_owned());
         }
+        resume.send(()).map_err(|error| error.to_string())?;
         let (mut socket, _) = tungstenite::client(format!("ws://{address}/delayed"), client)
             .map_err(|error| error.to_string())?;
         socket
@@ -218,6 +235,8 @@ fn loopback_relay_waits_for_delayed_upgrade_on_an_inherited_nonblocking_socket()
         socket.read().map_err(|error| error.to_string())
     })();
     stop.store(true, Ordering::SeqCst);
+    drop(resume);
+    drop(configured);
     session.join().expect("joined regression relay");
     assert_eq!(
         response.expect("delayed upgrade and request succeed"),
@@ -701,7 +720,7 @@ fn process_qualification_contract_freezes_the_exact_wave_closure() {
         lower_hex(&Sha256::digest(FAILURE_QUALIFICATION_CONTRACT)),
         contract["component_qualification"]["sha256"]
     );
-    assert!(SOURCE_LOCK.contains("revision = \"a903133cdcd78b6a25687bd23c793d17d17b90c8\""));
+    assert!(SOURCE_LOCK.contains("revision = \"4b4aa8a7feaab08492c3f596df9182070ee8d814\""));
 }
 
 #[test]

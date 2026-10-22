@@ -52,19 +52,19 @@ workspace = true
 
 [dependencies]
 base64 = "0.22"
-radroots_event = { git = "https://github.com/radrootslabs/lib", rev = "a903133cdcd78b6a25687bd23c793d17d17b90c8", version = "=0.1.0-alpha", features = ["serde"] }
-radroots_event_codec = { git = "https://github.com/radrootslabs/lib", rev = "a903133cdcd78b6a25687bd23c793d17d17b90c8", version = "=0.1.0-alpha", features = ["json"] }
-radroots_nostr = { git = "https://github.com/radrootslabs/lib", rev = "a903133cdcd78b6a25687bd23c793d17d17b90c8", version = "=0.1.0-alpha", features = ["events"] }
-radroots_protocol = { git = "https://github.com/radrootslabs/lib", rev = "a903133cdcd78b6a25687bd23c793d17d17b90c8", version = "=0.1.0-alpha" }
-radroots_runtime_paths = { git = "https://github.com/radrootslabs/lib", rev = "a903133cdcd78b6a25687bd23c793d17d17b90c8", version = "=0.1.0-alpha" }
-radroots_service_host = { git = "https://github.com/radrootslabs/lib", rev = "a903133cdcd78b6a25687bd23c793d17d17b90c8", version = "=0.1.0-alpha" }
-radroots_service_sqlite = { git = "https://github.com/radrootslabs/lib", rev = "a903133cdcd78b6a25687bd23c793d17d17b90c8", version = "=0.1.0-alpha" }
-radroots_storage = { git = "https://github.com/radrootslabs/lib", rev = "a903133cdcd78b6a25687bd23c793d17d17b90c8", version = "=0.1.0-alpha", default-features = false }
-radroots_transport = { git = "https://github.com/radrootslabs/lib", rev = "a903133cdcd78b6a25687bd23c793d17d17b90c8", version = "=0.1.0-alpha", default-features = false, features = ["std"] }
-radroots_transport_nostr = { git = "https://github.com/radrootslabs/lib", rev = "a903133cdcd78b6a25687bd23c793d17d17b90c8", version = "=0.1.0-alpha" }
-radroots_transport_nostr_native = { git = "https://github.com/radrootslabs/lib", rev = "a903133cdcd78b6a25687bd23c793d17d17b90c8", version = "=0.1.0-alpha" }
-radroots_secrets = { git = "https://github.com/radrootslabs/lib", rev = "a903133cdcd78b6a25687bd23c793d17d17b90c8", version = "=0.1.0-alpha" }
-radroots_trade = { git = "https://github.com/radrootslabs/lib", rev = "a903133cdcd78b6a25687bd23c793d17d17b90c8", version = "=0.1.0-alpha" }
+radroots_event = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha", features = ["serde"] }
+radroots_event_codec = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha", features = ["json"] }
+radroots_nostr = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha", features = ["events"] }
+radroots_protocol = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha" }
+radroots_runtime_paths = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha" }
+radroots_service_host = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha" }
+radroots_service_sqlite = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha" }
+radroots_storage = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha", default-features = false }
+radroots_transport = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha", default-features = false, features = ["std"] }
+radroots_transport_nostr = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha" }
+radroots_transport_nostr_native = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha" }
+radroots_secrets = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha" }
+radroots_trade = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha" }
 
 chacha20poly1305 = { version = "0.10" }
 clap = { version = "4", features = ["derive"] }

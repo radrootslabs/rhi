@@ -20,7 +20,7 @@ const SYSTEMD_UNIT: &str = include_str!("../packaging/systemd/rhi@.service");
 const RELEASE_ACCEPTANCE: &str = include_str!("../scripts/release-acceptance.sh");
 const XTASK_MANIFEST: &str = include_str!("../tools/xtask/Cargo.toml");
 
-const LIB_REVISION: &str = "a903133cdcd78b6a25687bd23c793d17d17b90c8";
+const LIB_REVISION: &str = "4b4aa8a7feaab08492c3f596df9182070ee8d814";
 const LIB_REPOSITORY: &str = "https://github.com/radrootslabs/lib";
 
 #[test]
@@ -288,7 +288,7 @@ fn every_radroots_dependency_is_exactly_source_locked() {
     assert!(source.contains(&format!("?rev={LIB_REVISION}#{LIB_REVISION}")));
 
     for required in [
-        "url = \"github:radrootslabs/lib/a903133cdcd78b6a25687bd23c793d17d17b90c8\";",
+        "url = \"github:radrootslabs/lib/4b4aa8a7feaab08492c3f596df9182070ee8d814\";",
         "systems = lib.lib.supportedSystems;",
         "nixosModules.default",
     ] {
