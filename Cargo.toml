@@ -52,19 +52,19 @@ workspace = true
 
 [dependencies]
 base64 = "0.22"
-radroots_event = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha", features = ["serde"] }
-radroots_event_codec = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha", features = ["json"] }
-radroots_nostr = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha", features = ["events"] }
-radroots_protocol = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha" }
-radroots_runtime_paths = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha" }
-radroots_service_host = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha" }
-radroots_service_sqlite = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha" }
-radroots_storage = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha", default-features = false }
-radroots_transport = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha", default-features = false, features = ["std"] }
-radroots_transport_nostr = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha" }
-radroots_transport_nostr_native = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha" }
-radroots_secrets = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha" }
-radroots_trade = { git = "https://github.com/radrootslabs/lib", rev = "4b4aa8a7feaab08492c3f596df9182070ee8d814", version = "=0.1.0-alpha" }
+radroots_event = { git = "https://github.com/radrootslabs/lib", rev = "05ad0ff0f521535f7649027d4f3391e6464f7fa1", version = "=0.1.0-alpha", features = ["serde"] }
+radroots_event_codec = { git = "https://github.com/radrootslabs/lib", rev = "05ad0ff0f521535f7649027d4f3391e6464f7fa1", version = "=0.1.0-alpha", features = ["json"] }
+radroots_nostr = { git = "https://github.com/radrootslabs/lib", rev = "05ad0ff0f521535f7649027d4f3391e6464f7fa1", version = "=0.1.0-alpha", features = ["events"] }
+radroots_protocol = { git = "https://github.com/radrootslabs/lib", rev = "05ad0ff0f521535f7649027d4f3391e6464f7fa1", version = "=0.1.0-alpha" }
+radroots_runtime_paths = { git = "https://github.com/radrootslabs/lib", rev = "05ad0ff0f521535f7649027d4f3391e6464f7fa1", version = "=0.1.0-alpha" }
+radroots_service_host = { git = "https://github.com/radrootslabs/lib", rev = "05ad0ff0f521535f7649027d4f3391e6464f7fa1", version = "=0.1.0-alpha" }
+radroots_service_sqlite = { git = "https://github.com/radrootslabs/lib", rev = "05ad0ff0f521535f7649027d4f3391e6464f7fa1", version = "=0.1.0-alpha" }
+radroots_storage = { git = "https://github.com/radrootslabs/lib", rev = "05ad0ff0f521535f7649027d4f3391e6464f7fa1", version = "=0.1.0-alpha", default-features = false }
+radroots_transport = { git = "https://github.com/radrootslabs/lib", rev = "05ad0ff0f521535f7649027d4f3391e6464f7fa1", version = "=0.1.0-alpha", default-features = false, features = ["std"] }
+radroots_transport_nostr = { git = "https://github.com/radrootslabs/lib", rev = "05ad0ff0f521535f7649027d4f3391e6464f7fa1", version = "=0.1.0-alpha" }
+radroots_transport_nostr_native = { git = "https://github.com/radrootslabs/lib", rev = "05ad0ff0f521535f7649027d4f3391e6464f7fa1", version = "=0.1.0-alpha" }
+radroots_secrets = { git = "https://github.com/radrootslabs/lib", rev = "05ad0ff0f521535f7649027d4f3391e6464f7fa1", version = "=0.1.0-alpha" }
+radroots_trade = { git = "https://github.com/radrootslabs/lib", rev = "05ad0ff0f521535f7649027d4f3391e6464f7fa1", version = "=0.1.0-alpha" }
 
 chacha20poly1305 = { version = "0.10" }
 clap = { version = "4", features = ["derive"] }
@@ -78,7 +78,7 @@ serde_json = { version = "1", default-features = false, features = ["raw_value"]
 sha2 = { version = "0.10" }
 sqlx = { version = "0.9.0", default-features = false, features = ["sqlite-bundled"] }
 thiserror = { version = "2" }
-tokio = { version = "1", default-features = false, features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "1.53.3", default-features = false, features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tempfile = { version = "3" }
 toml = { version = "0.8" }
 url = "2"

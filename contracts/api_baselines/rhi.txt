@@ -119,6 +119,7 @@ pub rhi::RhiCliPrimaryAuthorityV1::Daemon
 pub rhi::RhiCliPrimaryAuthorityV1::LiveUnixAdmin
 pub rhi::RhiCliPrimaryAuthorityV1::Offline
 pub enum rhi::RhiCliV1ErrorKind
+pub rhi::RhiCliV1ErrorKind::HelpRequested
 pub rhi::RhiCliV1ErrorKind::InvalidArguments
 pub rhi::RhiCliV1ErrorKind::InvalidCommandInput
 pub rhi::RhiCliV1ErrorKind::InvalidConfigPath
@@ -961,7 +962,8 @@ impl core::fmt::Debug for rhi::RhiCliInvocationV1
 pub fn rhi::RhiCliInvocationV1::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rhi::RhiCliV1Error
 impl rhi::RhiCliV1Error
-pub const fn rhi::RhiCliV1Error::kind(self) -> rhi::RhiCliV1ErrorKind
+pub fn rhi::RhiCliV1Error::help_text(&self) -> core::option::Option<&str>
+pub const fn rhi::RhiCliV1Error::kind(&self) -> rhi::RhiCliV1ErrorKind
 impl core::error::Error for rhi::RhiCliV1Error
 impl core::fmt::Debug for rhi::RhiCliV1Error
 pub fn rhi::RhiCliV1Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result

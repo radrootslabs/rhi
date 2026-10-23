@@ -474,6 +474,7 @@ impl fmt::Debug for RhiCliExecutionPlanV1 {
 /// Stable source-free classification for command-line admission failures.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RhiCliV1ErrorKind {
+    HelpRequested,
     InvalidArguments,
     InvalidInstance,
     InvalidRepoLocalRoot,
@@ -485,6 +486,7 @@ pub enum RhiCliV1ErrorKind {
 impl RhiCliV1ErrorKind {
     const fn message(self) -> &'static str {
         match self {
+            Self::HelpRequested => "command-line help requested",
             Self::InvalidArguments => "command-line arguments are invalid",
             Self::InvalidInstance => "instance identifier is invalid",
             Self::InvalidRepoLocalRoot => "repo-local profile requires a valid absolute root",
@@ -497,21 +499,33 @@ impl RhiCliV1ErrorKind {
     }
 }
 
-/// One safe command-line admission failure.
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// One safe command-line admission outcome requiring process-level handling.
+#[derive(Clone, PartialEq, Eq)]
 pub struct RhiCliV1Error {
     kind: RhiCliV1ErrorKind,
+    help_text: Option<Box<str>>,
 }
 
 impl RhiCliV1Error {
     const fn new(kind: RhiCliV1ErrorKind) -> Self {
-        Self { kind }
+        Self {
+            kind,
+            help_text: None,
+        }
     }
 
     /// Returns the stable failure classification.
     #[must_use]
-    pub const fn kind(self) -> RhiCliV1ErrorKind {
+    pub const fn kind(&self) -> RhiCliV1ErrorKind {
         self.kind
+    }
+
+    /// Returns bounded static command help, without caller argument text.
+    /// The process owner may print this on stdout and return success without
+    /// executing a command. Display and Debug remain source-free diagnostics.
+    #[must_use]
+    pub fn help_text(&self) -> Option<&str> {
+        self.help_text.as_deref()
     }
 }
 
@@ -610,8 +624,18 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
-    let parsed = RawRhiCliV1::try_parse_from(arguments)
-        .map_err(|_| RhiCliV1Error::new(RhiCliV1ErrorKind::InvalidArguments))?;
+    let parsed = RawRhiCliV1::try_parse_from(arguments).map_err(|error| {
+        if error.kind() == clap::error::ErrorKind::DisplayHelp {
+            let help = error.to_string();
+            if help.len() <= 16 * 1024 {
+                return RhiCliV1Error {
+                    kind: RhiCliV1ErrorKind::HelpRequested,
+                    help_text: Some(help.into_boxed_str()),
+                };
+            }
+        }
+        RhiCliV1Error::new(RhiCliV1ErrorKind::InvalidArguments)
+    })?;
     let profile = parsed
         .profile
         .ok_or_else(|| RhiCliV1Error::new(RhiCliV1ErrorKind::InvalidArguments))?
@@ -784,7 +808,7 @@ fn valid_absolute_path(path: &Path, require_non_root: bool) -> bool {
 }
 
 #[derive(Parser)]
-#[command(name = "rhi", disable_help_subcommand = true)]
+#[command(name = "rhi", bin_name = "rhi", disable_help_subcommand = true)]
 struct RawRhiCliV1 {
     #[arg(long, global = true, value_enum)]
     profile: Option<RawProfile>,

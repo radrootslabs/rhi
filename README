@@ -1,5 +1,9 @@
 # rhizome
 
+Global and nested `--help` print static command help and exit successfully
+before configuration, identity, state, signals or network startup. Malformed
+arguments retain the fixed redacted error result and nonzero exit status.
+
 This is the README for `rhi` which listens on Rad Roots networks and maintains
 a stable activity record for parties buying and selling agricultural goods.
 

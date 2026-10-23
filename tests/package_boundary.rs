@@ -603,7 +603,7 @@ fn doctor_and_process_results_are_closed_bounded_and_process_safe() {
     }
     assert!(
         MANIFEST.contains(
-            "tokio = { version = \"1\", default-features = false, features = [\"io-util\", \"macros\", \"net\", \"rt-multi-thread\", \"signal\", \"sync\", \"time\"] }"
+            "tokio = { version = \"1.53.3\", default-features = false, features = [\"io-util\", \"macros\", \"net\", \"rt-multi-thread\", \"signal\", \"sync\", \"time\"] }"
         )
     );
     assert!(MANIFEST.contains(

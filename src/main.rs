@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+use std::io::Write;
 use std::process::ExitCode;
 
 use rhi::{RhiLogRecord, RhiProcessResult};
@@ -62,7 +63,15 @@ fn main() -> ExitCode {
             eprintln!("{}", RhiLogRecord::process_result(result));
             result.exit_code()
         }
-        Err(_) => {
+        Err(error) => {
+            if let Some(help) = error.help_text() {
+                if std::io::stdout().lock().write_all(help.as_bytes()).is_ok() {
+                    return ExitCode::SUCCESS;
+                }
+                let result = RhiProcessResult::InputOrConfiguration;
+                eprintln!("{}", RhiLogRecord::process_result(result));
+                return result.exit_code();
+            }
             let result = RhiProcessResult::InputOrConfiguration;
             eprintln!("{}", RhiLogRecord::process_result(result));
             result.exit_code()
