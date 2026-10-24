@@ -44,7 +44,7 @@ fn source_lock_metadata_is_exact_and_nix_is_bound() {
 fn shared_host_packages_are_exactly_source_locked() {
     for dependency in ["radroots_service_host", "radroots_service_sqlite"] {
         assert!(MANIFEST.contains(&format!(
-            "{dependency} = {{ git = \"https://github.com/radrootslabs/lib\", rev = \"05ad0ff0f521535f7649027d4f3391e6464f7fa1\", version = \"=0.1.0-alpha\" }}"
+            "{dependency} = {{ git = \"https://github.com/radrootslabs/lib\", rev = \"e55c1749902811732167a2ce5c099e22e964624f\", version = \"=0.1.0-alpha\" }}"
         )));
     }
 }
@@ -52,7 +52,7 @@ fn shared_host_packages_are_exactly_source_locked() {
 #[test]
 fn shared_service_sqlite_is_the_only_catalog_authority() {
     assert!(MANIFEST.contains(
-        "radroots_service_sqlite = { git = \"https://github.com/radrootslabs/lib\", rev = \"05ad0ff0f521535f7649027d4f3391e6464f7fa1\", version = \"=0.1.0-alpha\" }"
+        "radroots_service_sqlite = { git = \"https://github.com/radrootslabs/lib\", rev = \"e55c1749902811732167a2ce5c099e22e964624f\", version = \"=0.1.0-alpha\" }"
     ));
     for forbidden in ["rusqlite", "libsqlite3-sys"] {
         assert!(
@@ -65,20 +65,20 @@ fn shared_service_sqlite_is_the_only_catalog_authority() {
 #[test]
 fn shared_storage_generation_type_is_exactly_source_locked() {
     assert!(MANIFEST.contains(
-        "radroots_storage = { git = \"https://github.com/radrootslabs/lib\", rev = \"05ad0ff0f521535f7649027d4f3391e6464f7fa1\", version = \"=0.1.0-alpha\", default-features = false }"
+        "radroots_storage = { git = \"https://github.com/radrootslabs/lib\", rev = \"e55c1749902811732167a2ce5c099e22e964624f\", version = \"=0.1.0-alpha\", default-features = false }"
     ));
 }
 
 #[test]
 fn shared_transport_spi_is_exactly_source_locked_without_serde() {
     assert!(MANIFEST.contains(
-        "radroots_transport = { git = \"https://github.com/radrootslabs/lib\", rev = \"05ad0ff0f521535f7649027d4f3391e6464f7fa1\", version = \"=0.1.0-alpha\", default-features = false, features = [\"std\"] }"
+        "radroots_transport = { git = \"https://github.com/radrootslabs/lib\", rev = \"e55c1749902811732167a2ce5c099e22e964624f\", version = \"=0.1.0-alpha\", default-features = false, features = [\"std\"] }"
     ));
     assert!(MANIFEST.contains(
-        "radroots_transport_nostr = { git = \"https://github.com/radrootslabs/lib\", rev = \"05ad0ff0f521535f7649027d4f3391e6464f7fa1\", version = \"=0.1.0-alpha\" }"
+        "radroots_transport_nostr = { git = \"https://github.com/radrootslabs/lib\", rev = \"e55c1749902811732167a2ce5c099e22e964624f\", version = \"=0.1.0-alpha\" }"
     ));
     assert!(MANIFEST.contains(
-        "radroots_transport_nostr_native = { git = \"https://github.com/radrootslabs/lib\", rev = \"05ad0ff0f521535f7649027d4f3391e6464f7fa1\", version = \"=0.1.0-alpha\" }"
+        "radroots_transport_nostr_native = { git = \"https://github.com/radrootslabs/lib\", rev = \"e55c1749902811732167a2ce5c099e22e964624f\", version = \"=0.1.0-alpha\" }"
     ));
 }
 
@@ -91,15 +91,15 @@ fn source_lock_binds_the_current_cargo_lock() {
     ));
     assert!(SOURCE_LOCK.contains(&format!("cargo_lock_sha256 = \"{digest}\"")));
     assert!(SOURCE_LOCK.contains(&format!("sha256 = \"{flake_digest}\"")));
-    assert!(SOURCE_LOCK.contains("revision = \"05ad0ff0f521535f7649027d4f3391e6464f7fa1\""));
+    assert!(SOURCE_LOCK.contains("revision = \"e55c1749902811732167a2ce5c099e22e964624f\""));
     assert!(SOURCE_LOCK.contains(
         "workspace_catalog_sha256 = \"424909855b2af1ffc8fa6bbfd5aa0e6d17642662c18212fef4660e71700fbfc8\""
     ));
     assert!(SOURCE_LOCK.contains(
-        "source_archive_sha256 = \"c8c148f2e6007ac5ff13d2edb070bf8aff643661b9a03ff7ab1f75806ce15548\""
+        "source_archive_sha256 = \"5e6005a01402ed60225ec5207cb0db465a0d1cd4c8107e0505d2af0762dc57c0\""
     ));
     assert!(SOURCE_LOCK.contains(
-        "[nix]\nmaterial = \"bound\"\nlib_revision = \"05ad0ff0f521535f7649027d4f3391e6464f7fa1\"\nsupported_systems = [\"aarch64-darwin\", \"x86_64-linux\"]\n"
+        "[nix]\nmaterial = \"bound\"\nlib_revision = \"e55c1749902811732167a2ce5c099e22e964624f\"\nsupported_systems = [\"aarch64-darwin\", \"x86_64-linux\"]\n"
     ));
     assert!(SOURCE_LOCK.ends_with(
         "[contract_versions]\nconfig = 1\nstate = 11\nadmin = 1\nstatus = 1\nprovider = 1\n"

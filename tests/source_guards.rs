@@ -43,7 +43,7 @@ fn rhi_manifest_exact_pins_radroots_contract() {
         );
         assert_eq!(
             dependency.get("rev").and_then(toml::Value::as_str),
-            Some("05ad0ff0f521535f7649027d4f3391e6464f7fa1"),
+            Some("e55c1749902811732167a2ce5c099e22e964624f"),
             "RHI must source-lock {name} to the exact promoted Lib revision"
         );
         assert_eq!(
